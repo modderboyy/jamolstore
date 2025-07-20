@@ -7,120 +7,129 @@ import { useTelegram } from "@/contexts/TelegramContext"
 import { supabase } from "@/lib/supabase"
 import { BottomNavigation } from "@/components/layout/bottom-navigation"
 import { TopBar } from "@/components/layout/top-bar"
-import {
-  Phone,
-  ShoppingBag,
-  Heart,
-  Settings,
-  LogOut,
-  Edit3,
-  Star,
-  Calendar,
-  Shield,
-  Award,
-  MessageCircle,
-} from "lucide-react"
-import Image from "next/image"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Separator } from "@/components/ui/separator"
+import { Badge } from "@/components/ui/badge"
+import { User, Phone, Mail, MapPin, Calendar, Shield, LogOut, Edit, Save, X, MessageCircle, ShoppingBag, Heart, Settings } from 'lucide-react'
+
+interface UserStats {
+  totalOrders: number
+  totalSpent: number
+  favoriteProducts: number
+}
 
 export default function ProfilePage() {
-  const { user, profile, loading, signOut } = useAuth()
-  const { webApp, isTelegramWebApp } = useTelegram()
+  const { user, loading, signOut } = useAuth()
+  const { isTelegramWebApp } = useTelegram()
   const router = useRouter()
-  const [orderCount, setOrderCount] = useState(0)
-  const [isSigningOut, setIsSigningOut] = useState(false)
-  const [stats, setStats] = useState({
-    totalOrders: 0,
-    completedOrders: 0,
-    totalSpent: 0,
+
+  const [isEditing, setIsEditing] = useState(false)
+  const [editForm, setEditForm] = useState({
+    first_name: "",
+    last_name: "",
+    phone_number: "",
+    email: "",
   })
+  const [userStats, setUserStats] = useState<UserStats>({
+    totalOrders: 0,
+    totalSpent: 0,
+    favoriteProducts: 0,
+  })
+  const [isSaving, setIsSaving] = useState(false)
 
   useEffect(() => {
     if (!loading) {
-      if (!user || !profile) {
+      if (!user) {
         if (!isTelegramWebApp) {
           router.push("/login")
         }
         return
       }
+      setEditForm({
+        first_name: user.first_name || "",
+        last_name: user.last_name || "",
+        phone_number: user.phone_number || "",
+        email: user.email || "",
+      })
       fetchUserStats()
     }
-  }, [user, profile, loading, router, isTelegramWebApp])
+  }, [user, loading, router, isTelegramWebApp])
 
   const fetchUserStats = async () => {
     if (!user) return
 
     try {
-      // Buyurtmalar sonini olish
-      const { count: totalOrders, error: ordersError } = await supabase
+      // Get total orders and spent amount
+      const { data: orders, error: ordersError } = await supabase
         .from("orders")
-        .select("*", { count: "exact", head: true })
+        .select("total_amount")
         .eq("customer_id", user.id)
 
       if (ordersError) throw ordersError
 
-      // Tugallangan buyurtmalar
-      const { count: completedOrders, error: completedError } = await supabase
-        .from("orders")
-        .select("*", { count: "exact", head: true })
-        .eq("customer_id", user.id)
-        .eq("status", "delivered")
+      const totalOrders = orders?.length || 0
+      const totalSpent = orders?.reduce((sum, order) => sum + order.total_amount, 0) || 0
 
-      if (completedError) throw completedError
+      // Get favorite products count (if you have a favorites table)
+      // For now, we'll set it to 0
+      const favoriteProducts = 0
 
-      // Jami sarflangan pul
-      const { data: ordersData, error: spentError } = await supabase
-        .from("orders")
-        .select("total_amount")
-        .eq("customer_id", user.id)
-        .eq("status", "delivered")
-
-      if (spentError) throw spentError
-
-      const totalSpent = ordersData?.reduce((sum, order) => sum + order.total_amount, 0) || 0
-
-      setStats({
-        totalOrders: totalOrders || 0,
-        completedOrders: completedOrders || 0,
+      setUserStats({
+        totalOrders,
         totalSpent,
+        favoriteProducts,
       })
-      setOrderCount(totalOrders || 0)
     } catch (error) {
-      console.error("Statistikalarni yuklashda xatolik:", error)
+      console.error("Foydalanuvchi statistikasini yuklashda xatolik:", error)
     }
   }
 
-  const handleSignOut = async () => {
-    if (isSigningOut) return
+  const handleSaveProfile = async () => {
+    if (!user) return
 
-    if (isTelegramWebApp) {
-      webApp?.showConfirm("Tizimdan chiqishni xohlaysizmi?", (confirmed: boolean) => {
-        if (confirmed) {
-          performSignOut()
-        }
-      })
-    } else {
-      performSignOut()
-    }
-  }
-
-  const performSignOut = async () => {
-    setIsSigningOut(true)
     try {
-      await signOut()
-      if (isTelegramWebApp) {
-        webApp?.showAlert("Tizimdan muvaffaqiyatli chiqildi")
-        webApp?.close()
-      } else {
-        router.push("/login")
+      setIsSaving(true)
+
+      const { error } = await supabase
+        .from("users")
+        .update({
+          first_name: editForm.first_name,
+          last_name: editForm.last_name,
+          phone_number: editForm.phone_number,
+          email: editForm.email,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", user.id)
+
+      if (error) throw error
+
+      // Update local storage
+      const updatedUser = {
+        ...user,
+        first_name: editForm.first_name,
+        last_name: editForm.last_name,
+        phone_number: editForm.phone_number,
+        email: editForm.email,
       }
+      localStorage.setItem("jamolstroy_user", JSON.stringify(updatedUser))
+
+      setIsEditing(false)
+      // Refresh the page to get updated user data
+      window.location.reload()
     } catch (error) {
-      console.error("Chiqishda xatolik:", error)
-      if (isTelegramWebApp) {
-        webApp?.showAlert("Chiqishda xatolik yuz berdi")
-      }
+      console.error("Profilni yangilashda xatolik:", error)
+      alert("Profilni yangilashda xatolik yuz berdi")
     } finally {
-      setIsSigningOut(false)
+      setIsSaving(false)
     }
+  }
+
+  const handleSignOut = () => {
+    signOut()
+    router.push("/login")
   }
 
   const formatPrice = (price: number) => {
@@ -137,227 +146,267 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-background pb-20 md:pb-4">
         <TopBar />
         <div className="flex items-center justify-center py-20">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Yuklanmoqda...</p>
+          </div>
         </div>
+        <BottomNavigation />
       </div>
     )
   }
 
-  if (!user || !profile) {
-    return null
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-background pb-20 md:pb-4">
+        <TopBar />
+        <div className="flex items-center justify-center py-20">
+          <div className="text-center">
+            <User className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+            <h2 className="text-xl font-bold mb-2">Tizimga kiring</h2>
+            <p className="text-muted-foreground mb-6">Profilingizni ko'rish uchun tizimga kiring</p>
+            <Button onClick={() => router.push("/login")}>Tizimga kirish</Button>
+          </div>
+        </div>
+        <BottomNavigation />
+      </div>
+    )
   }
-
-  const menuItems = [
-    {
-      icon: ShoppingBag,
-      label: "Buyurtmalarim",
-      value: `${stats.totalOrders} ta`,
-      href: "/orders",
-      color: "text-blue-600",
-      bgColor: "bg-blue-100",
-    },
-    {
-      icon: Heart,
-      label: "Sevimlilar",
-      value: "",
-      href: "/favorites",
-      color: "text-red-600",
-      bgColor: "bg-red-100",
-    },
-    {
-      icon: Settings,
-      label: "Sozlamalar",
-      value: "",
-      href: "/settings",
-      color: "text-gray-600",
-      bgColor: "bg-gray-100",
-    },
-  ]
 
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-4">
       <TopBar />
 
-      {/* Header */}
-      <div className="container mx-auto px-4 py-6 border-b border-border">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Profil</h1>
-          <button className="p-2 rounded-lg hover:bg-muted transition-colors">
-            <Edit3 className="w-5 h-5" />
-          </button>
-        </div>
-      </div>
-
-      <div className="container mx-auto px-4 py-6">
+      <div className="container mx-auto px-4 py-6 space-y-6">
         {/* Profile Header */}
-        <div className="bg-gradient-to-br from-card to-card/80 rounded-2xl p-6 border border-border mb-6 shadow-sm">
-          <div className="flex items-center space-x-6 mb-6">
-            {/* Avatar */}
-            <div className="w-24 h-24 bg-gradient-to-br from-primary/20 to-primary/10 rounded-2xl overflow-hidden flex-shrink-0 border-2 border-primary/20">
-              {profile.avatar_url || profile.telegram_photo_url ? (
-                <Image
-                  src={profile.avatar_url || profile.telegram_photo_url || "/placeholder.svg"}
-                  alt={`${profile.first_name} ${profile.last_name}`}
-                  width={96}
-                  height={96}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center">
-                  <span className="text-primary font-bold text-3xl">
-                    {profile.first_name[0]}
-                    {profile.last_name[0]}
-                  </span>
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <div className="w-16 h-16 bg-gradient-to-br from-primary/20 to-primary/10 rounded-full flex items-center justify-center">
+                  <User className="w-8 h-8 text-primary" />
                 </div>
-              )}
+                <div>
+                  <CardTitle className="text-xl">
+                    {user.first_name} {user.last_name}
+                  </CardTitle>
+                  <CardDescription className="flex items-center space-x-2">
+                    {user.username && (
+                      <>
+                        <MessageCircle className="w-4 h-4" />
+                        <span>@{user.username}</span>
+                      </>
+                    )}
+                    {user.is_verified && (
+                      <Badge variant="secondary" className="ml-2">
+                        <Shield className="w-3 h-3 mr-1" />
+                        Tasdiqlangan
+                      </Badge>
+                    )}
+                  </CardDescription>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsEditing(!isEditing)}
+                disabled={isSaving}
+              >
+                {isEditing ? <X className="w-4 h-4" /> : <Edit className="w-4 h-4" />}
+              </Button>
             </div>
-
-            {/* Info */}
-            <div className="flex-1">
-              <h2 className="text-2xl font-bold mb-2">
-                {profile.first_name} {profile.last_name}
-              </h2>
-              <div className="space-y-2">
-                <div className="flex items-center space-x-2">
-                  <Phone className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">{profile.phone_number}</span>
+          </CardHeader>
+          <CardContent>
+            {isEditing ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="first_name">Ism</Label>
+                    <Input
+                      id="first_name"
+                      value={editForm.first_name}
+                      onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })}
+                      placeholder="Ismingizni kiriting"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="last_name">Familiya</Label>
+                    <Input
+                      id="last_name"
+                      value={editForm.last_name}
+                      onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })}
+                      placeholder="Familiyangizni kiriting"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="phone_number">Telefon raqam</Label>
+                    <Input
+                      id="phone_number"
+                      type="tel"
+                      value={editForm.phone_number}
+                      onChange={(e) => setEditForm({ ...editForm, phone_number: e.target.value })}
+                      placeholder="+998 90 123 45 67"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      value={editForm.email}
+                      onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                      placeholder="email@example.com"
+                    />
+                  </div>
                 </div>
-                {profile.telegram_username && (
-                  <div className="flex items-center space-x-2">
-                    <MessageCircle className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">@{profile.telegram_username}</span>
+                <div className="flex space-x-3">
+                  <Button onClick={handleSaveProfile} disabled={isSaving} className="flex-1">
+                    {isSaving ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Saqlanmoqda...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4 mr-2" />
+                        Saqlash
+                      </>
+                    )}
+                  </Button>
+                  <Button variant="outline" onClick={() => setIsEditing(false)} disabled={isSaving}>
+                    Bekor qilish
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {user.phone_number && (
+                  <div className="flex items-center space-x-3">
+                    <Phone className="w-4 h-4 text-muted-foreground" />
+                    <span>{user.phone_number}</span>
                   </div>
                 )}
-                <div className="flex items-center space-x-2">
-                  <Calendar className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-muted-foreground">{formatDate(profile.created_at)} dan beri</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-4 pt-6 border-t border-border">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-primary mb-1">{stats.totalOrders}</div>
-              <div className="text-sm text-muted-foreground">Buyurtmalar</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-green-600 mb-1">{stats.completedOrders}</div>
-              <div className="text-sm text-muted-foreground">Tugallangan</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-blue-600 mb-1">
-                {stats.totalSpent > 0 ? formatPrice(stats.totalSpent / 1000) + "K" : "0"}
-              </div>
-              <div className="text-sm text-muted-foreground">Sarflangan</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Achievement Badge */}
-        {stats.completedOrders >= 5 && (
-          <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200 rounded-2xl p-4 mb-6">
-            <div className="flex items-center space-x-3">
-              <div className="w-12 h-12 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-xl flex items-center justify-center">
-                <Award className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-yellow-800">Sodiq mijoz</h3>
-                <p className="text-sm text-yellow-700">5+ buyurtma tugallangani uchun</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Menu Items */}
-        <div className="bg-card rounded-2xl border border-border overflow-hidden mb-6 shadow-sm">
-          {menuItems.map((item, index) => {
-            const Icon = item.icon
-            return (
-              <button
-                key={item.label}
-                onClick={() => router.push(item.href)}
-                className={`w-full flex items-center justify-between p-5 hover:bg-muted/50 transition-colors ${
-                  index !== menuItems.length - 1 ? "border-b border-border" : ""
-                }`}
-              >
-                <div className="flex items-center space-x-4">
-                  <div className={`w-12 h-12 ${item.bgColor} rounded-xl flex items-center justify-center`}>
-                    <Icon className={`w-6 h-6 ${item.color}`} />
+                {user.email && (
+                  <div className="flex items-center space-x-3">
+                    <Mail className="w-4 h-4 text-muted-foreground" />
+                    <span>{user.email}</span>
                   </div>
-                  <span className="font-medium text-lg">{item.label}</span>
-                </div>
+                )}
                 <div className="flex items-center space-x-3">
-                  {item.value && <span className="text-muted-foreground">{item.value}</span>}
-                  <div className="w-2 h-2 bg-muted-foreground/30 rounded-full"></div>
-                </div>
-              </button>
-            )
-          })}
-        </div>
-
-        {/* Security Info */}
-        <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-2xl p-5 mb-6">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
-              <Shield className="w-5 h-5 text-green-600" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-green-800">Hisob himoyalangan</h3>
-              <p className="text-sm text-green-700">Telegram orqali xavfsiz kirish</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Worker Profile Section */}
-        {profile.role === "worker" && (
-          <div className="bg-card rounded-2xl p-6 border border-border mb-6 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold">Ishchi profili</h3>
-              <button className="px-4 py-2 bg-muted text-foreground rounded-lg hover:bg-muted/80 transition-colors">
-                Tahrirlash
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Holat</span>
-                <span className="font-medium text-green-600">Faol</span>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Reyting</span>
-                <div className="flex items-center space-x-1">
-                  <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                  <span className="font-medium">5.0</span>
-                  <span className="text-sm text-muted-foreground">(0 sharh)</span>
+                  <Calendar className="w-4 h-4 text-muted-foreground" />
+                  <span>Ro'yxatdan o'tgan: {formatDate(user.created_at)}</span>
                 </div>
               </div>
+            )}
+          </CardContent>
+        </Card>
 
-              <button className="w-full bg-primary text-primary-foreground rounded-lg py-3 font-medium hover:bg-primary/90 transition-colors">
-                Profil sozlamalari
-              </button>
+        {/* Statistics */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center space-x-3">
+                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <ShoppingBag className="w-6 h-6 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{userStats.totalOrders}</p>
+                  <p className="text-sm text-muted-foreground">Jami buyurtmalar</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center space-x-3">
+                <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                  <span className="text-green-600 font-bold text-lg">₽</span>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{formatPrice(userStats.totalSpent)}</p>
+                  <p className="text-sm text-muted-foreground">Jami xarajat</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center space-x-3">
+                <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
+                  <Heart className="w-6 h-6 text-red-600" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{userStats.favoriteProducts}</p>
+                  <p className="text-sm text-muted-foreground">Sevimli mahsulotlar</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Quick Actions */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Tez harakatlar</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Button
+              variant="outline"
+              className="w-full justify-start"
+              onClick={() => router.push("/orders")}
+            >
+              <ShoppingBag className="w-4 h-4 mr-3" />
+              Buyurtmalarim
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start"
+              onClick={() => router.push("/catalog")}
+            >
+              <Settings className="w-4 h-4 mr-3" />
+              Katalog
+            </Button>
+            <Separator />
+            <Button
+              variant="outline"
+              className="w-full justify-start text-destructive hover:text-destructive"
+              onClick={handleSignOut}
+            >
+              <LogOut className="w-4 h-4 mr-3" />
+              Chiqish
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* Account Info */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Hisob ma'lumotlari</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground">Telegram ID</span>
+              <span className="font-mono text-sm">{user.telegram_id}</span>
             </div>
-          </div>
-        )}
-
-        {/* Sign Out */}
-        <button
-          onClick={handleSignOut}
-          disabled={isSigningOut}
-          className="w-full bg-gradient-to-r from-destructive to-destructive/90 text-destructive-foreground rounded-2xl py-4 font-semibold hover:from-destructive/90 hover:to-destructive transition-all duration-300 disabled:opacity-50 flex items-center justify-center space-x-3 shadow-lg"
-        >
-          {isSigningOut ? (
-            <div className="w-5 h-5 border-2 border-destructive-foreground/30 border-t-destructive-foreground rounded-full animate-spin" />
-          ) : (
-            <LogOut className="w-5 h-5" />
-          )}
-          <span>{isSigningOut ? "Chiqilmoqda..." : "Tizimdan chiqish"}</span>
-        </button>
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground">Foydalanuvchi ID</span>
+              <span className="font-mono text-sm">{user.id.substring(0, 8)}...</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground">Rol</span>
+              <Badge variant="secondary">{user.role || "customer"}</Badge>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground">Oxirgi yangilanish</span>
+              <span className="text-sm">{formatDate(user.updated_at)}</span>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <BottomNavigation />

@@ -7,7 +7,7 @@ import { useTelegram } from "@/contexts/TelegramContext"
 import { supabase } from "@/lib/supabase"
 import { BottomNavigation } from "@/components/layout/bottom-navigation"
 import { TopBar } from "@/components/layout/top-bar"
-import { Package, Clock, CheckCircle, Truck, XCircle, Eye, Phone, MapPin, ShoppingBag } from "lucide-react"
+import { Package, Clock, CheckCircle, Truck, XCircle, Eye, Phone, MapPin, ShoppingBag } from 'lucide-react'
 import Image from "next/image"
 
 interface OrderItem {
@@ -86,7 +86,7 @@ const statusConfig = {
 }
 
 export default function OrdersPage() {
-  const { user, profile, loading } = useAuth()
+  const { user, loading } = useAuth()
   const { isTelegramWebApp } = useTelegram()
   const router = useRouter()
   const [orders, setOrders] = useState<Order[]>([])
@@ -96,7 +96,7 @@ export default function OrdersPage() {
 
   useEffect(() => {
     if (!loading) {
-      if (!user || !profile) {
+      if (!user) {
         if (!isTelegramWebApp) {
           router.push("/login")
         }
@@ -104,7 +104,7 @@ export default function OrdersPage() {
       }
       fetchOrders()
     }
-  }, [user, profile, loading, router, isTelegramWebApp])
+  }, [user, loading, router, isTelegramWebApp])
 
   const fetchOrders = async () => {
     if (!user) return
@@ -161,7 +161,7 @@ export default function OrdersPage() {
 
   if (loading || loadingOrders) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-background pb-20 md:pb-4">
         <TopBar />
         <div className="flex items-center justify-center py-20">
           <div className="text-center">
@@ -169,12 +169,31 @@ export default function OrdersPage() {
             <p className="text-muted-foreground">Yuklanmoqda...</p>
           </div>
         </div>
+        <BottomNavigation />
       </div>
     )
   }
 
-  if (!user || !profile) {
-    return null
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-background pb-20 md:pb-4">
+        <TopBar />
+        <div className="flex items-center justify-center py-20">
+          <div className="text-center">
+            <ShoppingBag className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+            <h2 className="text-xl font-bold mb-2">Tizimga kiring</h2>
+            <p className="text-muted-foreground mb-6">Buyurtmalaringizni ko'rish uchun tizimga kiring</p>
+            <button
+              onClick={() => router.push("/login")}
+              className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+            >
+              Tizimga kirish
+            </button>
+          </div>
+        </div>
+        <BottomNavigation />
+      </div>
+    )
   }
 
   return (

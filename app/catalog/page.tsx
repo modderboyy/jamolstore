@@ -4,12 +4,18 @@ import { useEffect, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { BottomNavigation } from "@/components/layout/bottom-navigation"
-import { ProductCard } from "@/components/ui/product-card"
 import { TopBar } from "@/components/layout/top-bar"
-import { BottomSheet } from "@/components/ui/bottom-sheet"
-import { Filter } from "lucide-react"
-import { useCart } from "@/contexts/CartContext"
-import { useTelegram } from "@/contexts/TelegramContext"
+import { ArrowLeft, ChevronRight, Package } from "lucide-react"
+
+interface Category {
+  id: string
+  name_uz: string
+  icon_name: string
+  parent_id: string | null
+  sort_order: number
+  product_count?: number
+  subcategories?: Category[]
+}
 
 interface Product {
   id: string
@@ -17,56 +23,31 @@ interface Product {
   price: number
   unit: string
   images: string[]
-  is_featured: boolean
-  is_popular: boolean
-  stock_quantity: number
-  min_order_quantity: number
-  delivery_limit: number
-  delivery_price: number
-  description_uz: string
-  rating?: number
-  review_count?: number
-  category: {
-    name_uz: string
-  }
-}
-
-interface Category {
-  id: string
-  name_uz: string
-  icon_name: string
+  category_id: string
 }
 
 export default function CatalogPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const { addToCart } = useCart()
-  const { webApp } = useTelegram()
 
   const categoryId = searchParams.get("category")
   const searchQuery = searchParams.get("search") || ""
-  const isPopular = searchParams.get("popular") === "true"
 
-  const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(categoryId)
-  const [showFilters, setShowFilters] = useState(false)
+  const [products, setProducts] = useState<Product[]>([])
+  const [currentCategory, setCurrentCategory] = useState<Category | null>(null)
+  const [breadcrumb, setBreadcrumb] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
 
-  // Filter states
-  const [priceFrom, setPriceFrom] = useState("")
-  const [priceTo, setPriceTo] = useState("")
-  const [sortBy, setSortBy] = useState("newest")
-
   useEffect(() => {
-    fetchCategories()
-  }, [])
+    if (categoryId) {
+      fetchCategoryData(categoryId)
+    } else {
+      fetchRootCategories()
+    }
+  }, [categoryId, searchQuery])
 
-  useEffect(() => {
-    fetchProducts()
-  }, [selectedCategory, searchQuery, isPopular, sortBy, priceFrom, priceTo])
-
-  const fetchCategories = async () => {
+  const fetchRootCategories = async () => {
     try {
       const { data, error } = await supabase
         .from("categories")
@@ -76,102 +57,208 @@ export default function CatalogPage() {
         .order("sort_order")
 
       if (error) throw error
-      setCategories(data || [])
+
+      // Get product counts for each category
+      const categoriesWithCounts = await Promise.all(
+        (data || []).map(async (category) => {
+          const count = await getCategoryProductCount(category.id)
+          return { ...category, product_count: count }
+        }),
+      )
+
+      setCategories(categoriesWithCounts)
+      setCurrentCategory(null)
+      setBreadcrumb([])
+      setProducts([])
     } catch (error) {
-      console.error("Kategoriyalarni yuklashda xatolik:", error)
+      console.error("Root kategoriyalarni yuklashda xatolik:", error)
+    } finally {
+      setLoading(false)
     }
   }
 
-  const fetchProducts = async () => {
-    setLoading(true)
+  const fetchCategoryData = async (catId: string) => {
+    try {
+      // Get current category
+      const { data: categoryData, error: categoryError } = await supabase
+        .from("categories")
+        .select("*")
+        .eq("id", catId)
+        .single()
+
+      if (categoryError) throw categoryError
+
+      setCurrentCategory(categoryData)
+
+      // Build breadcrumb
+      const breadcrumbPath = await buildBreadcrumb(categoryData)
+      setBreadcrumb(breadcrumbPath)
+
+      // Get subcategories
+      const { data: subcategories, error: subcategoriesError } = await supabase
+        .from("categories")
+        .select("*")
+        .eq("parent_id", catId)
+        .eq("is_active", true)
+        .order("sort_order")
+
+      if (subcategoriesError) throw subcategoriesError
+
+      // Get product counts for subcategories
+      const subcategoriesWithCounts = await Promise.all(
+        (subcategories || []).map(async (category) => {
+          const count = await getCategoryProductCount(category.id)
+          return { ...category, product_count: count }
+        }),
+      )
+
+      setCategories(subcategoriesWithCounts)
+
+      // Get products in this category (if no subcategories or if search query exists)
+      if (subcategoriesWithCounts.length === 0 || searchQuery) {
+        await fetchCategoryProducts(catId)
+      } else {
+        setProducts([])
+      }
+    } catch (error) {
+      console.error("Kategoriya ma'lumotlarini yuklashda xatolik:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const buildBreadcrumb = async (category: Category): Promise<Category[]> => {
+    const path: Category[] = [category]
+
+    let currentCat = category
+    while (currentCat.parent_id) {
+      const { data: parentData, error } = await supabase
+        .from("categories")
+        .select("*")
+        .eq("id", currentCat.parent_id)
+        .single()
+
+      if (error || !parentData) break
+
+      path.unshift(parentData)
+      currentCat = parentData
+    }
+
+    return path
+  }
+
+  const getCategoryProductCount = async (catId: string): Promise<number> => {
+    try {
+      // Get all subcategory IDs recursively
+      const getAllSubcategoryIds = async (categoryId: string): Promise<string[]> => {
+        const ids = [categoryId]
+
+        const { data: subcats, error } = await supabase
+          .from("categories")
+          .select("id")
+          .eq("parent_id", categoryId)
+          .eq("is_active", true)
+
+        if (error || !subcats) return ids
+
+        for (const subcat of subcats) {
+          const subIds = await getAllSubcategoryIds(subcat.id)
+          ids.push(...subIds)
+        }
+
+        return ids
+      }
+
+      const categoryIds = await getAllSubcategoryIds(catId)
+
+      const { count, error } = await supabase
+        .from("products")
+        .select("*", { count: "exact", head: true })
+        .in("category_id", categoryIds)
+        .eq("is_available", true)
+
+      if (error) throw error
+
+      return count || 0
+    } catch (error) {
+      console.error("Mahsulot sonini olishda xatolik:", error)
+      return 0
+    }
+  }
+
+  const fetchCategoryProducts = async (catId: string) => {
     try {
       let query = supabase
         .from("products")
-        .select(`
-          *,
-          category:categories(name_uz)
-        `)
+        .select("*")
+        .eq("category_id", catId)
         .eq("is_available", true)
-
-      // Category filter
-      if (selectedCategory) {
-        query = query.eq("category_id", selectedCategory)
-      }
-
-      // Popular filter
-      if (isPopular) {
-        query = query.eq("is_popular", true)
-      }
+        .order("created_at", { ascending: false })
+        .limit(20)
 
       // Search filter
       if (searchQuery) {
         query = query.or(`name_uz.ilike.%${searchQuery}%,description_uz.ilike.%${searchQuery}%`)
       }
 
-      // Price filter
-      if (priceFrom) {
-        query = query.gte("price", Number.parseFloat(priceFrom))
-      }
-      if (priceTo) {
-        query = query.lte("price", Number.parseFloat(priceTo))
-      }
-
-      // Sorting
-      switch (sortBy) {
-        case "price_asc":
-          query = query.order("price", { ascending: true })
-          break
-        case "price_desc":
-          query = query.order("price", { ascending: false })
-          break
-        case "popular":
-          query = query.order("view_count", { ascending: false })
-          break
-        case "newest":
-        default:
-          query = query.order("created_at", { ascending: false })
-          break
-      }
-
-      const { data, error } = await query.limit(50)
+      const { data, error } = await query
 
       if (error) throw error
-
-      // Add mock ratings
-      const productsWithRatings = (data || []).map((product) => ({
-        ...product,
-        rating: 4.0 + Math.random() * 1.0,
-        review_count: Math.floor(Math.random() * 100) + 1,
-      }))
-
-      setProducts(productsWithRatings)
+      setProducts(data || [])
     } catch (error) {
       console.error("Mahsulotlarni yuklashda xatolik:", error)
-    } finally {
-      setLoading(false)
+      setProducts([])
     }
   }
 
-  const handleQuickView = (productId: string) => {
+  const handleCategoryClick = (category: Category) => {
+    router.push(`/catalog?category=${category.id}`)
+  }
+
+  const handleProductClick = (productId: string) => {
     router.push(`/product/${productId}`)
   }
 
-  const applyFilters = () => {
-    setShowFilters(false)
-    fetchProducts()
+  const getIconForCategory = (iconName: string) => {
+    const iconMap: { [key: string]: string } = {
+      construction: "🏗️",
+      electrical: "⚡",
+      plumbing: "🚿",
+      paint: "🎨",
+      tools: "🔧",
+      hardware: "🔩",
+      garden: "🌱",
+      safety: "🦺",
+    }
+    return iconMap[iconName] || "📦"
   }
 
-  const clearFilters = () => {
-    setPriceFrom("")
-    setPriceTo("")
-    setSortBy("newest")
-    setSelectedCategory(null)
-    setShowFilters(false)
-
-    router.push("/catalog")
+  const formatPrice = (price: number) => {
+    return new Intl.NumberFormat("uz-UZ").format(price)
   }
 
-  const selectedCategoryName = categories.find((c) => c.id === selectedCategory)?.name_uz
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background pb-20 md:pb-4">
+        <TopBar />
+        <div className="container mx-auto px-4 py-6">
+          <div className="space-y-4">
+            {[...Array(8)].map((_, i) => (
+              <div key={i} className="flex items-center space-x-4 p-4 bg-card rounded-xl animate-pulse">
+                <div className="w-12 h-12 bg-muted rounded-lg"></div>
+                <div className="flex-1">
+                  <div className="h-4 bg-muted rounded mb-2"></div>
+                  <div className="h-3 bg-muted rounded w-1/3"></div>
+                </div>
+                <div className="w-6 h-6 bg-muted rounded"></div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <BottomNavigation />
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-4">
@@ -180,162 +267,129 @@ export default function CatalogPage() {
       {/* Header */}
       <header className="bg-background border-b border-border">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            {currentCategory && (
+              <button
+                onClick={() => {
+                  if (breadcrumb.length > 1) {
+                    const parentCategory = breadcrumb[breadcrumb.length - 2]
+                    router.push(`/catalog?category=${parentCategory.id}`)
+                  } else {
+                    router.push("/catalog")
+                  }
+                }}
+                className="p-2 hover:bg-muted rounded-lg transition-colors"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+            )}
             <div className="flex-1">
-              <h1 className="text-xl font-bold">
-                {selectedCategoryName || (isPopular ? "Mashhur mahsulotlar" : "Katalog")}
-              </h1>
-              <p className="text-sm text-muted-foreground">{products.length} ta mahsulot</p>
+              <h1 className="text-xl font-bold">{currentCategory ? currentCategory.name_uz : "Katalog"}</h1>
+              <p className="text-sm text-muted-foreground">
+                {categories.length > 0 && `${categories.length} ta kategoriya`}
+                {products.length > 0 && ` • ${products.length} ta mahsulot`}
+              </p>
             </div>
-            <button
-              onClick={() => setShowFilters(true)}
-              className="p-3 rounded-xl hover:bg-muted transition-colors shadow-sm border border-border"
-            >
-              <Filter className="w-5 h-5" />
-            </button>
           </div>
+
+          {/* Breadcrumb */}
+          {breadcrumb.length > 0 && (
+            <div className="flex items-center space-x-2 mt-3 text-sm text-muted-foreground">
+              <button onClick={() => router.push("/catalog")} className="hover:text-primary">
+                Katalog
+              </button>
+              {breadcrumb.map((item, index) => (
+                <div key={item.id} className="flex items-center space-x-2">
+                  <ChevronRight className="w-4 h-4" />
+                  <button
+                    onClick={() => router.push(`/catalog?category=${item.id}`)}
+                    className={`hover:text-primary ${
+                      index === breadcrumb.length - 1 ? "text-foreground font-medium" : ""
+                    }`}
+                  >
+                    {item.name_uz}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </header>
 
-      {/* Category Filter */}
-      <div className="bg-background border-b border-border">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex space-x-3 overflow-x-auto pb-2 scrollbar-hide">
-            <button
-              onClick={() => setSelectedCategory(null)}
-              className={`px-4 py-2 rounded-xl whitespace-nowrap text-sm font-medium transition-colors ${
-                !selectedCategory
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "bg-muted text-muted-foreground hover:bg-muted/80"
-              }`}
-            >
-              Barchasi
-            </button>
+      <div className="container mx-auto px-4 py-6">
+        {/* Categories */}
+        {categories.length > 0 && (
+          <div className="space-y-3 mb-8">
+            <h2 className="text-lg font-semibold">{currentCategory ? "Ichki kategoriyalar" : "Kategoriyalar"}</h2>
             {categories.map((category) => (
               <button
                 key={category.id}
-                onClick={() => setSelectedCategory(category.id)}
-                className={`px-4 py-2 rounded-xl whitespace-nowrap text-sm font-medium transition-colors ${
-                  selectedCategory === category.id
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "bg-muted text-muted-foreground hover:bg-muted/80"
-                }`}
+                onClick={() => handleCategoryClick(category)}
+                className="w-full flex items-center space-x-4 p-4 bg-card rounded-xl border border-border hover:border-primary/20 hover:bg-card/80 transition-all group"
               >
-                {category.name_uz}
+                <div className="w-12 h-12 bg-gradient-to-br from-primary/10 to-primary/5 rounded-lg flex items-center justify-center group-hover:from-primary/20 group-hover:to-primary/10 transition-all">
+                  <span className="text-xl">{getIconForCategory(category.icon_name)}</span>
+                </div>
+                <div className="flex-1 text-left">
+                  <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors">
+                    {category.name_uz}
+                  </h3>
+                  <p className="text-sm text-muted-foreground">{category.product_count || 0} ta mahsulot</p>
+                </div>
+                <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
               </button>
             ))}
           </div>
-        </div>
-      </div>
+        )}
 
-      {/* Products Grid */}
-      <div className="container mx-auto px-4 py-6">
-        {loading ? (
-          <div className="product-grid">
-            {[...Array(6)].map((_, i) => (
-              <div key={i} className="bg-card rounded-2xl p-4 animate-pulse border border-border">
-                <div className="aspect-square bg-muted rounded-xl mb-3"></div>
-                <div className="h-4 bg-muted rounded mb-2"></div>
-                <div className="h-6 bg-muted rounded mb-3"></div>
-                <div className="h-9 bg-muted rounded"></div>
-              </div>
-            ))}
+        {/* Products */}
+        {products.length > 0 && (
+          <div>
+            <h2 className="text-lg font-semibold mb-4">Mahsulotlar</h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {products.map((product) => (
+                <button
+                  key={product.id}
+                  onClick={() => handleProductClick(product.id)}
+                  className="bg-card rounded-xl p-4 border border-border hover:border-primary/20 hover:shadow-md transition-all text-left group"
+                >
+                  <div className="aspect-square bg-muted rounded-lg mb-3 overflow-hidden">
+                    {product.images && product.images.length > 0 ? (
+                      <img
+                        src={product.images[0] || "/placeholder.svg"}
+                        alt={product.name_uz}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Package className="w-8 h-8 text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
+                  <h3 className="font-medium text-sm mb-2 line-clamp-2 group-hover:text-primary transition-colors">
+                    {product.name_uz}
+                  </h3>
+                  <p className="text-primary font-semibold">{formatPrice(product.price)} so'm</p>
+                  <p className="text-xs text-muted-foreground">/{product.unit}</p>
+                </button>
+              ))}
+            </div>
           </div>
-        ) : products.length > 0 ? (
-          <div className="product-grid">
-            {products.map((product) => (
-              <ProductCard key={product.id} product={product} onQuickView={handleQuickView} />
-            ))}
-          </div>
-        ) : (
+        )}
+
+        {/* Empty state */}
+        {categories.length === 0 && products.length === 0 && (
           <div className="text-center py-12">
             <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
-              <Filter className="w-8 h-8 text-muted-foreground" />
+              <Package className="w-8 h-8 text-muted-foreground" />
             </div>
-            <h3 className="text-xl font-semibold mb-2">Mahsulot topilmadi</h3>
-            <p className="text-muted-foreground mb-4">Qidiruv so'zini o'zgartiring yoki boshqa kategoriyani tanlang</p>
-            <button
-              onClick={clearFilters}
-              className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-            >
-              Barchasini ko'rsatish
-            </button>
+            <h3 className="text-xl font-semibold mb-2">Hech narsa topilmadi</h3>
+            <p className="text-muted-foreground">Bu kategoriyada hozircha mahsulotlar yo'q</p>
           </div>
         )}
       </div>
 
       <BottomNavigation />
-
-      {/* Filters Bottom Sheet - Full Screen */}
-      <BottomSheet isOpen={showFilters} onClose={() => setShowFilters(false)} title="Filtrlar" height="full">
-        <div className="p-6 h-full flex flex-col">
-          <div className="flex-1 space-y-6">
-            {/* Price Range */}
-            <div>
-              <h3 className="text-lg font-semibold mb-3">Narx oralig'i</h3>
-              <div className="flex space-x-3">
-                <input
-                  type="number"
-                  placeholder="Dan"
-                  value={priceFrom}
-                  onChange={(e) => setPriceFrom(e.target.value)}
-                  className="flex-1 px-3 py-3 bg-muted rounded-xl border-0 focus:ring-2 focus:ring-primary/20"
-                />
-                <input
-                  type="number"
-                  placeholder="Gacha"
-                  value={priceTo}
-                  onChange={(e) => setPriceTo(e.target.value)}
-                  className="flex-1 px-3 py-3 bg-muted rounded-xl border-0 focus:ring-2 focus:ring-primary/20"
-                />
-              </div>
-            </div>
-
-            {/* Sort Options */}
-            <div>
-              <h3 className="text-lg font-semibold mb-3">Saralash</h3>
-              <div className="space-y-2">
-                {[
-                  { value: "newest", label: "Eng yangi" },
-                  { value: "price_asc", label: "Narx: arzondan qimmatga" },
-                  { value: "price_desc", label: "Narx: qimmatdan arzonga" },
-                  { value: "popular", label: "Mashhur" },
-                ].map((option) => (
-                  <label
-                    key={option.value}
-                    className="flex items-center space-x-3 p-3 rounded-xl hover:bg-muted cursor-pointer"
-                  >
-                    <input
-                      type="radio"
-                      name="sort"
-                      value={option.value}
-                      checked={sortBy === option.value}
-                      onChange={(e) => setSortBy(e.target.value)}
-                      className="text-primary"
-                    />
-                    <span>{option.label}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex space-x-3 pt-6 border-t border-border">
-            <button
-              onClick={clearFilters}
-              className="flex-1 px-6 py-3 bg-secondary text-secondary-foreground rounded-xl hover:bg-secondary/80 transition-colors"
-            >
-              Tozalash
-            </button>
-            <button
-              onClick={applyFilters}
-              className="flex-1 px-6 py-3 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 transition-colors"
-            >
-              Qo'llash
-            </button>
-          </div>
-        </div>
-      </BottomSheet>
     </div>
   )
 }

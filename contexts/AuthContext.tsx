@@ -14,18 +14,18 @@ interface UserProfile {
   phone_number?: string
   email?: string
   avatar_url?: string
+  is_verified: boolean
+  role: string
   created_at: string
   updated_at: string
 }
 
 interface AuthContextType {
   user: UserProfile | null
+  profile: UserProfile | null
   loading: boolean
-  loginWithTelegram: (telegramData: any) => Promise<UserProfile>
-  loginWithPhone: (phoneNumber: string) => Promise<UserProfile>
-  loginWithEmail: (email: string) => Promise<UserProfile>
+  signOut: () => void
   checkWebsiteLoginStatus: (token: string) => Promise<UserProfile | null>
-  logout: () => void
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -38,13 +38,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (isReady) {
       if (isTelegramWebApp && tgUser) {
-        // Telegram Web App da avtomatik login
+        // Telegram Web App automatic login
         console.log("Starting Telegram auto login...")
         handleTelegramAutoLogin()
       } else {
-        // Oddiy web da session tekshirish
-        console.log("Checking local session...")
-        checkLocalSession()
+        // Regular web - check for login token or local session
+        console.log("Checking web session...")
+        checkWebSession()
       }
     }
   }, [isReady, isTelegramWebApp, tgUser])
@@ -59,7 +59,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log("Auto login for Telegram user:", tgUser.id)
 
-      // Telegram ID orqali foydalanuvchini qidirish
+      // Find user by Telegram ID
       const { data: existingUser, error: searchError } = await supabase
         .from("users")
         .select("*")
@@ -72,7 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       let userData = existingUser
 
-      // Agar foydalanuvchi topilmasa, yangi yaratish
+      // If user doesn't exist, create new user
       if (!existingUser) {
         console.log("Creating new user for Telegram ID:", tgUser.id)
 
@@ -85,6 +85,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               last_name: tgUser.last_name || "",
               username: tgUser.username || "",
               is_verified: true,
+              role: "customer",
             },
           ])
           .select()
@@ -99,7 +100,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         console.log("Existing user found, updating info...")
 
-        // Mavjud foydalanuvchi ma'lumotlarini yangilash
+        // Update existing user info
         const { data: updatedUser, error: updateError } = await supabase
           .from("users")
           .update({
@@ -120,7 +121,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       setUser(userData)
-      // Local storage ga saqlash
       localStorage.setItem("jamolstroy_user", JSON.stringify(userData))
       console.log("Telegram auto login successful for:", userData.first_name)
     } catch (error) {
@@ -130,9 +130,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const checkLocalSession = async () => {
+  const checkWebSession = async () => {
     try {
-      // Local storage dan session tekshirish
+      // Check local storage first
       const savedUser = localStorage.getItem("jamolstroy_user")
       if (savedUser) {
         const userData = JSON.parse(savedUser)
@@ -140,7 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log("Local session found for:", userData.first_name)
       }
 
-      // URL dan login token tekshirish
+      // Check URL for login token
       const urlParams = new URLSearchParams(window.location.search)
       const loginToken = urlParams.get("login_token")
 
@@ -151,160 +151,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(loginUser)
           localStorage.setItem("jamolstroy_user", JSON.stringify(loginUser))
           console.log("Website login successful for:", loginUser.first_name)
-          // URL dan token ni olib tashlash
+          // Remove token from URL
           window.history.replaceState({}, document.title, window.location.pathname)
         }
       }
     } catch (error) {
-      console.error("Local session check error:", error)
+      console.error("Web session check error:", error)
     } finally {
       setLoading(false)
-    }
-  }
-
-  const loginWithTelegram = async (telegramData: any): Promise<UserProfile> => {
-    try {
-      // Telegram ID orqali foydalanuvchini qidirish
-      const { data: existingUser, error: searchError } = await supabase
-        .from("users")
-        .select("*")
-        .eq("telegram_id", telegramData.telegram_id)
-        .single()
-
-      if (searchError && searchError.code !== "PGRST116") {
-        throw searchError
-      }
-
-      let userData = existingUser
-
-      // Agar foydalanuvchi topilmasa, yangi yaratish
-      if (!existingUser) {
-        const { data: newUser, error: createError } = await supabase
-          .from("users")
-          .insert([
-            {
-              telegram_id: telegramData.telegram_id,
-              first_name: telegramData.first_name,
-              last_name: telegramData.last_name,
-              username: telegramData.username,
-              is_verified: true,
-            },
-          ])
-          .select()
-          .single()
-
-        if (createError) throw createError
-        userData = newUser
-      } else {
-        // Mavjud foydalanuvchi ma'lumotlarini yangilash
-        const { data: updatedUser, error: updateError } = await supabase
-          .from("users")
-          .update({
-            first_name: telegramData.first_name,
-            last_name: telegramData.last_name,
-            username: telegramData.username,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", existingUser.id)
-          .select()
-          .single()
-
-        if (updateError) throw updateError
-        userData = updatedUser
-      }
-
-      setUser(userData)
-      localStorage.setItem("jamolstroy_user", JSON.stringify(userData))
-      return userData
-    } catch (error) {
-      console.error("Telegram login error:", error)
-      throw error
-    }
-  }
-
-  const loginWithPhone = async (phoneNumber: string): Promise<UserProfile> => {
-    try {
-      // Telefon raqam orqali foydalanuvchini qidirish
-      const { data: existingUser, error: searchError } = await supabase
-        .from("users")
-        .select("*")
-        .eq("phone_number", phoneNumber)
-        .single()
-
-      if (searchError && searchError.code !== "PGRST116") {
-        throw searchError
-      }
-
-      let userData = existingUser
-
-      // Agar foydalanuvchi topilmasa, yangi yaratish
-      if (!existingUser) {
-        const { data: newUser, error: createError } = await supabase
-          .from("users")
-          .insert([
-            {
-              phone_number: phoneNumber,
-              first_name: "Foydalanuvchi",
-              last_name: "",
-              is_verified: true,
-            },
-          ])
-          .select()
-          .single()
-
-        if (createError) throw createError
-        userData = newUser
-      }
-
-      setUser(userData)
-      localStorage.setItem("jamolstroy_user", JSON.stringify(userData))
-      return userData
-    } catch (error) {
-      console.error("Phone login error:", error)
-      throw error
-    }
-  }
-
-  const loginWithEmail = async (email: string): Promise<UserProfile> => {
-    try {
-      // Email orqali foydalanuvchini qidirish
-      const { data: existingUser, error: searchError } = await supabase
-        .from("users")
-        .select("*")
-        .eq("email", email)
-        .single()
-
-      if (searchError && searchError.code !== "PGRST116") {
-        throw searchError
-      }
-
-      let userData = existingUser
-
-      // Agar foydalanuvchi topilmasa, yangi yaratish
-      if (!existingUser) {
-        const { data: newUser, error: createError } = await supabase
-          .from("users")
-          .insert([
-            {
-              email: email,
-              first_name: "Foydalanuvchi",
-              last_name: "",
-              is_verified: true,
-            },
-          ])
-          .select()
-          .single()
-
-        if (createError) throw createError
-        userData = newUser
-      }
-
-      setUser(userData)
-      localStorage.setItem("jamolstroy_user", JSON.stringify(userData))
-      return userData
-    } catch (error) {
-      console.error("Email login error:", error)
-      throw error
     }
   }
 
@@ -318,7 +172,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           *,
           user:users(*)
         `)
-        .eq("login_token", token)
+        .eq("temp_token", token)
         .eq("status", "approved")
         .single()
 
@@ -340,19 +194,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const logout = () => {
+  const signOut = () => {
     setUser(null)
     localStorage.removeItem("jamolstroy_user")
   }
 
   const value = {
     user,
+    profile: user, // For backward compatibility
     loading,
-    loginWithTelegram,
-    loginWithPhone,
-    loginWithEmail,
+    signOut,
     checkWebsiteLoginStatus,
-    logout,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

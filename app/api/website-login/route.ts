@@ -1,8 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { supabase } from "@/lib/supabase"
-import { v4 as uuidv4 } from "uuid"
-
-const BOT_TOKEN = "7712295404:AAGiPH07L2kwjWmSSPIIZ5E7nbuZuXn81k4"
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,15 +9,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Client ID required" }, { status: 400 })
     }
 
-    // Generate unique login token
-    const loginToken = uuidv4()
+    // Generate unique temp token
+    const tempToken = generateTempToken()
 
     // Create login session
     const { data: session, error: sessionError } = await supabase
       .from("website_login_sessions")
       .insert([
         {
-          login_token: loginToken,
+          temp_token: tempToken,
           client_id: client_id,
           status: "pending",
           created_at: new Date().toISOString(),
@@ -36,10 +33,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Create Telegram bot deep link
-    const telegramUrl = `https://t.me/jamolstroy_bot?start=login_${loginToken}`
+    const telegramUrl = `https://t.me/jamolstroy_bot?start=${tempToken}_${client_id}`
 
     return NextResponse.json({
-      login_token: loginToken,
+      temp_token: tempToken,
       telegram_url: telegramUrl,
       expires_at: session.expires_at,
     })
@@ -52,9 +49,9 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const loginToken = searchParams.get("token")
+    const tempToken = searchParams.get("token")
 
-    if (!loginToken) {
+    if (!tempToken) {
       return NextResponse.json({ error: "Token required" }, { status: 400 })
     }
 
@@ -65,7 +62,7 @@ export async function GET(request: NextRequest) {
         *,
         user:users(*)
       `)
-      .eq("login_token", loginToken)
+      .eq("temp_token", tempToken)
       .single()
 
     if (sessionError) {
@@ -86,4 +83,13 @@ export async function GET(request: NextRequest) {
     console.error("Login status check error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
+}
+
+function generateTempToken(): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+  let result = ""
+  for (let i = 0; i < 32; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return result
 }

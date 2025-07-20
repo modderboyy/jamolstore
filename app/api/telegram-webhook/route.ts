@@ -33,95 +33,29 @@ export async function POST(request: NextRequest) {
         console.error("Database error:", dbError)
       }
 
-      // Handle commands
-      // =================== LOGIC TUZATILDI ===================
+      // Handle /start command with parameters
+      if (text && text.startsWith("/start")) {
+        const startParam = text.replace("/start", "").trim()
 
-      // 1. Eng avvalo "deep link" orqali loginni tekshiramiz
-      if (text && text.startsWith("/start login_")) {
-        // Website login request
-        const loginToken = text.replace("/start login_", "") // Tokenni to'g'ri ajratib olamiz
-        console.log("Login request received for token:", loginToken)
+        if (startParam && startParam.includes("_")) {
+          // Parse login parameters: {temp_token}_{client_id}
+          const parts = startParam.split("_")
+          if (parts.length >= 2) {
+            const tempToken = parts[0]
+            const clientId = parts.slice(1).join("_") // In case client_id has underscores
 
-        // Check if login session exists
-        const { data: session, error: sessionError } = await supabase
-          .from("website_login_sessions")
-          .select("*")
-          .eq("login_token", loginToken)
-          .eq("status", "pending")
-          .single()
-
-        if (sessionError || !session) {
-          console.log("Login session not found or expired")
-          await sendTelegramMessage(chatId, "❌ Login sessiyasi topilmadi yoki muddati tugagan.")
-          return NextResponse.json({ ok: true })
+            console.log("Login request:", { tempToken, clientId, userId })
+            await handleWebsiteLogin(chatId, userId, message.from, tempToken, clientId)
+            return NextResponse.json({ ok: true })
+          }
         }
 
-        // Send permission request
-        const permissionMessage = `🔐 Website login so'rovi
-
-JamolStroy websaytiga kirishga ruxsat berasizmi?
-
-👤 Sizning ma'lumotlaringiz:
-• Ism: ${message.from.first_name} ${message.from.last_name || ""}
-• Username: @${message.from.username || "yo'q"}
-
-⚠️ Faqat o'zingiz so'ragan bo'lsangina ruxsat bering!`
-
-        const keyboard = {
-          inline_keyboard: [
-            [
-              {
-                text: "✅ Ruxsat berish",
-                callback_data: `approve_${loginToken}`,
-              },
-              {
-                text: "❌ Rad etish",
-                callback_data: `reject_${loginToken}`,
-              },
-            ],
-          ],
-        }
-
-        await sendTelegramMessage(chatId, permissionMessage, keyboard)
-      
-      // 2. Keyin oddiy /start buyrug'ini tekshiramiz
-      } else if (text === "/start") {
-        const welcomeMessage = `🏗️ JamolStroy ilovasiga xush kelibsiz!
-
-Bizning katalogimizda qurilish materiallari va jihozlarining keng assortimenti mavjud.
-
-📱 Web ilovani ochish uchun quyidagi tugmani bosing:`
-
-        const keyboard = {
-          inline_keyboard: [
-            [
-              {
-                text: "🛒 Ilovani ochish",
-                web_app: {
-                  url: process.env.NEXT_PUBLIC_APP_URL || "https://jamolstroy.vercel.app",
-                },
-              },
-            ],
-            [
-              {
-                text: "📞 Aloqa",
-                callback_data: "contact",
-              },
-              {
-                text: "ℹ️ Ma'lumot",
-                callback_data: "info",
-              },
-            ],
-          ],
-        }
-
-        await sendTelegramMessage(chatId, welcomeMessage, keyboard)
-
-      // 3. Qolgan buyruqlar avvalgidek qoladi
+        // Regular start command
+        await handleRegularStart(chatId, userId, message.from)
       } else if (text === "/help") {
         const helpMessage = `📋 Yordam:
 
-/start - Botni qayta ishgabb tushirish
+/start - Botni qayta ishga tushirish
 /help - Yordam ma'lumotlari
 /catalog - Mahsulotlar katalogi
 /contact - Aloqa ma'lumotlari
@@ -197,7 +131,7 @@ Yoki web ilovani ochish uchun quyidagi tugmani bosing:`
       }
     }
 
-    // Callback query handling (BU QISM O'ZGARTIRILMADI)
+    // Callback query handling
     if (body.callback_query) {
       const callbackQuery = body.callback_query
       const chatId = callbackQuery.message.chat.id
@@ -247,75 +181,19 @@ Yakshanba: Dam olish kuni`
         await sendTelegramMessage(chatId, infoMessage, keyboard)
       } else if (data.startsWith("approve_")) {
         // Approve login
-        const loginToken = data.replace("approve_", "")
-        console.log("Login approved for token:", loginToken)
-
-        try {
-          // Get user data
-          const userData = {
-            telegram_id: userId.toString(),
-            first_name: callbackQuery.from.first_name || "",
-            last_name: callbackQuery.from.last_name || "",
-            username: callbackQuery.from.username || "",
-            is_verified: true,
-          }
-
-          // Create or update user
-          const { data: user, error: userError } = await supabase
-            .from("users")
-            .upsert(userData, {
-              onConflict: "telegram_id",
-            })
-            .select()
-            .single()
-
-          if (userError) throw userError
-
-          // Update login session
-          const { error: updateError } = await supabase
-            .from("website_login_sessions")
-            .update({
-              status: "approved",
-              user_id: user.id,
-              approved_at: new Date().toISOString(),
-            })
-            .eq("login_token", loginToken)
-
-          if (updateError) throw updateError
-
-          await sendTelegramMessage(chatId, "✅ Login muvaffaqiyatli tasdiqlandi! Websaytga qaytishingiz mumkin.")
-
-          // Edit the original message
-          await editTelegramMessage(chatId, callbackQuery.message.message_id, "✅ Login tasdiqlandi")
-        } catch (error) {
-          console.error("Login approval error:", error)
-          await sendTelegramMessage(chatId, "❌ Login tasdiqlanishida xatolik yuz berdi.")
-        }
+        const tempToken = data.replace("approve_", "")
+        await handleLoginApproval(chatId, userId, callbackQuery.from, tempToken, true, callbackQuery.message.message_id)
       } else if (data.startsWith("reject_")) {
         // Reject login
-        const loginToken = data.replace("reject_", "")
-        console.log("Login rejected for token:", loginToken)
-
-        try {
-          // Update login session
-          const { error: updateError } = await supabase
-            .from("website_login_sessions")
-            .update({
-              status: "rejected",
-              approved_at: new Date().toISOString(),
-            })
-            .eq("login_token", loginToken)
-
-          if (updateError) throw updateError
-
-          await sendTelegramMessage(chatId, "❌ Login rad etildi.")
-
-          // Edit the original message
-          await editTelegramMessage(chatId, callbackQuery.message.message_id, "❌ Login rad etildi")
-        } catch (error) {
-          console.error("Login rejection error:", error)
-          await sendTelegramMessage(chatId, "❌ Login rad etishda xatolik yuz berdi.")
-        }
+        const tempToken = data.replace("reject_", "")
+        await handleLoginApproval(
+          chatId,
+          userId,
+          callbackQuery.from,
+          tempToken,
+          false,
+          callbackQuery.message.message_id,
+        )
       }
 
       // Answer callback query
@@ -334,5 +212,278 @@ Yakshanba: Dam olish kuni`
   } catch (error) {
     console.error("Webhook error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
+}
+
+async function handleRegularStart(chatId: number, userId: number, user: any) {
+  const welcomeMessage = `🏗️ JamolStroy ilovasiga xush kelibsiz!
+
+Bizning katalogimizda qurilish materiallari va jihozlarining keng assortimenti mavjud.
+
+📱 Web ilovani ochish uchun quyidagi tugmani bosing:`
+
+  const keyboard = {
+    inline_keyboard: [
+      [
+        {
+          text: "🛒 Ilovani ochish",
+          web_app: {
+            url: process.env.NEXT_PUBLIC_APP_URL || "https://jamolstroy.vercel.app",
+          },
+        },
+      ],
+      [
+        {
+          text: "📞 Aloqa",
+          callback_data: "contact",
+        },
+        {
+          text: "ℹ️ Ma'lumot",
+          callback_data: "info",
+        },
+      ],
+    ],
+  }
+
+  await sendTelegramMessage(chatId, welcomeMessage, keyboard)
+}
+
+async function handleWebsiteLogin(chatId: number, userId: number, user: any, tempToken: string, clientId: string) {
+  try {
+    console.log("Processing website login:", { tempToken, clientId, userId })
+
+    // Find login session by temp_token and client_id
+    const { data: session, error: sessionError } = await supabase
+      .from("website_login_sessions")
+      .select("*")
+      .eq("temp_token", tempToken)
+      .eq("client_id", clientId)
+      .eq("status", "pending")
+      .single()
+
+    if (sessionError || !session) {
+      console.log("Login session not found:", sessionError)
+      await sendTelegramMessage(chatId, "❌ Login sessiyasi topilmadi yoki muddati tugagan.")
+      return
+    }
+
+    // Check if session expired
+    if (new Date(session.expires_at) < new Date()) {
+      console.log("Login session expired")
+      await sendTelegramMessage(chatId, "❌ Login sessiyasi muddati tugagan. Qaytadan urinib ko'ring.")
+      return
+    }
+
+    // Check if user exists in our system
+    const { data: existingUser, error: userError } = await supabase
+      .from("users")
+      .select("*")
+      .eq("telegram_id", userId.toString())
+      .single()
+
+    if (userError && userError.code !== "PGRST116") {
+      console.error("User lookup error:", userError)
+      throw userError
+    }
+
+    let userData = existingUser
+
+    // If user doesn't exist, create new user
+    if (!existingUser) {
+      console.log("Creating new user for Telegram ID:", userId)
+      const { data: newUser, error: createError } = await supabase
+        .from("users")
+        .insert([
+          {
+            telegram_id: userId.toString(),
+            first_name: user.first_name || "",
+            last_name: user.last_name || "",
+            username: user.username || "",
+            is_verified: true,
+          },
+        ])
+        .select()
+        .single()
+
+      if (createError) {
+        console.error("User creation error:", createError)
+        throw createError
+      }
+      userData = newUser
+    }
+
+    // Show permission request with user info
+    const permissionMessage = `🔐 **Website Login So'rovi**
+
+**JamolStroy** websaytiga kirishga ruxsat berasizmi?
+
+👤 **Sizning ma'lumotlaringiz:**
+• Ism: ${userData.first_name} ${userData.last_name}
+• Username: ${userData.username ? "@" + userData.username : "Yo'q"}
+• Telegram ID: ${userId}
+
+🌐 **Client ID:** ${clientId}
+🔑 **Session:** ${tempToken.substring(0, 8)}...
+
+⚠️ **Diqqat:** Faqat o'zingiz so'ragan bo'lsangina ruxsat bering!`
+
+    const keyboard = {
+      inline_keyboard: [
+        [
+          {
+            text: "✅ Ruxsat berish",
+            callback_data: `approve_${tempToken}`,
+          },
+          {
+            text: "❌ Rad etish",
+            callback_data: `reject_${tempToken}`,
+          },
+        ],
+      ],
+    }
+
+    await sendTelegramMessage(chatId, permissionMessage, keyboard)
+  } catch (error) {
+    console.error("Website login error:", error)
+    await sendTelegramMessage(chatId, "❌ Xatolik yuz berdi. Qaytadan urinib ko'ring.")
+  }
+}
+
+async function handleLoginApproval(
+  chatId: number,
+  userId: number,
+  user: any,
+  tempToken: string,
+  approved: boolean,
+  messageId: number,
+) {
+  try {
+    console.log("Login approval:", { tempToken, approved, userId })
+
+    // Get user data
+    const { data: userData, error: userError } = await supabase
+      .from("users")
+      .select("*")
+      .eq("telegram_id", userId.toString())
+      .single()
+
+    if (userError) {
+      console.error("User lookup error:", userError)
+      await editTelegramMessage(chatId, messageId, "❌ Foydalanuvchi topilmadi.")
+      return
+    }
+
+    if (approved) {
+      // Update login session with approval
+      const { error: updateError } = await supabase
+        .from("website_login_sessions")
+        .update({
+          status: "approved",
+          user_id: userData.id,
+          telegram_id: userId.toString(),
+          approved_at: new Date().toISOString(),
+        })
+        .eq("temp_token", tempToken)
+
+      if (updateError) {
+        console.error("Session update error:", updateError)
+        await editTelegramMessage(chatId, messageId, "❌ Xatolik yuz berdi.")
+        return
+      }
+
+      await editTelegramMessage(
+        chatId,
+        messageId,
+        `✅ **Login Tasdiqlandi!**
+
+🎉 Siz JamolStroy websaytiga muvaffaqiyatli kirdingiz.
+
+🌐 Websaytga qaytib, xaridlaringizni davom ettiring!
+
+👤 **Kirgan foydalanuvchi:** ${userData.first_name} ${userData.last_name}`,
+      )
+    } else {
+      // Update login session with rejection
+      const { error: updateError } = await supabase
+        .from("website_login_sessions")
+        .update({
+          status: "rejected",
+          approved_at: new Date().toISOString(),
+        })
+        .eq("temp_token", tempToken)
+
+      if (updateError) {
+        console.error("Session update error:", updateError)
+        await editTelegramMessage(chatId, messageId, "❌ Xatolik yuz berdi.")
+        return
+      }
+
+      await editTelegramMessage(
+        chatId,
+        messageId,
+        `❌ **Login Rad Etildi**
+
+🔒 Xavfsizlik uchun login so'rovi bekor qilindi.
+
+Agar bu siz bo'lsangiz, qaytadan urinib ko'ring.`,
+      )
+    }
+  } catch (error) {
+    console.error("Login approval error:", error)
+    await editTelegramMessage(chatId, messageId, "❌ Xatolik yuz berdi.")
+  }
+}
+
+async function sendTelegramMessage(chatId: number, text: string, replyMarkup?: any) {
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: text,
+        parse_mode: "Markdown",
+        reply_markup: replyMarkup,
+      }),
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      console.error("Telegram API error:", errorData)
+    }
+
+    return response.json()
+  } catch (error) {
+    console.error("Send message error:", error)
+    throw error
+  }
+}
+
+async function editTelegramMessage(chatId: number, messageId: number, text: string) {
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageText`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        chat_id: chatId,
+        message_id: messageId,
+        text: text,
+        parse_mode: "Markdown",
+      }),
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      console.error("Telegram edit message error:", errorData)
+    }
+
+    return response.json()
+  } catch (error) {
+    console.error("Edit message error:", error)
+    throw error
   }
 }

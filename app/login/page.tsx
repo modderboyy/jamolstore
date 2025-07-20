@@ -1,29 +1,21 @@
 "use client"
 
-import type React from "react"
-
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
 import { useTelegram } from "@/contexts/TelegramContext"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Label } from "@/components/ui/label"
-import { Loader2, MessageCircle, Phone, Mail, ExternalLink } from "lucide-react"
-import { v4 as uuidv4 } from "uuid"
+import { Loader2, MessageCircle, ExternalLink, CheckCircle, XCircle, Clock } from "lucide-react"
 
 export default function LoginPage() {
   const router = useRouter()
-  const { user, loading, loginWithPhone, loginWithEmail } = useAuth()
+  const { user, loading } = useAuth()
   const { isTelegramWebApp } = useTelegram()
 
-  const [phoneNumber, setPhoneNumber] = useState("")
-  const [email, setEmail] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const [telegramLoginUrl, setTelegramLoginUrl] = useState("")
-  const [loginToken, setLoginToken] = useState("")
+  const [telegramUrl, setTelegramUrl] = useState("")
+  const [tempToken, setTempToken] = useState("")
   const [loginStatus, setLoginStatus] = useState<"pending" | "approved" | "rejected" | null>(null)
 
   useEffect(() => {
@@ -35,17 +27,19 @@ export default function LoginPage() {
   useEffect(() => {
     let interval: NodeJS.Timeout
 
-    if (loginToken && loginStatus === "pending") {
+    if (tempToken && loginStatus === "pending") {
       // Poll for login status
       interval = setInterval(async () => {
         try {
-          const response = await fetch(`/api/website-login?token=${loginToken}`)
+          const response = await fetch(`/api/website-login?token=${tempToken}`)
           const data = await response.json()
 
           if (data.status === "approved" && data.user) {
             setLoginStatus("approved")
             localStorage.setItem("jamolstroy_user", JSON.stringify(data.user))
-            window.location.href = "/"
+            setTimeout(() => {
+              window.location.href = "/"
+            }, 1000)
           } else if (data.status === "rejected") {
             setLoginStatus("rejected")
           }
@@ -58,12 +52,12 @@ export default function LoginPage() {
     return () => {
       if (interval) clearInterval(interval)
     }
-  }, [loginToken, loginStatus])
+  }, [tempToken, loginStatus])
 
   const handleTelegramLogin = async () => {
     try {
       setIsLoading(true)
-      const clientId = uuidv4()
+      const clientId = "jamolstroy_web_" + Date.now()
 
       const response = await fetch("/api/website-login", {
         method: "POST",
@@ -76,8 +70,8 @@ export default function LoginPage() {
       const data = await response.json()
 
       if (response.ok) {
-        setLoginToken(data.login_token)
-        setTelegramLoginUrl(data.telegram_url)
+        setTempToken(data.temp_token)
+        setTelegramUrl(data.telegram_url)
         setLoginStatus("pending")
 
         // Open Telegram
@@ -93,36 +87,10 @@ export default function LoginPage() {
     }
   }
 
-  const handlePhoneLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!phoneNumber.trim()) return
-
-    try {
-      setIsLoading(true)
-      await loginWithPhone(phoneNumber)
-      router.push("/")
-    } catch (error) {
-      console.error("Phone login error:", error)
-      alert("Telefon raqam orqali kirish xatoligi")
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleEmailLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!email.trim()) return
-
-    try {
-      setIsLoading(true)
-      await loginWithEmail(email)
-      router.push("/")
-    } catch (error) {
-      console.error("Email login error:", error)
-      alert("Email orqali kirish xatoligi")
-    } finally {
-      setIsLoading(false)
-    }
+  const resetLogin = () => {
+    setLoginStatus(null)
+    setTempToken("")
+    setTelegramUrl("")
   }
 
   if (loading) {
@@ -141,6 +109,7 @@ export default function LoginPage() {
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
+            <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-4" />
             <CardTitle>Telegram Web App</CardTitle>
             <CardDescription>Siz allaqachon Telegram orqali kirgansiz</CardDescription>
           </CardHeader>
@@ -159,143 +128,64 @@ export default function LoginPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl">JamolStroy</CardTitle>
-          <CardDescription>Hisobingizga kiring</CardDescription>
+          <CardDescription>Telegram orqali hisobingizga kiring</CardDescription>
         </CardHeader>
         <CardContent>
           {loginStatus === "pending" ? (
             <div className="text-center space-y-4">
               <div className="animate-pulse">
-                <MessageCircle className="h-12 w-12 mx-auto mb-4 text-primary" />
+                <Clock className="h-12 w-12 mx-auto mb-4 text-blue-500" />
               </div>
               <h3 className="text-lg font-semibold">Telegram orqali tasdiqlang</h3>
               <p className="text-muted-foreground text-sm">Telegram botga o'ting va login so'rovini tasdiqlang</p>
-              {telegramLoginUrl && (
-                <Button variant="outline" onClick={() => window.open(telegramLoginUrl, "_blank")} className="w-full">
+              {telegramUrl && (
+                <Button variant="outline" onClick={() => window.open(telegramUrl, "_blank")} className="w-full">
                   <ExternalLink className="h-4 w-4 mr-2" />
                   Telegram botni ochish
                 </Button>
               )}
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setLoginStatus(null)
-                  setLoginToken("")
-                  setTelegramLoginUrl("")
-                }}
-                className="w-full"
-              >
+              <Button variant="ghost" onClick={resetLogin} className="w-full">
                 Bekor qilish
               </Button>
             </div>
+          ) : loginStatus === "approved" ? (
+            <div className="text-center space-y-4">
+              <CheckCircle className="h-12 w-12 mx-auto text-green-500" />
+              <h3 className="text-lg font-semibold text-green-600">Login muvaffaqiyatli!</h3>
+              <p className="text-muted-foreground text-sm">Bosh sahifaga yo'naltirilmoqda...</p>
+            </div>
           ) : loginStatus === "rejected" ? (
             <div className="text-center space-y-4">
-              <div className="text-red-500">
-                <MessageCircle className="h-12 w-12 mx-auto mb-4" />
-              </div>
-              <h3 className="text-lg font-semibold">Login rad etildi</h3>
+              <XCircle className="h-12 w-12 mx-auto text-red-500" />
+              <h3 className="text-lg font-semibold text-red-600">Login rad etildi</h3>
               <p className="text-muted-foreground text-sm">Telegram orqali login rad etildi</p>
-              <Button
-                onClick={() => {
-                  setLoginStatus(null)
-                  setLoginToken("")
-                  setTelegramLoginUrl("")
-                }}
-                className="w-full"
-              >
+              <Button onClick={resetLogin} className="w-full">
                 Qayta urinish
               </Button>
             </div>
           ) : (
-            <Tabs defaultValue="telegram" className="w-full">
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="telegram">Telegram</TabsTrigger>
-                <TabsTrigger value="phone">Telefon</TabsTrigger>
-                <TabsTrigger value="email">Email</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="telegram" className="space-y-4">
-                <div className="text-center space-y-4">
-                  <MessageCircle className="h-12 w-12 mx-auto text-primary" />
-                  <div>
-                    <h3 className="text-lg font-semibold">Telegram orqali kirish</h3>
-                    <p className="text-muted-foreground text-sm">
-                      Xavfsiz va tez kirish uchun Telegram akkauntingizdan foydalaning
-                    </p>
-                  </div>
-                  <Button onClick={handleTelegramLogin} disabled={isLoading} className="w-full">
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Yuklanmoqda...
-                      </>
-                    ) : (
-                      <>
-                        <MessageCircle className="h-4 w-4 mr-2" />
-                        Telegram orqali kirish
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="phone" className="space-y-4">
-                <form onSubmit={handlePhoneLogin} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="phone">Telefon raqam</Label>
-                    <Input
-                      id="phone"
-                      type="tel"
-                      placeholder="+998 90 123 45 67"
-                      value={phoneNumber}
-                      onChange={(e) => setPhoneNumber(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <Button type="submit" disabled={isLoading} className="w-full">
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Yuklanmoqda...
-                      </>
-                    ) : (
-                      <>
-                        <Phone className="h-4 w-4 mr-2" />
-                        Telefon orqali kirish
-                      </>
-                    )}
-                  </Button>
-                </form>
-              </TabsContent>
-
-              <TabsContent value="email" className="space-y-4">
-                <form onSubmit={handleEmailLogin} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Email manzil</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      placeholder="example@gmail.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <Button type="submit" disabled={isLoading} className="w-full">
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Yuklanmoqda...
-                      </>
-                    ) : (
-                      <>
-                        <Mail className="h-4 w-4 mr-2" />
-                        Email orqali kirish
-                      </>
-                    )}
-                  </Button>
-                </form>
-              </TabsContent>
-            </Tabs>
+            <div className="text-center space-y-4">
+              <MessageCircle className="h-12 w-12 mx-auto text-primary" />
+              <div>
+                <h3 className="text-lg font-semibold">Telegram orqali kirish</h3>
+                <p className="text-muted-foreground text-sm">
+                  Xavfsiz va tez kirish uchun Telegram akkauntingizdan foydalaning
+                </p>
+              </div>
+              <Button onClick={handleTelegramLogin} disabled={isLoading} className="w-full">
+                {isLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Yuklanmoqda...
+                  </>
+                ) : (
+                  <>
+                    <MessageCircle className="h-4 w-4 mr-2" />
+                    Telegram orqali kirish
+                  </>
+                )}
+              </Button>
+            </div>
           )}
         </CardContent>
       </Card>
