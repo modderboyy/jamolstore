@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
 import { useTelegram } from "@/contexts/TelegramContext"
 import { ArrowLeft, MessageCircle, AlertCircle, CheckCircle, Clock } from "lucide-react"
+import { supabase } from "@/lib/supabase"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -49,6 +50,10 @@ export default function LoginPage() {
     }
   }
 
+  const generateLoginToken = () => {
+    return `${Date.now()}_${Math.random().toString(36).substring(2)}_${Math.random().toString(36).substring(2)}`
+  }
+
   const handleTelegramLogin = async () => {
     setLoading(true)
     setError("")
@@ -56,14 +61,31 @@ export default function LoginPage() {
 
     try {
       // Unique login token yaratish
-      const token = `${Date.now()}_${Math.random().toString(36).substring(2)}`
+      const token = generateLoginToken()
       const timestamp = Date.now()
       const clientId = "jamolstroy_web"
 
       setLoginToken(token)
 
+      console.log("Creating website login session with token:", token)
+
+      // Website login session yaratish
+      const { error: sessionError } = await supabase.from("website_login_sessions").insert({
+        login_token: token,
+        client_id: clientId,
+        status: "pending",
+        expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(), // 5 daqiqa
+      })
+
+      if (sessionError) {
+        console.error("Session creation error:", sessionError)
+        throw new Error("Session yaratishda xatolik")
+      }
+
       // Telegram botga yo'naltirish
       const botUrl = `https://t.me/jamolstroy_bot?start=website_login_${token}_${timestamp}_${clientId}`
+      console.log("Opening bot URL:", botUrl)
+
       window.open(botUrl, "_blank", "width=400,height=600")
 
       // Login holatini kuzatish
@@ -83,17 +105,20 @@ export default function LoginPage() {
     const checkStatus = async () => {
       try {
         attempts++
+        console.log(`Checking login status, attempt ${attempts}/${maxAttempts}`)
 
         const loginUser = await checkWebsiteLoginStatus(token)
 
         if (loginUser) {
           // Muvaffaqiyatli login
+          console.log("Login successful!")
           setSuccess("Muvaffaqiyatli kirildi!")
           setWaitingForLogin(false)
           setLoading(false)
           setTimeout(() => router.push("/"), 1000)
         } else if (attempts >= maxAttempts) {
           // Vaqt tugadi
+          console.log("Login timeout")
           setError("Login vaqti tugadi. Qaytadan urinib ko'ring.")
           setWaitingForLogin(false)
           setLoading(false)

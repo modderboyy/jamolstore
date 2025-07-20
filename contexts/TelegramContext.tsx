@@ -119,11 +119,14 @@ export function TelegramProvider({ children }: { children: React.ReactNode }) {
     const initTelegram = () => {
       if (typeof window !== "undefined" && window.Telegram?.WebApp) {
         const tg = window.Telegram.WebApp
+        console.log("Telegram WebApp found:", tg)
+
         setWebApp(tg)
         setIsTelegramWebApp(true)
 
         // Get user data from Telegram
         if (tg.initDataUnsafe?.user) {
+          console.log("Telegram user found:", tg.initDataUnsafe.user)
           setUser(tg.initDataUnsafe.user)
         }
 
@@ -138,12 +141,13 @@ export function TelegramProvider({ children }: { children: React.ReactNode }) {
           document.documentElement.classList.remove("dark")
         }
 
-        console.log("Telegram WebApp initialized:", {
-          user: tg.initDataUnsafe?.user,
-          platform: tg.platform,
-          version: tg.version,
-        })
+        // Hide buttons
+        tg.MainButton.hide()
+        tg.BackButton.hide()
+
+        console.log("Telegram WebApp initialized successfully")
       } else {
+        console.log("Not in Telegram WebApp environment")
         setIsTelegramWebApp(false)
       }
       setIsReady(true)
@@ -166,6 +170,7 @@ export function TelegramProvider({ children }: { children: React.ReactNode }) {
         setTimeout(() => {
           clearInterval(checkTelegram)
           if (!window.Telegram?.WebApp) {
+            console.log("Telegram WebApp not found after timeout")
             setIsReady(true)
             setIsTelegramWebApp(false)
           }

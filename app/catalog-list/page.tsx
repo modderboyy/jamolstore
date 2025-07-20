@@ -17,15 +17,6 @@ interface Category {
   subcategories?: Category[]
 }
 
-interface Product {
-  id: string
-  name_uz: string
-  price: number
-  unit: string
-  images: string[]
-  category_id: string
-}
-
 export default function CatalogListPage() {
   const router = useRouter()
   const [categories, setCategories] = useState<Category[]>([])

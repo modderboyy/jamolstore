@@ -39,9 +39,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (isReady) {
       if (isTelegramWebApp && tgUser) {
         // Telegram Web App da avtomatik login
+        console.log("Starting Telegram auto login...")
         handleTelegramAutoLogin()
       } else {
         // Oddiy web da session tekshirish
+        console.log("Checking local session...")
         checkLocalSession()
       }
     }
@@ -49,12 +51,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const handleTelegramAutoLogin = async () => {
     if (!tgUser) {
+      console.log("No Telegram user found")
       setLoading(false)
       return
     }
 
     try {
-      console.log("Telegram auto login starting for user:", tgUser)
+      console.log("Auto login for Telegram user:", tgUser.id)
 
       // Telegram ID orqali foydalanuvchini qidirish
       const { data: existingUser, error: searchError } = await supabase
@@ -87,11 +90,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .select()
           .single()
 
-        if (createError) throw createError
+        if (createError) {
+          console.error("Error creating user:", createError)
+          throw createError
+        }
         userData = newUser
-        console.log("New user created:", userData)
+        console.log("New user created successfully:", userData.id)
       } else {
-        console.log("Existing user found:", existingUser)
+        console.log("Existing user found, updating info...")
 
         // Mavjud foydalanuvchi ma'lumotlarini yangilash
         const { data: updatedUser, error: updateError } = await supabase
@@ -106,14 +112,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .select()
           .single()
 
-        if (updateError) throw updateError
+        if (updateError) {
+          console.error("Error updating user:", updateError)
+          throw updateError
+        }
         userData = updatedUser
       }
 
       setUser(userData)
       // Local storage ga saqlash
       localStorage.setItem("jamolstroy_user", JSON.stringify(userData))
-      console.log("Telegram auto login successful")
+      console.log("Telegram auto login successful for:", userData.first_name)
     } catch (error) {
       console.error("Telegram auto login error:", error)
     } finally {
@@ -123,10 +132,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const checkLocalSession = async () => {
     try {
+      // Local storage dan session tekshirish
       const savedUser = localStorage.getItem("jamolstroy_user")
       if (savedUser) {
         const userData = JSON.parse(savedUser)
         setUser(userData)
+        console.log("Local session found for:", userData.first_name)
       }
 
       // URL dan login token tekshirish
@@ -134,10 +145,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const loginToken = urlParams.get("login_token")
 
       if (loginToken) {
+        console.log("Login token found in URL:", loginToken)
         const loginUser = await checkWebsiteLoginStatus(loginToken)
         if (loginUser) {
           setUser(loginUser)
           localStorage.setItem("jamolstroy_user", JSON.stringify(loginUser))
+          console.log("Website login successful for:", loginUser.first_name)
           // URL dan token ni olib tashlash
           window.history.replaceState({}, document.title, window.location.pathname)
         }
@@ -297,6 +310,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const checkWebsiteLoginStatus = async (token: string): Promise<UserProfile | null> => {
     try {
+      console.log("Checking website login status for token:", token)
+
       const { data, error } = await supabase
         .from("website_login_sessions")
         .select(`
@@ -307,10 +322,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq("status", "approved")
         .single()
 
-      if (error || !data?.user) {
+      if (error) {
+        console.log("Website login session not found or not approved:", error.message)
         return null
       }
 
+      if (!data?.user) {
+        console.log("No user data in login session")
+        return null
+      }
+
+      console.log("Website login session found for user:", data.user.first_name)
       return data.user as UserProfile
     } catch (error) {
       console.error("Website login status check error:", error)

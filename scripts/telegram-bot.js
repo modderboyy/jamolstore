@@ -32,7 +32,11 @@ bot.onText(/\/start(.*)/, async (msg, match) => {
       const timestamp = parts[4]
       const clientId = parts[5] || "jamolstroy_web"
 
+      console.log(`Website login request: token=${loginToken}, timestamp=${timestamp}, clientId=${clientId}`)
       await handleWebsiteLogin(chatId, userId, msg.from, loginToken, timestamp, clientId)
+    } else {
+      console.log("Invalid website login payload format")
+      await bot.sendMessage(chatId, "Noto'g'ri login so'rovi. Iltimos, qaytadan urinib ko'ring.")
     }
   } else {
     await handleStart(chatId, userId, msg.from)
@@ -84,16 +88,22 @@ async function handleStart(chatId, userId, user) {
 // Website login handler
 async function handleWebsiteLogin(chatId, userId, user, loginToken, timestamp, clientId) {
   try {
-    console.log(`Website login request: ${userId}, token: ${loginToken}`)
+    console.log(`Processing website login: userId=${userId}, token=${loginToken}`)
 
     // Foydalanuvchi mavjudligini tekshirish
-    const { data: existingUser } = await supabase
+    const { data: existingUser, error: userError } = await supabase
       .from("users")
       .select("*")
       .eq("telegram_id", userId.toString())
       .single()
 
+    if (userError && userError.code !== "PGRST116") {
+      console.error("User lookup error:", userError)
+      throw userError
+    }
+
     if (!existingUser) {
+      console.log("User not found, asking for registration")
       await bot.sendMessage(chatId, `Siz hali ro'yxatdan o'tmagansiz. Iltimos, avval ro'yxatdan o'ting:`, {
         reply_markup: {
           keyboard: [[{ text: "📱 Telefon raqamni yuborish", request_contact: true }]],
@@ -104,20 +114,43 @@ async function handleWebsiteLogin(chatId, userId, user, loginToken, timestamp, c
       return
     }
 
-    // Website login session yaratish
-    const { error: sessionError } = await supabase.from("website_login_sessions").insert({
-      login_token: loginToken,
-      telegram_id: userId.toString(),
-      user_id: existingUser.id,
-      client_id: clientId,
-      status: "pending",
-      expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(), // 5 daqiqa
-    })
+    // Login session mavjudligini tekshirish
+    const { data: existingSession, error: sessionCheckError } = await supabase
+      .from("website_login_sessions")
+      .select("*")
+      .eq("login_token", loginToken)
+      .single()
 
-    if (sessionError) {
-      console.error("Session creation error:", sessionError)
-      await bot.sendMessage(chatId, "Xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.")
+    if (sessionCheckError && sessionCheckError.code !== "PGRST116") {
+      console.error("Session check error:", sessionCheckError)
+      throw sessionCheckError
+    }
+
+    if (!existingSession) {
+      console.log("Login session not found")
+      await bot.sendMessage(chatId, "Login sessiyasi topilmadi. Iltimos, qaytadan urinib ko'ring.")
       return
+    }
+
+    // Session muddatini tekshirish
+    if (new Date(existingSession.expires_at) < new Date()) {
+      console.log("Login session expired")
+      await bot.sendMessage(chatId, "Login sessiyasi muddati tugagan. Iltimos, qaytadan urinib ko'ring.")
+      return
+    }
+
+    // Session ni yangilash - telegram_id va user_id qo'shish
+    const { error: updateError } = await supabase
+      .from("website_login_sessions")
+      .update({
+        telegram_id: userId.toString(),
+        user_id: existingUser.id,
+      })
+      .eq("login_token", loginToken)
+
+    if (updateError) {
+      console.error("Session update error:", updateError)
+      throw updateError
     }
 
     // OAuth-style permission request
@@ -144,6 +177,8 @@ async function handleWebsiteLogin(chatId, userId, user, loginToken, timestamp, c
         },
       },
     )
+
+    console.log("Website login permission request sent successfully")
   } catch (error) {
     console.error("Website login error:", error)
     await bot.sendMessage(chatId, "Xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.")
@@ -155,6 +190,8 @@ bot.on("callback_query", async (callbackQuery) => {
   const chatId = callbackQuery.message.chat.id
   const userId = callbackQuery.from.id
   const data = callbackQuery.data
+
+  console.log(`Callback query received: ${data} from user ${userId}`)
 
   if (data.startsWith("approve_website_")) {
     const loginToken = data.replace("approve_website_", "")
@@ -171,6 +208,8 @@ bot.on("callback_query", async (callbackQuery) => {
 // Website login approval handler
 async function handleWebsiteLoginApproval(chatId, userId, loginToken, approved, callbackQuery) {
   try {
+    console.log(`Website login approval: token=${loginToken}, approved=${approved}, userId=${userId}`)
+
     const { data: existingUser } = await supabase
       .from("users")
       .select("*")
@@ -205,6 +244,7 @@ async function handleWebsiteLoginApproval(chatId, userId, loginToken, approved, 
     }
 
     if (approved) {
+      console.log("Website login approved successfully")
       await bot.editMessageText(
         `✅ **Muvaffaqiyatli tasdiqlandi!**\n\n` +
           `🎉 Siz JamolStroy websaytiga muvaffaqiyatli kirdingiz.\n\n` +
@@ -219,6 +259,7 @@ async function handleWebsiteLoginApproval(chatId, userId, loginToken, approved, 
         },
       )
     } else {
+      console.log("Website login rejected")
       await bot.editMessageText(
         `❌ **Login rad etildi**\n\n` +
           `🔒 Xavfsizlik uchun login so'rovi bekor qilindi.\n\n` +
