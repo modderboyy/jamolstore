@@ -33,6 +33,8 @@ export function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
   }
 
   const handleQuantityChange = async (productId: string, newQuantity: number) => {
+    if (newQuantity < 1) return
+
     setIsUpdating(productId)
     try {
       await updateQuantity(productId, newQuantity)
@@ -71,8 +73,8 @@ export function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
 
       {/* Sidebar */}
       <div
-        className={`fixed top-0 left-0 h-full w-80 max-w-[85vw] bg-background shadow-2xl transform transition-transform duration-300 z-50 flex flex-col ${
-          isOpen ? "translate-x-0" : "-translate-x-full"
+        className={`fixed top-0 right-0 h-full w-80 max-w-[85vw] bg-background shadow-2xl transform transition-transform duration-300 z-50 flex flex-col ${
+          isOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
         {/* Header */}

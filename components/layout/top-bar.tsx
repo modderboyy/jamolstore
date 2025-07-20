@@ -1,159 +1,233 @@
 "use client"
 
 import type React from "react"
-import { useAuth } from "@/contexts/AuthContext"
-import { useTelegram } from "@/contexts/TelegramContext"
-import { useRouter, usePathname } from "next/navigation"
-import { Search, User, Phone, MapPin, Clock, Home, Grid3X3, Users, ShoppingBag } from "lucide-react"
-import { useState } from "react"
-import Link from "next/link"
 
-interface NavItem {
+import { useState, useEffect } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { Search, ShoppingCart, MapPin, Phone, Clock } from "lucide-react"
+import { useCart } from "@/contexts/CartContext"
+import { CartSidebar } from "./cart-sidebar"
+import { supabase } from "@/lib/supabase"
+import Image from "next/image"
+
+interface CompanyInfo {
   id: string
-  label: string
-  icon: React.ComponentType<{ className?: string }>
-  path: string
+  name: string
+  version: string
+  logo_url: string
+  phone_number: string
+  location: string
+  time: string
+  social_telegram: string
+  social_x: string
+  social_youtube: string
+  social_instagram: string
 }
 
-const navigationItems: NavItem[] = [
-  { id: "home", label: "Bosh sahifa", icon: Home, path: "/" },
-  { id: "catalog", label: "Katalog", icon: Grid3X3, path: "/catalog" },
-  { id: "workers", label: "Ishchilar", icon: Users, path: "/workers" },
-  { id: "orders", label: "Buyurtmalar", icon: ShoppingBag, path: "/orders" },
-  { id: "profile", label: "Profil", icon: User, path: "/profile" },
-]
-
 export function TopBar() {
-  const { user } = useAuth()
-  const { isTelegramWebApp } = useTelegram()
   const router = useRouter()
-  const pathname = usePathname()
-  const [searchQuery, setSearchQuery] = useState("")
+  const searchParams = useSearchParams()
+  const { totalItems } = useCart()
+  const [searchQuery, setSearchQuery] = useState(searchParams.get("search") || "")
+  const [showCartSidebar, setShowCartSidebar] = useState(false)
+  const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(null)
+
+  useEffect(() => {
+    fetchCompanyInfo()
+  }, [])
+
+  const fetchCompanyInfo = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("company")
+        .select("*")
+        .eq("version", "1.0.0")
+        .eq("is_active", true)
+        .single()
+
+      if (error) throw error
+      setCompanyInfo(data)
+    } catch (error) {
+      console.error("Company ma'lumotlarini yuklashda xatolik:", error)
+    }
+  }
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
     if (searchQuery.trim()) {
-      if (pathname.includes("/workers")) {
-        router.push(`/workers?search=${encodeURIComponent(searchQuery.trim())}`)
-      } else {
-        // Search all products, not just catalog
-        router.push(`/?search=${encodeURIComponent(searchQuery.trim())}`)
-      }
+      router.push(`/?search=${encodeURIComponent(searchQuery.trim())}`)
+    } else {
+      router.push("/")
     }
   }
 
-  const getSearchPlaceholder = () => {
-    if (pathname.includes("/workers")) {
-      return "Kasb yoki ishchi qidirish..."
-    }
-    return "Mahsulot qidirish..."
+  const handleCartClick = () => {
+    setShowCartSidebar(true)
   }
 
   return (
     <>
-      <div className="bg-background border-b border-border sticky top-0 z-40 safe-area-top">
-        {/* Company Info Bar - Only on Desktop */}
-        <div className="hidden md:block bg-muted/30 border-b border-border/50">
-          <div className="container mx-auto px-4 py-2">
-            <div className="flex items-center justify-center space-x-8 text-sm text-muted-foreground">
-              <div className="flex items-center space-x-2">
-                <Phone className="w-4 h-4" />
-                <span>+998 90 123 45 67</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <MapPin className="w-4 h-4" />
-                <span>Toshkent sh., Chilonzor t.</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Clock className="w-4 h-4" />
-                <span>Dush-Shan: 9:00-18:00</span>
+      <div className="bg-background border-b border-border sticky top-0 z-30">
+        {/* Company Info Bar - Desktop Only */}
+        {companyInfo && (
+          <div className="hidden md:block bg-muted/30 border-b border-border">
+            <div className="container mx-auto px-4 py-2">
+              <div className="flex items-center justify-between text-sm text-muted-foreground">
+                <div className="flex items-center space-x-6">
+                  <div className="flex items-center space-x-2">
+                    <Phone className="w-4 h-4" />
+                    <span>{companyInfo.phone_number}</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <MapPin className="w-4 h-4" />
+                    <span>{companyInfo.location}</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Clock className="w-4 h-4" />
+                    <span>{companyInfo.time}</span>
+                  </div>
+                </div>
+                <div className="flex items-center space-x-4">
+                  <span>Ijtimoiy tarmoqlar:</span>
+                  <div className="flex items-center space-x-2">
+                    {companyInfo.social_telegram && (
+                      <a
+                        href={`https://t.me/${companyInfo.social_telegram.replace("@", "")}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:text-primary transition-colors"
+                      >
+                        Telegram
+                      </a>
+                    )}
+                    {companyInfo.social_instagram && (
+                      <a
+                        href={`https://instagram.com/${companyInfo.social_instagram.replace("@", "")}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:text-primary transition-colors"
+                      >
+                        Instagram
+                      </a>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* Main Top Bar */}
+        {/* Main Header */}
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-center space-x-4 max-w-4xl mx-auto">
+          <div className="flex items-center justify-between">
             {/* Logo */}
             <button
               onClick={() => router.push("/")}
-              className="flex items-center space-x-2 flex-shrink-0 hover:opacity-80 transition-opacity"
+              className="flex items-center space-x-3 hover:opacity-80 transition-opacity"
             >
-              <div className="w-8 h-8 bg-gradient-to-br from-primary to-primary/80 rounded-lg flex items-center justify-center shadow-sm">
-                <span className="text-primary-foreground font-bold text-sm">J</span>
+              {companyInfo?.logo_url && (
+                <Image
+                  src={companyInfo.logo_url || "/placeholder.svg"}
+                  alt={companyInfo.name}
+                  width={40}
+                  height={40}
+                  className="w-10 h-10 rounded-lg"
+                />
+              )}
+              <div className="text-left">
+                <h1 className="text-xl font-bold text-foreground">{companyInfo?.name || "JamolStroy"}</h1>
+                <p className="text-xs text-muted-foreground hidden sm:block">Qurilish materiallari</p>
               </div>
-              <span className="font-bold text-foreground hidden sm:block">JamolStroy</span>
             </button>
 
-            {/* Search - Centered and Responsive */}
-            <form onSubmit={handleSearch} className="flex-1 max-w-2xl">
+            {/* Search Bar - Desktop */}
+            <div className="hidden md:flex flex-1 max-w-2xl mx-8">
+              <form onSubmit={handleSearch} className="w-full">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                  <input
+                    type="text"
+                    placeholder="Mahsulotlarni qidiring..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 bg-muted rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+                  />
+                </div>
+              </form>
+            </div>
+
+            {/* Cart Button */}
+            <button
+              onClick={handleCartClick}
+              className="relative p-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors shadow-clean ios-button"
+            >
+              <ShoppingCart className="w-5 h-5" />
+              {totalItems > 0 && (
+                <span className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center">
+                  {totalItems > 99 ? "99+" : totalItems}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* Search Bar - Mobile */}
+          <div className="md:hidden mt-4">
+            <form onSubmit={handleSearch}>
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                 <input
                   type="text"
+                  placeholder="Mahsulotlarni qidiring..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder={getSearchPlaceholder()}
-                  className="w-full pl-10 pr-4 py-3 bg-muted/50 rounded-xl border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all text-sm placeholder:text-muted-foreground/70 shadow-sm"
+                  className="w-full pl-10 pr-4 py-3 bg-muted rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
                 />
               </div>
             </form>
-
-            {/* User Actions - Only show if not Telegram Web App */}
-            {!isTelegramWebApp && (
-              <div className="flex items-center space-x-2 flex-shrink-0">
-                {user ? (
-                  <button
-                    onClick={() => router.push("/profile")}
-                    className="flex items-center space-x-2 px-3 py-2 bg-muted/50 rounded-xl shadow-sm hover:bg-muted/70 transition-colors"
-                  >
-                    <div className="w-6 h-6 bg-gradient-to-br from-primary to-primary/80 rounded-full flex items-center justify-center">
-                      <span className="text-primary-foreground text-xs font-medium">{user.first_name.charAt(0)}</span>
-                    </div>
-                    <span className="text-sm font-medium text-foreground hidden sm:block">{user.first_name}</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => router.push("/login")}
-                    className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-primary to-primary/90 text-primary-foreground rounded-xl hover:shadow-md transition-all shadow-sm"
-                  >
-                    <User className="w-4 h-4" />
-                    <span className="text-sm font-medium">Kirish</span>
-                  </button>
-                )}
-              </div>
-            )}
           </div>
         </div>
 
-        {/* Desktop Navigation - Right under main top bar */}
-        <nav className="hidden md:block border-t border-border">
+        {/* Desktop Navigation Tabs */}
+        <div className="hidden md:block border-t border-border">
           <div className="container mx-auto px-4">
-            <div className="flex items-center justify-center space-x-8 max-w-4xl mx-auto">
-              {navigationItems.map((item) => {
-                const isActive = pathname === item.path
-                const Icon = item.icon
-
-                return (
-                  <Link
-                    key={item.id}
-                    href={item.path}
-                    className={`flex items-center space-x-2 px-6 py-4 border-b-2 transition-colors ${
-                      isActive
-                        ? "text-primary border-primary"
-                        : "text-muted-foreground border-transparent hover:text-foreground hover:border-muted"
-                    }`}
-                  >
-                    <Icon className="w-5 h-5" />
-                    <span className="font-medium">{item.label}</span>
-                  </Link>
-                )
-              })}
-            </div>
+            <nav className="flex space-x-8">
+              <button
+                onClick={() => router.push("/")}
+                className="px-4 py-3 text-sm font-medium text-foreground hover:text-primary border-b-2 border-transparent hover:border-primary transition-all"
+              >
+                Bosh sahifa
+              </button>
+              <button
+                onClick={() => router.push("/catalog")}
+                className="px-4 py-3 text-sm font-medium text-foreground hover:text-primary border-b-2 border-transparent hover:border-primary transition-all"
+              >
+                Katalog
+              </button>
+              <button
+                onClick={() => router.push("/workers")}
+                className="px-4 py-3 text-sm font-medium text-foreground hover:text-primary border-b-2 border-transparent hover:border-primary transition-all"
+              >
+                Ishchilar
+              </button>
+              <button
+                onClick={() => router.push("/orders")}
+                className="px-4 py-3 text-sm font-medium text-foreground hover:text-primary border-b-2 border-transparent hover:border-primary transition-all"
+              >
+                Buyurtmalar
+              </button>
+              <button
+                onClick={() => router.push("/profile")}
+                className="px-4 py-3 text-sm font-medium text-foreground hover:text-primary border-b-2 border-transparent hover:border-primary transition-all"
+              >
+                Profil
+              </button>
+            </nav>
           </div>
-        </nav>
+        </div>
       </div>
+
+      {/* Cart Sidebar */}
+      <CartSidebar isOpen={showCartSidebar} onClose={() => setShowCartSidebar(false)} />
     </>
   )
 }

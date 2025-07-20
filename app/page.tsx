@@ -361,17 +361,6 @@ export default function HomePage() {
       <AdBanner />
 
       <div className="container mx-auto px-4">
-        {user && !searchQuery && (
-          <div className="py-6">
-            <div className="bg-muted rounded-lg p-6 border border-border">
-              <h2 className="text-xl font-bold mb-2 text-foreground">
-                Salom, {user.first_name} {user.last_name}! 👋
-              </h2>
-              <p className="text-muted-foreground">JamolStroy ilovasiga xush kelibsiz</p>
-            </div>
-          </div>
-        )}
-
         {searchQuery && (
           <div className="py-6">
             <h2 className="text-2xl font-bold text-foreground mb-2">"{searchQuery}" bo'yicha qidiruv natijalari</h2>
