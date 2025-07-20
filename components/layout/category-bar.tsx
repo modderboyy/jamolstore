@@ -8,8 +8,10 @@ import { ChevronRight } from "lucide-react"
 interface Category {
   id: string
   name_uz: string
+  name_ru: string
   icon_name: string
   sort_order: number
+  is_active: boolean
 }
 
 export function CategoryBar() {
@@ -26,10 +28,10 @@ export function CategoryBar() {
       const { data, error } = await supabase
         .from("categories")
         .select("*")
-        .is("parent_id", null)
         .eq("is_active", true)
-        .order("sort_order")
-        .limit(7)
+        .is("parent_id", null)
+        .order("sort_order", { ascending: true })
+        .limit(8)
 
       if (error) throw error
       setCategories(data || [])
@@ -44,44 +46,13 @@ export function CategoryBar() {
     router.push(`/catalog?category=${categoryId}`)
   }
 
-  const getIconForCategory = (iconName: string) => {
-    const iconMap: { [key: string]: string } = {
-      construction: "🏗️",
-      electrical: "⚡",
-      plumbing: "🚿",
-      paint: "🎨",
-      tools: "🔧",
-      hardware: "🔩",
-      garden: "🌱",
-      safety: "🦺",
-    }
-    return iconMap[iconName] || "📦"
-  }
-
   if (loading) {
     return (
       <div className="bg-background border-b border-border">
-        <div className="container mx-auto px-4 py-3">
-          {/* Mobile - Single row */}
-          <div className="md:hidden flex space-x-2 overflow-x-auto pb-1 scrollbar-hide">
-            {[...Array(6)].map((_, i) => (
-              <div key={i} className="flex-shrink-0 animate-pulse">
-                <div className="w-12 h-12 bg-muted rounded-xl mb-1"></div>
-                <div className="w-8 h-2 bg-muted rounded mx-auto"></div>
-              </div>
-            ))}
-          </div>
-
-          {/* Desktop - Grid */}
-          <div className="hidden md:grid md:grid-cols-4 gap-4">
-            {[...Array(8)].map((_, i) => (
-              <div key={i} className="flex items-center space-x-3 animate-pulse">
-                <div className="w-12 h-12 bg-muted rounded-xl flex-shrink-0"></div>
-                <div className="flex-1">
-                  <div className="h-3 bg-muted rounded w-full mb-1"></div>
-                  <div className="h-2 bg-muted rounded w-2/3"></div>
-                </div>
-              </div>
+        <div className="container mx-auto px-4 py-4">
+          <div className="flex space-x-4 overflow-x-auto scrollbar-hide">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div key={index} className="flex-shrink-0 w-32 h-20 bg-muted rounded-lg animate-pulse" />
             ))}
           </div>
         </div>
@@ -90,86 +61,61 @@ export function CategoryBar() {
   }
 
   return (
-    <div className="bg-background border-b border-border">
-      <div className="container mx-auto px-4 py-3">
-        {/* Mobile - Single row horizontal scroll */}
-        <div className="md:hidden flex space-x-2 overflow-x-auto pb-1 scrollbar-hide">
-          {categories.map((category, index) => (
+    <div className="bg-gradient-to-r from-background via-muted/5 to-background border-b border-border">
+      <div className="container mx-auto px-4 py-4">
+        {/* Mobile - Single Row */}
+        <div className="md:hidden">
+          <div className="flex space-x-3 overflow-x-auto scrollbar-hide pb-2">
+            {categories.map((category) => (
+              <button
+                key={category.id}
+                onClick={() => handleCategoryClick(category.id)}
+                className="flex-shrink-0 bg-gradient-to-br from-card to-card/80 rounded-lg p-3 border border-border hover:border-primary/50 hover:shadow-md transition-all duration-200 min-w-[120px] group"
+              >
+                <div className="text-center">
+                  <div className="w-8 h-8 bg-gradient-to-br from-primary/20 to-primary/10 rounded-lg flex items-center justify-center mx-auto mb-2 group-hover:scale-110 transition-transform duration-200">
+                    <span className="text-primary text-sm">📦</span>
+                  </div>
+                  <span className="text-xs font-medium text-foreground line-clamp-2 leading-tight">
+                    {category.name_uz}
+                  </span>
+                </div>
+              </button>
+            ))}
             <button
-              key={category.id}
-              onClick={() => handleCategoryClick(category.id)}
-              className="flex-shrink-0 group transition-all duration-300 hover:scale-105 category-item"
-              style={{
-                animationDelay: `${index * 0.1}s`,
-              }}
+              onClick={() => router.push("/catalog")}
+              className="flex-shrink-0 bg-gradient-to-br from-primary/10 to-primary/5 rounded-lg p-3 border border-primary/20 hover:border-primary/50 hover:shadow-md transition-all duration-200 min-w-[120px] group"
             >
-              <div className="w-12 h-12 bg-gradient-to-br from-primary/10 to-primary/5 rounded-xl flex items-center justify-center mb-1 group-hover:from-primary/20 group-hover:to-primary/10 transition-all duration-300 shadow-sm group-hover:shadow-md border border-primary/10">
-                <span className="text-lg group-hover:scale-110 transition-transform duration-300">
-                  {getIconForCategory(category.icon_name)}
-                </span>
+              <div className="text-center">
+                <div className="w-8 h-8 bg-gradient-to-br from-primary/30 to-primary/20 rounded-lg flex items-center justify-center mx-auto mb-2 group-hover:scale-110 transition-transform duration-200">
+                  <ChevronRight className="w-4 h-4 text-primary" />
+                </div>
+                <span className="text-xs font-medium text-primary">Barchasi</span>
               </div>
-              <p className="text-xs font-medium text-center text-foreground group-hover:text-primary transition-colors duration-300 leading-tight max-w-[48px] truncate">
-                {category.name_uz}
-              </p>
             </button>
-          ))}
-
-          <button
-            onClick={() => router.push("/catalog-list")}
-            className="flex-shrink-0 group transition-all duration-300 hover:scale-105 category-item"
-            style={{
-              animationDelay: `${categories.length * 0.1}s`,
-            }}
-          >
-            <div className="w-12 h-12 bg-gradient-to-br from-muted to-muted/50 rounded-xl flex items-center justify-center mb-1 group-hover:from-primary/10 group-hover:to-primary/5 transition-all duration-300 shadow-sm group-hover:shadow-md border border-border group-hover:border-primary/20">
-              <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors duration-300" />
-            </div>
-            <p className="text-xs font-medium text-center text-muted-foreground group-hover:text-primary transition-colors duration-300 leading-tight max-w-[48px] truncate">
-              Barchasi
-            </p>
-          </button>
+          </div>
         </div>
 
-        {/* Desktop - Grid layout */}
-        <div className="hidden md:grid md:grid-cols-4 gap-4">
-          {categories.map((category, index) => (
-            <button
-              key={category.id}
-              onClick={() => handleCategoryClick(category.id)}
-              className="flex items-center space-x-3 p-3 bg-muted/30 rounded-xl hover:bg-muted/50 transition-all duration-300 hover:scale-105 group"
-              style={{
-                animationDelay: `${index * 0.1}s`,
-              }}
-            >
-              <div className="w-12 h-12 bg-gradient-to-br from-primary/10 to-primary/5 rounded-xl flex items-center justify-center group-hover:from-primary/20 group-hover:to-primary/10 transition-all duration-300 shadow-sm group-hover:shadow-md border border-primary/10 flex-shrink-0">
-                <span className="text-xl group-hover:scale-110 transition-transform duration-300">
-                  {getIconForCategory(category.icon_name)}
-                </span>
-              </div>
-              <div className="flex-1 text-left">
-                <p className="text-sm font-medium text-foreground group-hover:text-primary transition-colors duration-300 leading-tight">
-                  {category.name_uz}
-                </p>
-              </div>
-            </button>
-          ))}
-
-          <button
-            onClick={() => router.push("/catalog-list")}
-            className="flex items-center space-x-3 p-3 bg-muted/30 rounded-xl hover:bg-muted/50 transition-all duration-300 hover:scale-105 group"
-            style={{
-              animationDelay: `${categories.length * 0.1}s`,
-            }}
-          >
-            <div className="w-12 h-12 bg-gradient-to-br from-muted to-muted/50 rounded-xl flex items-center justify-center group-hover:from-primary/10 group-hover:to-primary/5 transition-all duration-300 shadow-sm group-hover:shadow-md border border-border group-hover:border-primary/20 flex-shrink-0">
-              <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors duration-300" />
-            </div>
-            <div className="flex-1 text-left">
-              <p className="text-sm font-medium text-muted-foreground group-hover:text-primary transition-colors duration-300 leading-tight">
-                Barchasi
-              </p>
-            </div>
-          </button>
+        {/* Desktop - 4x2 Grid */}
+        <div className="hidden md:block">
+          <div className="grid grid-cols-4 gap-4">
+            {categories.slice(0, 8).map((category) => (
+              <button
+                key={category.id}
+                onClick={() => handleCategoryClick(category.id)}
+                className="bg-gradient-to-br from-card to-card/80 rounded-lg p-4 border border-border hover:border-primary/50 hover:shadow-lg transition-all duration-200 group"
+              >
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-gradient-to-br from-primary/20 to-primary/10 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                    <span className="text-primary">📦</span>
+                  </div>
+                  <span className="font-medium text-foreground group-hover:text-primary transition-colors duration-200">
+                    {category.name_uz}
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </div>

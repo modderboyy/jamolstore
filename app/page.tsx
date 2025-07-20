@@ -22,12 +22,17 @@ interface Product {
   description_uz: string
   price: number
   unit: string
+  product_type: "sale" | "rental"
+  rental_time_unit?: "hour" | "day" | "week" | "month"
+  rental_price_per_unit?: number
+  rental_deposit?: number
   images: string[]
   is_featured: boolean
   is_popular: boolean
   delivery_limit: number
   delivery_price: number
   stock_quantity: number
+  available_quantity: number
   min_order_quantity: number
   view_count: number
   rating?: number
@@ -101,6 +106,40 @@ export default function HomePage() {
     return () => clearInterval(interval)
   }, [])
 
+  const calculateAvailableQuantity = async (productId: string, stockQuantity: number) => {
+    try {
+      // Calculate sold quantity from successful orders
+      const { data: soldData, error: soldError } = await supabase
+        .from("order_items")
+        .select(`
+          quantity,
+          orders!inner(status)
+        `)
+        .eq("product_id", productId)
+        .eq("orders.status", "delivered")
+
+      if (soldError) throw soldError
+
+      const soldQuantity = (soldData || []).reduce((sum, item) => sum + item.quantity, 0)
+
+      // Calculate rented quantity from active rentals
+      const { data: rentedData, error: rentedError } = await supabase
+        .from("rental_orders")
+        .select("quantity")
+        .eq("product_id", productId)
+        .in("status", ["confirmed", "active"])
+
+      if (rentedError) throw rentedError
+
+      const rentedQuantity = (rentedData || []).reduce((sum, item) => sum + item.quantity, 0)
+
+      return Math.max(0, stockQuantity - soldQuantity - rentedQuantity)
+    } catch (error) {
+      console.error("Available quantity calculation error:", error)
+      return stockQuantity
+    }
+  }
+
   const searchAllProducts = async (query: string) => {
     setLoading(true)
     try {
@@ -117,13 +156,19 @@ export default function HomePage() {
 
       if (error) throw error
 
-      const productsWithRatings = (data || []).map((product) => ({
-        ...product,
-        rating: 4.0 + Math.random() * 1.0,
-        review_count: Math.floor(Math.random() * 100) + 1,
-      }))
+      const productsWithAvailability = await Promise.all(
+        (data || []).map(async (product) => {
+          const availableQuantity = await calculateAvailableQuantity(product.id, product.stock_quantity)
+          return {
+            ...product,
+            available_quantity: availableQuantity,
+            rating: 4.0 + Math.random() * 1.0,
+            review_count: Math.floor(Math.random() * 100) + 1,
+          }
+        }),
+      )
 
-      setAllProducts(productsWithRatings)
+      setAllProducts(productsWithAvailability)
       setPopularProducts([])
       setHasMore(false)
     } catch (error) {
@@ -148,13 +193,19 @@ export default function HomePage() {
 
       if (error) throw error
 
-      const productsWithRatings = (data || []).map((product) => ({
-        ...product,
-        rating: 4.2 + Math.random() * 0.8,
-        review_count: Math.floor(Math.random() * 50) + 5,
-      }))
+      const productsWithAvailability = await Promise.all(
+        (data || []).map(async (product) => {
+          const availableQuantity = await calculateAvailableQuantity(product.id, product.stock_quantity)
+          return {
+            ...product,
+            available_quantity: availableQuantity,
+            rating: 4.2 + Math.random() * 0.8,
+            review_count: Math.floor(Math.random() * 50) + 5,
+          }
+        }),
+      )
 
-      setPopularProducts(productsWithRatings)
+      setPopularProducts(productsWithAvailability)
     } catch (error) {
       console.error("Mashhur mahsulotlarni yuklashda xatolik:", error)
     }
@@ -174,16 +225,22 @@ export default function HomePage() {
 
       if (error) throw error
 
-      const productsWithRatings = (data || []).map((product) => ({
-        ...product,
-        rating: 4.0 + Math.random() * 1.0,
-        review_count: Math.floor(Math.random() * 100) + 1,
-      }))
+      const productsWithAvailability = await Promise.all(
+        (data || []).map(async (product) => {
+          const availableQuantity = await calculateAvailableQuantity(product.id, product.stock_quantity)
+          return {
+            ...product,
+            available_quantity: availableQuantity,
+            rating: 4.0 + Math.random() * 1.0,
+            review_count: Math.floor(Math.random() * 100) + 1,
+          }
+        }),
+      )
 
       if (offset === 0) {
-        setAllProducts(productsWithRatings)
+        setAllProducts(productsWithAvailability)
       } else {
-        setAllProducts((prev) => [...prev, ...productsWithRatings])
+        setAllProducts((prev) => [...prev, ...productsWithAvailability])
       }
 
       setHasMore((data || []).length === 30)
@@ -197,31 +254,28 @@ export default function HomePage() {
 
   const fetchProductReviews = async (productId: string) => {
     try {
-      const mockReviews: Review[] = [
-        {
-          id: "1",
-          rating: 5,
-          comment: "Juda sifatli mahsulot, tavsiya qilaman!",
-          reviewer_name: "Aziz Karimov",
-          created_at: new Date(Date.now() - 86400000).toISOString(),
-        },
-        {
-          id: "2",
-          rating: 4,
-          comment: "Yaxshi sifat, tez yetkazib berishdi.",
-          reviewer_name: "Malika Tosheva",
-          created_at: new Date(Date.now() - 172800000).toISOString(),
-        },
-        {
-          id: "3",
-          rating: 5,
-          comment: "Narxi ham mos, sifati ham yaxshi.",
-          reviewer_name: "Bobur Aliyev",
-          created_at: new Date(Date.now() - 259200000).toISOString(),
-        },
-      ]
+      // Fetch real reviews from completed orders
+      const { data, error } = await supabase
+        .from("product_reviews")
+        .select(`
+          *,
+          customer:users(first_name, last_name)
+        `)
+        .eq("product_id", productId)
+        .order("created_at", { ascending: false })
+        .limit(10)
 
-      setProductReviews(mockReviews)
+      if (error) throw error
+
+      const realReviews = (data || []).map((review) => ({
+        id: review.id,
+        rating: review.rating,
+        comment: review.comment || "Yaxshi mahsulot!",
+        reviewer_name: `${review.customer?.first_name || "Mijoz"} ${review.customer?.last_name || ""}`.trim(),
+        created_at: review.created_at,
+      }))
+
+      setProductReviews(realReviews)
     } catch (error) {
       console.error("Sharhlarni yuklashda xatolik:", error)
       setProductReviews([])
@@ -235,8 +289,6 @@ export default function HomePage() {
   }
 
   const handleQuickView = async (productId: string) => {
-    console.log("Quick view clicked for product:", productId)
-
     const product = [...popularProducts, ...allProducts].find((p) => p.id === productId)
     if (product) {
       setSelectedProduct(product)
@@ -529,9 +581,11 @@ export default function HomePage() {
 
                   <div className="grid grid-cols-2 gap-4 mb-6">
                     <div className="bg-muted rounded-lg p-4 text-center">
-                      <div className="text-sm text-muted-foreground mb-1">Omborda</div>
-                      <div className="font-semibold text-foreground">
-                        {selectedProduct.stock_quantity} {selectedProduct.unit}
+                      <div className="text-sm text-muted-foreground mb-1">Mavjud</div>
+                      <div
+                        className={`font-semibold ${selectedProduct.available_quantity > 0 ? "text-green-600" : "text-red-600"}`}
+                      >
+                        {selectedProduct.available_quantity} {selectedProduct.unit}
                       </div>
                     </div>
                     <div className="bg-muted rounded-lg p-4 text-center">
@@ -570,8 +624,8 @@ export default function HomePage() {
                           {quantity}
                         </span>
                         <button
-                          onClick={() => setQuantity(Math.min(selectedProduct.stock_quantity, quantity + 1))}
-                          disabled={quantity >= selectedProduct.stock_quantity}
+                          onClick={() => setQuantity(Math.min(selectedProduct.available_quantity, quantity + 1))}
+                          disabled={quantity >= selectedProduct.available_quantity}
                           className="w-10 h-10 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-colors disabled:opacity-50"
                         >
                           <Plus className="w-4 h-4 text-muted-foreground" />
@@ -589,7 +643,7 @@ export default function HomePage() {
 
                   <button
                     onClick={handleAddToCartFromSheet}
-                    disabled={isAddingToCart}
+                    disabled={isAddingToCart || selectedProduct.available_quantity === 0}
                     className="w-full bg-primary text-primary-foreground rounded-lg py-4 flex items-center justify-center space-x-3 hover:bg-primary/90 transition-all font-semibold disabled:opacity-50 shadow-clean ios-button mb-6"
                   >
                     {isAddingToCart ? (
@@ -597,7 +651,13 @@ export default function HomePage() {
                     ) : (
                       <ShoppingCart className="w-5 h-5" />
                     )}
-                    <span>{isAddingToCart ? "Qo'shilmoqda..." : "Savatga qo'shish"}</span>
+                    <span>
+                      {selectedProduct.available_quantity === 0
+                        ? "Tugagan"
+                        : isAddingToCart
+                          ? "Qo'shilmoqda..."
+                          : "Savatga qo'shish"}
+                    </span>
                   </button>
                 </div>
               </div>

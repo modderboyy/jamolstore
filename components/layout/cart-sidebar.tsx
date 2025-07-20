@@ -14,7 +14,7 @@ interface CartSidebarProps {
 export function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
   const router = useRouter()
   const { items, totalItems, totalPrice, deliveryFee, grandTotal, updateQuantity, removeFromCart } = useCart()
-  const [isUpdating, setIsUpdating] = useState<string | null>(null)
+  const [updatingItems, setUpdatingItems] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     if (isOpen) {
@@ -32,27 +32,35 @@ export function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
     return new Intl.NumberFormat("uz-UZ").format(price)
   }
 
-  const handleQuantityChange = async (productId: string, newQuantity: number) => {
+  const handleQuantityChange = async (itemId: string, newQuantity: number) => {
     if (newQuantity < 1) return
 
-    setIsUpdating(productId)
+    setUpdatingItems((prev) => new Set(prev).add(itemId))
     try {
-      await updateQuantity(productId, newQuantity)
+      await updateQuantity(itemId, newQuantity)
     } catch (error) {
       console.error("Miqdorni yangilashda xatolik:", error)
     } finally {
-      setIsUpdating(null)
+      setUpdatingItems((prev) => {
+        const newSet = new Set(prev)
+        newSet.delete(itemId)
+        return newSet
+      })
     }
   }
 
-  const handleRemoveItem = async (productId: string) => {
-    setIsUpdating(productId)
+  const handleRemoveItem = async (itemId: string) => {
+    setUpdatingItems((prev) => new Set(prev).add(itemId))
     try {
-      await removeFromCart(productId)
+      await removeFromCart(itemId)
     } catch (error) {
       console.error("Mahsulotni o'chirishda xatolik:", error)
     } finally {
-      setIsUpdating(null)
+      setUpdatingItems((prev) => {
+        const newSet = new Set(prev)
+        newSet.delete(itemId)
+        return newSet
+      })
     }
   }
 
@@ -78,9 +86,12 @@ export function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
         }`}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border">
+        <div className="flex items-center justify-between p-4 border-b border-border bg-gradient-to-r from-background to-muted/20">
           <h2 className="text-lg font-semibold">Savatcha</h2>
-          <button onClick={onClose} className="p-2 hover:bg-muted rounded-lg transition-colors">
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-muted rounded-lg transition-colors duration-200 hover:scale-105"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -89,7 +100,9 @@ export function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
         {items.length === 0 ? (
           <div className="flex-1 flex items-center justify-center p-6">
             <div className="text-center">
-              <ShoppingCart className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+              <div className="w-16 h-16 bg-gradient-to-br from-muted to-muted/50 rounded-full flex items-center justify-center mx-auto mb-4">
+                <ShoppingCart className="w-8 h-8 text-muted-foreground" />
+              </div>
               <h3 className="text-lg font-semibold mb-2">Savatcha bo'sh</h3>
               <p className="text-muted-foreground text-sm">Mahsulotlarni qo'shish uchun katalogga o'ting</p>
             </div>
@@ -98,78 +111,87 @@ export function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
           <>
             {/* Items */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {items.map((item) => (
-                <div key={item.id} className="bg-card rounded-lg border border-border p-3">
-                  <div className="flex space-x-3">
-                    {/* Product Image */}
-                    <div className="w-16 h-16 bg-muted rounded-lg overflow-hidden flex-shrink-0">
-                      {item.product.images?.[0] ? (
-                        <Image
-                          src={item.product.images[0] || "/placeholder.svg"}
-                          alt={item.product.name_uz}
-                          width={64}
-                          height={64}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full bg-muted-foreground/20 flex items-center justify-center">
-                          <div className="w-6 h-6 bg-muted-foreground/20 rounded" />
-                        </div>
-                      )}
-                    </div>
+              {items.map((item) => {
+                const isUpdating = updatingItems.has(item.id)
 
-                    {/* Product Info */}
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-medium text-sm line-clamp-2 mb-1">{item.product.name_uz}</h4>
-                      <div className="text-sm font-bold mb-2">
-                        {formatPrice(item.product.price)} so'm
-                        <span className="text-xs text-muted-foreground ml-1">/{item.product.unit}</span>
+                return (
+                  <div
+                    key={item.id}
+                    className="bg-gradient-to-r from-card to-card/80 rounded-lg border border-border p-3 hover:shadow-md transition-all duration-200"
+                  >
+                    <div className="flex space-x-3">
+                      {/* Product Image */}
+                      <div className="w-16 h-16 bg-muted rounded-lg overflow-hidden flex-shrink-0 group">
+                        {item.product.images?.[0] ? (
+                          <Image
+                            src={item.product.images[0] || "/placeholder.svg"}
+                            alt={item.product.name_uz}
+                            width={64}
+                            height={64}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-gradient-to-br from-muted-foreground/10 to-muted-foreground/20 flex items-center justify-center">
+                            <div className="w-6 h-6 bg-muted-foreground/20 rounded" />
+                          </div>
+                        )}
                       </div>
 
-                      {/* Quantity Controls */}
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-2">
-                          <button
-                            onClick={() => handleQuantityChange(item.product_id, item.quantity - 1)}
-                            disabled={isUpdating === item.product_id || item.quantity <= 1}
-                            className="w-6 h-6 bg-muted rounded flex items-center justify-center hover:bg-muted/80 transition-colors disabled:opacity-50"
-                          >
-                            <Minus className="w-3 h-3" />
-                          </button>
-                          <span className="text-sm font-semibold min-w-[1.5rem] text-center">
-                            {isUpdating === item.product_id ? "..." : item.quantity}
-                          </span>
-                          <button
-                            onClick={() => handleQuantityChange(item.product_id, item.quantity + 1)}
-                            disabled={isUpdating === item.product_id}
-                            className="w-6 h-6 bg-muted rounded flex items-center justify-center hover:bg-muted/80 transition-colors disabled:opacity-50"
-                          >
-                            <Plus className="w-3 h-3" />
-                          </button>
+                      {/* Product Info */}
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-medium text-sm line-clamp-2 mb-1">{item.product.name_uz}</h4>
+                        <div className="text-sm font-bold mb-2">
+                          {formatPrice(item.product.price)} so'm
+                          <span className="text-xs text-muted-foreground ml-1">/{item.product.unit}</span>
                         </div>
 
-                        <button
-                          onClick={() => handleRemoveItem(item.product_id)}
-                          disabled={isUpdating === item.product_id}
-                          className="p-1 text-destructive hover:bg-destructive/10 rounded transition-colors disabled:opacity-50"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
+                        {/* Quantity Controls */}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() => handleQuantityChange(item.id, item.quantity - 1)}
+                              disabled={isUpdating || item.quantity <= 1}
+                              className="w-6 h-6 bg-gradient-to-r from-muted to-muted/80 rounded flex items-center justify-center hover:from-muted/80 hover:to-muted hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <Minus className="w-3 h-3" />
+                            </button>
+                            <span className="text-sm font-semibold min-w-[1.5rem] text-center">
+                              {isUpdating ? "..." : item.quantity}
+                            </span>
+                            <button
+                              onClick={() => handleQuantityChange(item.id, item.quantity + 1)}
+                              disabled={isUpdating}
+                              className="w-6 h-6 bg-gradient-to-r from-muted to-muted/80 rounded flex items-center justify-center hover:from-muted/80 hover:to-muted hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <Plus className="w-3 h-3" />
+                            </button>
+                          </div>
+
+                          <button
+                            onClick={() => handleRemoveItem(item.id)}
+                            disabled={isUpdating}
+                            className="p-1 text-destructive hover:bg-destructive/10 rounded transition-all duration-200 hover:scale-110 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Item Total */}
-                  <div className="mt-3 pt-3 border-t border-border flex justify-between items-center">
-                    <span className="text-xs text-muted-foreground">Jami:</span>
-                    <span className="text-sm font-bold">{formatPrice(item.product.price * item.quantity)} so'm</span>
+                    {/* Item Total */}
+                    <div className="mt-3 pt-3 border-t border-border flex justify-between items-center">
+                      <span className="text-xs text-muted-foreground">Jami:</span>
+                      <span className="text-sm font-bold bg-gradient-to-r from-primary to-primary/80 bg-clip-text text-transparent">
+                        {formatPrice(item.product.price * item.quantity)} so'm
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
 
             {/* Footer */}
-            <div className="border-t border-border p-4 space-y-4">
+            <div className="border-t border-border p-4 space-y-4 bg-gradient-to-t from-muted/10 to-transparent">
               {/* Summary */}
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
@@ -180,16 +202,18 @@ export function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
                   <span>Yetkazib berish:</span>
                   <span>{deliveryFee === 0 ? "Tekin" : formatPrice(deliveryFee) + " so'm"}</span>
                 </div>
-                <div className="flex justify-between font-bold">
+                <div className="flex justify-between font-bold text-lg">
                   <span>Jami:</span>
-                  <span>{formatPrice(grandTotal)} so'm</span>
+                  <span className="bg-gradient-to-r from-primary to-primary/80 bg-clip-text text-transparent">
+                    {formatPrice(grandTotal)} so'm
+                  </span>
                 </div>
               </div>
 
               {/* Checkout Button */}
               <button
                 onClick={handleCheckout}
-                className="w-full bg-primary text-primary-foreground rounded-lg py-3 font-medium hover:bg-primary/90 transition-colors"
+                className="w-full bg-gradient-to-r from-primary to-primary/90 text-primary-foreground rounded-lg py-3 font-medium hover:from-primary/90 hover:to-primary hover:shadow-lg hover:scale-105 transition-all duration-200 shadow-md"
               >
                 Buyurtma berish
               </button>

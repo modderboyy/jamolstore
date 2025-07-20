@@ -20,6 +20,7 @@ interface Product {
   rental_price_per_unit?: number
   images?: string[]
   stock_quantity: number
+  available_quantity: number
   is_available: boolean
   is_featured?: boolean
   is_popular?: boolean
@@ -138,7 +139,7 @@ export function ProductCard({ product, onQuickView, className = "" }: ProductCar
 
   return (
     <div
-      className={`bg-card rounded-xl border border-border hover:border-primary/20 hover:shadow-md transition-all cursor-pointer group ${className}`}
+      className={`bg-gradient-to-br from-card to-card/80 rounded-xl border border-border hover:border-primary/20 hover:shadow-lg transition-all duration-200 cursor-pointer group ${className}`}
       onClick={handleCardClick}
     >
       {/* Product Image */}
@@ -160,13 +161,17 @@ export function ProductCard({ product, onQuickView, className = "" }: ProductCar
         {/* Badges */}
         <div className="absolute top-2 left-2 flex flex-col space-y-1">
           {product.is_featured && (
-            <span className="px-2 py-1 bg-primary text-primary-foreground text-xs font-medium rounded">TOP</span>
+            <span className="px-2 py-1 bg-gradient-to-r from-primary to-primary/80 text-primary-foreground text-xs font-medium rounded shadow-sm">
+              TOP
+            </span>
           )}
           {product.is_popular && (
-            <span className="px-2 py-1 bg-red-500 text-white text-xs font-medium rounded">OMMABOP</span>
+            <span className="px-2 py-1 bg-gradient-to-r from-red-500 to-red-600 text-white text-xs font-medium rounded shadow-sm">
+              OMMABOP
+            </span>
           )}
           {product.product_type === "rental" && (
-            <span className="px-2 py-1 bg-blue-500 text-white text-xs font-medium rounded flex items-center space-x-1">
+            <span className="px-2 py-1 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-xs font-medium rounded flex items-center space-x-1 shadow-sm">
               {getRentalIcon(product.rental_time_unit)}
               <span>IJARA</span>
             </span>
@@ -174,11 +179,17 @@ export function ProductCard({ product, onQuickView, className = "" }: ProductCar
         </div>
 
         {/* Stock Status */}
-        {product.stock_quantity <= 0 && (
-          <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-            <span className="text-white font-medium">Tugagan</span>
-          </div>
-        )}
+        <div className="absolute top-2 right-2">
+          <span
+            className={`px-2 py-1 text-xs font-medium rounded shadow-sm ${
+              product.available_quantity > 0
+                ? "bg-gradient-to-r from-green-500 to-green-600 text-white"
+                : "bg-gradient-to-r from-red-500 to-red-600 text-white"
+            }`}
+          >
+            {product.available_quantity > 0 ? `${product.available_quantity} ${product.unit}` : "Tugagan"}
+          </span>
+        </div>
       </div>
 
       {/* Product Info */}
@@ -203,14 +214,18 @@ export function ProductCard({ product, onQuickView, className = "" }: ProductCar
         <div className="mb-3">
           {product.product_type === "rental" && product.rental_price_per_unit ? (
             <div>
-              <p className="text-primary font-semibold text-sm">{formatPrice(product.rental_price_per_unit)} so'm</p>
+              <p className="text-primary font-semibold text-sm bg-gradient-to-r from-primary to-primary/80 bg-clip-text text-transparent">
+                {formatPrice(product.rental_price_per_unit)} so'm
+              </p>
               <p className="text-xs text-muted-foreground">
                 /{getRentalTimeText(product.rental_time_unit)} • {product.unit}
               </p>
             </div>
           ) : (
             <div>
-              <p className="text-primary font-semibold text-sm">{formatPrice(product.price)} so'm</p>
+              <p className="text-primary font-semibold text-sm bg-gradient-to-r from-primary to-primary/80 bg-clip-text text-transparent">
+                {formatPrice(product.price)} so'm
+              </p>
               <p className="text-xs text-muted-foreground">/{product.unit}</p>
             </div>
           )}
@@ -219,8 +234,8 @@ export function ProductCard({ product, onQuickView, className = "" }: ProductCar
         {/* Add to Cart Button */}
         <button
           onClick={handleAddToCart}
-          disabled={isAddingToCart || product.stock_quantity <= 0}
-          className="w-full flex items-center justify-center space-x-2 bg-primary text-primary-foreground py-2 px-3 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={isAddingToCart || product.available_quantity <= 0}
+          className="w-full flex items-center justify-center space-x-2 bg-gradient-to-r from-primary to-primary/90 text-primary-foreground py-2 px-3 rounded-lg text-sm font-medium hover:from-primary/90 hover:to-primary hover:shadow-md hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
         >
           {isAddingToCart ? (
             <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
@@ -230,7 +245,7 @@ export function ProductCard({ product, onQuickView, className = "" }: ProductCar
               <span>
                 {product.product_type === "rental"
                   ? "Ijaraga olish"
-                  : product.stock_quantity <= 0
+                  : product.available_quantity <= 0
                     ? "Tugagan"
                     : "Savatga"}
               </span>
