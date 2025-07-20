@@ -1,12 +1,12 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { BottomNavigation } from "@/components/layout/bottom-navigation"
 import { TopBar } from "@/components/layout/top-bar"
 import { BottomSheet } from "@/components/ui/bottom-sheet"
-import { Search, Star, MapPin, Phone, ArrowLeft } from 'lucide-react'
-import Link from "next/link"
+import { Star, MapPin, Phone, Filter } from "lucide-react"
 import Image from "next/image"
 
 interface Worker {
@@ -29,8 +29,10 @@ interface Worker {
 }
 
 export default function WorkersPage() {
+  const searchParams = useSearchParams()
+  const searchQuery = searchParams.get("search") || ""
+
   const [workers, setWorkers] = useState<Worker[]>([])
-  const [searchQuery, setSearchQuery] = useState("")
   const [selectedWorker, setSelectedWorker] = useState<Worker | null>(null)
   const [showWorkerSheet, setShowWorkerSheet] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -80,26 +82,14 @@ export default function WorkersPage() {
 
       {/* Header */}
       <div className="container mx-auto px-4 py-4 border-b border-border">
-        <div className="flex items-center space-x-4 mb-4">
-          <Link href="/" className="p-2 -ml-2 rounded-lg hover:bg-muted transition-colors md:hidden">
-            <ArrowLeft className="w-6 h-6" />
-          </Link>
+        <div className="flex items-center justify-between">
           <div className="flex-1">
             <h1 className="text-xl font-bold">Ishchilar</h1>
             <p className="text-sm text-muted-foreground">{workers.length} ta mutaxassis</p>
           </div>
-        </div>
-
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Kasb yoki ko'nikma qidirish..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
-          />
+          <button className="p-3 rounded-xl hover:bg-muted transition-colors shadow-sm border border-border">
+            <Filter className="w-5 h-5" />
+          </button>
         </div>
       </div>
 
@@ -108,7 +98,7 @@ export default function WorkersPage() {
         {loading ? (
           <div className="space-y-4">
             {[...Array(5)].map((_, i) => (
-              <div key={i} className="bg-card rounded-lg p-4 animate-pulse border border-border">
+              <div key={i} className="bg-card rounded-xl p-4 animate-pulse border border-border">
                 <div className="flex space-x-4">
                   <div className="w-16 h-16 bg-muted rounded-full"></div>
                   <div className="flex-1 space-y-2">
@@ -125,7 +115,7 @@ export default function WorkersPage() {
             {workers.map((worker) => (
               <div
                 key={worker.id}
-                className="bg-card rounded-lg p-4 border border-border hover:shadow-md transition-shadow cursor-pointer"
+                className="bg-card rounded-xl p-4 border border-border hover:shadow-md transition-all cursor-pointer"
                 onClick={() => handleWorkerSelect(worker)}
               >
                 <div className="flex space-x-4">
@@ -185,7 +175,7 @@ export default function WorkersPage() {
                           e.stopPropagation()
                           handleContactWorker(worker.user.phone_number)
                         }}
-                        className="flex items-center space-x-1 px-3 py-1 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm"
+                        className="flex items-center space-x-1 px-3 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm shadow-sm"
                       >
                         <Phone className="w-4 h-4" />
                         <span>Qo'ng'iroq</span>
@@ -199,12 +189,12 @@ export default function WorkersPage() {
                   <div className="mt-3 pt-3 border-t border-border">
                     <div className="flex flex-wrap gap-2">
                       {worker.skills.slice(0, 3).map((skill, index) => (
-                        <span key={index} className="px-2 py-1 bg-muted text-foreground text-xs rounded">
+                        <span key={index} className="px-2 py-1 bg-muted text-foreground text-xs rounded-lg">
                           {skill}
                         </span>
                       ))}
                       {worker.skills.length > 3 && (
-                        <span className="px-2 py-1 bg-muted text-muted-foreground text-xs rounded">
+                        <span className="px-2 py-1 bg-muted text-muted-foreground text-xs rounded-lg">
                           +{worker.skills.length - 3} ko'proq
                         </span>
                       )}
@@ -217,25 +207,17 @@ export default function WorkersPage() {
         ) : (
           <div className="text-center py-12">
             <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
-              <Search className="w-8 h-8 text-muted-foreground" />
+              <Filter className="w-8 h-8 text-muted-foreground" />
             </div>
             <h3 className="text-lg font-semibold mb-2">Ishchi topilmadi</h3>
-            <p className="text-muted-foreground mb-4">
-              Qidiruv so'zini o'zgartiring yoki boshqa kasb nomini kiriting
-            </p>
-            <button
-              onClick={() => setSearchQuery("")}
-              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-            >
-              Barchasini ko'rsatish
-            </button>
+            <p className="text-muted-foreground mb-4">Qidiruv so'zini o'zgartiring yoki boshqa kasb nomini kiriting</p>
           </div>
         )}
       </div>
 
       <BottomNavigation />
 
-      {/* Worker Detail Bottom Sheet */}
+      {/* Worker Detail Bottom Sheet - Full Screen */}
       <BottomSheet
         isOpen={showWorkerSheet}
         onClose={() => setShowWorkerSheet(false)}
@@ -243,7 +225,7 @@ export default function WorkersPage() {
         height="full"
       >
         {selectedWorker && (
-          <div className="p-6">
+          <div className="p-6 h-full flex flex-col">
             {/* Worker Header */}
             <div className="flex space-x-4 mb-6">
               <div className="w-20 h-20 bg-muted rounded-full overflow-hidden flex-shrink-0">
@@ -280,14 +262,14 @@ export default function WorkersPage() {
             </div>
 
             {/* Details */}
-            <div className="space-y-6">
+            <div className="flex-1 space-y-6">
               {/* Experience & Location */}
               <div className="grid grid-cols-2 gap-4">
-                <div className="bg-muted/50 rounded-lg p-4">
+                <div className="bg-muted/50 rounded-xl p-4">
                   <h4 className="text-sm text-muted-foreground mb-1">Tajriba</h4>
                   <p className="font-semibold">{selectedWorker.experience_years} yil</p>
                 </div>
-                <div className="bg-muted/50 rounded-lg p-4">
+                <div className="bg-muted/50 rounded-xl p-4">
                   <h4 className="text-sm text-muted-foreground mb-1">Joylashuv</h4>
                   <p className="font-semibold">{selectedWorker.location_uz}</p>
                 </div>
@@ -297,13 +279,13 @@ export default function WorkersPage() {
               <div>
                 <h4 className="font-semibold mb-3">Narxlar</h4>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
+                  <div className="bg-primary/5 border border-primary/20 rounded-xl p-4">
                     <h5 className="text-sm text-primary mb-1">Soatlik</h5>
                     <p className="text-lg font-bold text-primary">
                       {new Intl.NumberFormat("uz-UZ").format(selectedWorker.hourly_rate)} so'm
                     </p>
                   </div>
-                  <div className="bg-muted/50 rounded-lg p-4">
+                  <div className="bg-muted/50 rounded-xl p-4">
                     <h5 className="text-sm text-muted-foreground mb-1">Kunlik</h5>
                     <p className="text-lg font-bold">
                       {new Intl.NumberFormat("uz-UZ").format(selectedWorker.daily_rate)} so'm
@@ -325,20 +307,20 @@ export default function WorkersPage() {
                   </div>
                 </div>
               )}
+            </div>
 
-              {/* Action Buttons */}
-              <div className="space-y-3 pt-4">
-                <button
-                  onClick={() => handleContactWorker(selectedWorker.user.phone_number)}
-                  className="w-full bg-primary text-primary-foreground rounded-lg py-3 font-medium hover:bg-primary/90 transition-colors flex items-center justify-center space-x-2"
-                >
-                  <Phone className="w-5 h-5" />
-                  <span>Qo'ng'iroq qilish</span>
-                </button>
-                <button className="w-full bg-secondary text-secondary-foreground rounded-lg py-3 font-medium hover:bg-secondary/80 transition-colors">
-                  Buyurtma berish
-                </button>
-              </div>
+            {/* Action Buttons */}
+            <div className="space-y-3 pt-6 border-t border-border">
+              <button
+                onClick={() => handleContactWorker(selectedWorker.user.phone_number)}
+                className="w-full bg-primary text-primary-foreground rounded-xl py-3 font-medium hover:bg-primary/90 transition-colors flex items-center justify-center space-x-2 shadow-sm"
+              >
+                <Phone className="w-5 h-5" />
+                <span>Qo'ng'iroq qilish</span>
+              </button>
+              <button className="w-full bg-secondary text-secondary-foreground rounded-xl py-3 font-medium hover:bg-secondary/80 transition-colors">
+                Buyurtma berish
+              </button>
             </div>
           </div>
         )}

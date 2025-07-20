@@ -1,7 +1,5 @@
 "use client"
 
-import type React from "react"
-
 import { useEffect, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
@@ -9,11 +7,9 @@ import { BottomNavigation } from "@/components/layout/bottom-navigation"
 import { ProductCard } from "@/components/ui/product-card"
 import { TopBar } from "@/components/layout/top-bar"
 import { BottomSheet } from "@/components/ui/bottom-sheet"
-import { Search, Filter, ArrowLeft, X, Minus, Plus, ShoppingCart } from "lucide-react"
+import { Filter } from "lucide-react"
 import { useCart } from "@/contexts/CartContext"
 import { useTelegram } from "@/contexts/TelegramContext"
-import Image from "next/image"
-import Link from "next/link"
 
 interface Product {
   id: string
@@ -54,14 +50,8 @@ export default function CatalogPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [selectedCategory, setSelectedCategory] = useState<string | null>(categoryId)
-  const [currentSearchQuery, setCurrentSearchQuery] = useState(searchQuery)
   const [showFilters, setShowFilters] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
-  const [showProductSheet, setShowProductSheet] = useState(false)
-  const [quantity, setQuantity] = useState(1)
-  const [selectedImageIndex, setSelectedImageIndex] = useState(0)
-  const [isAddingToCart, setIsAddingToCart] = useState(false)
 
   // Filter states
   const [priceFrom, setPriceFrom] = useState("")
@@ -74,7 +64,7 @@ export default function CatalogPage() {
 
   useEffect(() => {
     fetchProducts()
-  }, [selectedCategory, currentSearchQuery, isPopular, sortBy, priceFrom, priceTo])
+  }, [selectedCategory, searchQuery, isPopular, sortBy, priceFrom, priceTo])
 
   const fetchCategories = async () => {
     try {
@@ -114,8 +104,8 @@ export default function CatalogPage() {
       }
 
       // Search filter
-      if (currentSearchQuery) {
-        query = query.or(`name_uz.ilike.%${currentSearchQuery}%,description_uz.ilike.%${currentSearchQuery}%`)
+      if (searchQuery) {
+        query = query.or(`name_uz.ilike.%${searchQuery}%,description_uz.ilike.%${searchQuery}%`)
       }
 
       // Price filter
@@ -162,48 +152,8 @@ export default function CatalogPage() {
     }
   }
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault()
-    const params = new URLSearchParams()
-    if (currentSearchQuery) params.set("search", currentSearchQuery)
-    if (selectedCategory) params.set("category", selectedCategory)
-    if (isPopular) params.set("popular", "true")
-
-    router.push(`/catalog?${params.toString()}`)
-  }
-
   const handleQuickView = (productId: string) => {
-    const product = products.find((p) => p.id === productId)
-    if (product) {
-      setSelectedProduct(product)
-      setQuantity(product.min_order_quantity || 1)
-      setSelectedImageIndex(0)
-      setShowProductSheet(true)
-    }
-  }
-
-  const handleAddToCartFromSheet = async () => {
-    if (!selectedProduct) return
-
-    setIsAddingToCart(true)
-    try {
-      await addToCart(selectedProduct.id, quantity)
-      setShowProductSheet(false)
-      if (webApp) {
-        webApp.showAlert("Mahsulot savatga qo'shildi!")
-      } else {
-        alert("Mahsulot savatga qo'shildi!")
-      }
-    } catch (error) {
-      console.error("Savatga qo'shishda xatolik:", error)
-      if (webApp) {
-        webApp.showAlert("Xatolik yuz berdi")
-      } else {
-        alert("Xatolik yuz berdi")
-      }
-    } finally {
-      setIsAddingToCart(false)
-    }
+    router.push(`/product/${productId}`)
   }
 
   const applyFilters = () => {
@@ -216,14 +166,9 @@ export default function CatalogPage() {
     setPriceTo("")
     setSortBy("newest")
     setSelectedCategory(null)
-    setCurrentSearchQuery("")
     setShowFilters(false)
 
     router.push("/catalog")
-  }
-
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat("uz-UZ").format(price)
   }
 
   const selectedCategoryName = categories.find((c) => c.id === selectedCategory)?.name_uz
@@ -233,34 +178,22 @@ export default function CatalogPage() {
       <TopBar />
 
       {/* Header */}
-      <header className="bg-background border-b border-border sticky top-16 z-30">
+      <header className="bg-background border-b border-border">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center space-x-4 mb-4">
-            <Link href="/" className="p-2 -ml-2 rounded-xl hover:bg-muted transition-colors">
-              <ArrowLeft className="w-6 h-6" />
-            </Link>
+          <div className="flex items-center justify-between">
             <div className="flex-1">
               <h1 className="text-xl font-bold">
                 {selectedCategoryName || (isPopular ? "Mashhur mahsulotlar" : "Katalog")}
               </h1>
               <p className="text-sm text-muted-foreground">{products.length} ta mahsulot</p>
             </div>
-            <button onClick={() => setShowFilters(true)} className="p-2 rounded-xl hover:bg-muted transition-colors">
-              <Filter className="w-6 h-6" />
+            <button
+              onClick={() => setShowFilters(true)}
+              className="p-3 rounded-xl hover:bg-muted transition-colors shadow-sm border border-border"
+            >
+              <Filter className="w-5 h-5" />
             </button>
           </div>
-
-          {/* Search */}
-          <form onSubmit={handleSearch} className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Mahsulot qidirish..."
-              value={currentSearchQuery}
-              onChange={(e) => setCurrentSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 bg-muted rounded-xl border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
-            />
-          </form>
         </div>
       </header>
 
@@ -272,7 +205,7 @@ export default function CatalogPage() {
               onClick={() => setSelectedCategory(null)}
               className={`px-4 py-2 rounded-xl whitespace-nowrap text-sm font-medium transition-colors ${
                 !selectedCategory
-                  ? "bg-primary text-primary-foreground"
+                  ? "bg-primary text-primary-foreground shadow-sm"
                   : "bg-muted text-muted-foreground hover:bg-muted/80"
               }`}
             >
@@ -284,7 +217,7 @@ export default function CatalogPage() {
                 onClick={() => setSelectedCategory(category.id)}
                 className={`px-4 py-2 rounded-xl whitespace-nowrap text-sm font-medium transition-colors ${
                   selectedCategory === category.id
-                    ? "bg-primary text-primary-foreground"
+                    ? "bg-primary text-primary-foreground shadow-sm"
                     : "bg-muted text-muted-foreground hover:bg-muted/80"
                 }`}
               >
@@ -300,7 +233,7 @@ export default function CatalogPage() {
         {loading ? (
           <div className="product-grid">
             {[...Array(6)].map((_, i) => (
-              <div key={i} className="bg-card rounded-2xl p-4 animate-pulse">
+              <div key={i} className="bg-card rounded-2xl p-4 animate-pulse border border-border">
                 <div className="aspect-square bg-muted rounded-xl mb-3"></div>
                 <div className="h-4 bg-muted rounded mb-2"></div>
                 <div className="h-6 bg-muted rounded mb-3"></div>
@@ -317,7 +250,7 @@ export default function CatalogPage() {
         ) : (
           <div className="text-center py-12">
             <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
-              <Search className="w-8 h-8 text-muted-foreground" />
+              <Filter className="w-8 h-8 text-muted-foreground" />
             </div>
             <h3 className="text-xl font-semibold mb-2">Mahsulot topilmadi</h3>
             <p className="text-muted-foreground mb-4">Qidiruv so'zini o'zgartiring yoki boshqa kategoriyani tanlang</p>
@@ -333,10 +266,10 @@ export default function CatalogPage() {
 
       <BottomNavigation />
 
-      {/* Filters Bottom Sheet */}
-      <BottomSheet isOpen={showFilters} onClose={() => setShowFilters(false)} title="Filtrlar" height="half">
-        <div className="p-6">
-          <div className="space-y-6">
+      {/* Filters Bottom Sheet - Full Screen */}
+      <BottomSheet isOpen={showFilters} onClose={() => setShowFilters(false)} title="Filtrlar" height="full">
+        <div className="p-6 h-full flex flex-col">
+          <div className="flex-1 space-y-6">
             {/* Price Range */}
             <div>
               <h3 className="text-lg font-semibold mb-3">Narx oralig'i</h3>
@@ -346,14 +279,14 @@ export default function CatalogPage() {
                   placeholder="Dan"
                   value={priceFrom}
                   onChange={(e) => setPriceFrom(e.target.value)}
-                  className="flex-1 px-3 py-2 bg-muted rounded-xl border-0 focus:ring-2 focus:ring-primary/20"
+                  className="flex-1 px-3 py-3 bg-muted rounded-xl border-0 focus:ring-2 focus:ring-primary/20"
                 />
                 <input
                   type="number"
                   placeholder="Gacha"
                   value={priceTo}
                   onChange={(e) => setPriceTo(e.target.value)}
-                  className="flex-1 px-3 py-2 bg-muted rounded-xl border-0 focus:ring-2 focus:ring-primary/20"
+                  className="flex-1 px-3 py-3 bg-muted rounded-xl border-0 focus:ring-2 focus:ring-primary/20"
                 />
               </div>
             </div>
@@ -385,121 +318,23 @@ export default function CatalogPage() {
                 ))}
               </div>
             </div>
+          </div>
 
-            <div className="flex space-x-3 pt-4">
-              <button
-                onClick={clearFilters}
-                className="flex-1 px-6 py-3 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80 transition-colors"
-              >
-                Tozalash
-              </button>
-              <button
-                onClick={applyFilters}
-                className="flex-1 px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-              >
-                Qo'llash
-              </button>
-            </div>
+          <div className="flex space-x-3 pt-6 border-t border-border">
+            <button
+              onClick={clearFilters}
+              className="flex-1 px-6 py-3 bg-secondary text-secondary-foreground rounded-xl hover:bg-secondary/80 transition-colors"
+            >
+              Tozalash
+            </button>
+            <button
+              onClick={applyFilters}
+              className="flex-1 px-6 py-3 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 transition-colors"
+            >
+              Qo'llash
+            </button>
           </div>
         </div>
-      </BottomSheet>
-
-      {/* Product Detail Bottom Sheet */}
-      <BottomSheet isOpen={showProductSheet} onClose={() => setShowProductSheet(false)} title="" height="full">
-        {selectedProduct && (
-          <div className="h-full flex flex-col">
-            {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-border flex-shrink-0">
-              <h2 className="text-xl font-bold text-foreground">Mahsulot haqida</h2>
-              <button
-                onClick={() => setShowProductSheet(false)}
-                className="w-10 h-10 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-colors"
-              >
-                <X className="w-5 h-5 text-muted-foreground" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-6">
-              {/* Product Image */}
-              <div className="aspect-square bg-muted rounded-lg overflow-hidden mb-6 relative">
-                {selectedProduct.images && selectedProduct.images.length > 0 ? (
-                  <Image
-                    src={selectedProduct.images[selectedImageIndex] || "/placeholder.svg"}
-                    alt={selectedProduct.name_uz}
-                    fill
-                    className="object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full bg-muted flex items-center justify-center">
-                    <div className="w-16 h-16 bg-border rounded-lg" />
-                  </div>
-                )}
-              </div>
-
-              {/* Product Info */}
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-2xl font-bold text-foreground mb-2">{selectedProduct.name_uz}</h3>
-                  <p className="text-muted-foreground mb-3">{selectedProduct.category.name_uz}</p>
-
-                  {selectedProduct.description_uz && (
-                    <p className="text-muted-foreground leading-relaxed">{selectedProduct.description_uz}</p>
-                  )}
-                </div>
-
-                <div className="flex items-baseline space-x-2">
-                  <span className="text-3xl font-bold text-foreground">{formatPrice(selectedProduct.price)} so'm</span>
-                  <span className="text-muted-foreground">/{selectedProduct.unit}</span>
-                </div>
-
-                {/* Quantity Selector */}
-                <div className="bg-card rounded-lg border border-border p-4">
-                  <div className="flex items-center justify-between mb-4">
-                    <span className="font-medium text-foreground">Miqdor:</span>
-                    <div className="flex items-center space-x-4">
-                      <button
-                        onClick={() => setQuantity(Math.max(selectedProduct.min_order_quantity || 1, quantity - 1))}
-                        disabled={quantity <= (selectedProduct.min_order_quantity || 1)}
-                        className="w-10 h-10 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-colors disabled:opacity-50"
-                      >
-                        <Minus className="w-4 h-4 text-muted-foreground" />
-                      </button>
-                      <span className="text-lg font-semibold text-foreground min-w-[3rem] text-center">{quantity}</span>
-                      <button
-                        onClick={() => setQuantity(Math.min(selectedProduct.stock_quantity, quantity + 1))}
-                        disabled={quantity >= selectedProduct.stock_quantity}
-                        className="w-10 h-10 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-colors disabled:opacity-50"
-                      >
-                        <Plus className="w-4 h-4 text-muted-foreground" />
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-4 border-t border-border">
-                    <span className="font-medium text-foreground">Jami:</span>
-                    <span className="text-xl font-bold text-foreground">
-                      {formatPrice(selectedProduct.price * quantity)} so'm
-                    </span>
-                  </div>
-                </div>
-
-                {/* Add to Cart Button */}
-                <button
-                  onClick={handleAddToCartFromSheet}
-                  disabled={isAddingToCart}
-                  className="w-full bg-primary text-primary-foreground rounded-lg py-4 flex items-center justify-center space-x-3 hover:bg-primary/90 transition-all font-semibold disabled:opacity-50 shadow-clean ios-button"
-                >
-                  {isAddingToCart ? (
-                    <div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-                  ) : (
-                    <ShoppingCart className="w-5 h-5" />
-                  )}
-                  <span>{isAddingToCart ? "Qo'shilmoqda..." : "Savatga qo'shish"}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </BottomSheet>
     </div>
   )

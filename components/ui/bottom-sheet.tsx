@@ -14,7 +14,7 @@ interface BottomSheetProps {
   className?: string
 }
 
-export function BottomSheet({ isOpen, onClose, title, children, height = "auto", className }: BottomSheetProps) {
+export function BottomSheet({ isOpen, onClose, title, children, height = "full", className }: BottomSheetProps) {
   const [isVisible, setIsVisible] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [dragY, setDragY] = useState(0)
@@ -34,7 +34,7 @@ export function BottomSheet({ isOpen, onClose, title, children, height = "auto",
   }, [])
 
   useEffect(() => {
-    if (isOpen && isMobile) {
+    if (isOpen) {
       setIsVisible(true)
       document.body.style.overflow = "hidden"
     } else {
@@ -46,16 +46,14 @@ export function BottomSheet({ isOpen, onClose, title, children, height = "auto",
     return () => {
       document.body.style.overflow = "unset"
     }
-  }, [isOpen, isMobile])
+  }, [isOpen])
 
-  // Desktop da ko'rsatmaslik
-  if (!isMobile) return null
   if (!isVisible) return null
 
   const heightClasses = {
     auto: "max-h-[85vh]",
     half: "h-[50vh]",
-    full: "h-[85vh]",
+    full: "h-[95vh]",
   }
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -86,12 +84,38 @@ export function BottomSheet({ isOpen, onClose, title, children, height = "auto",
     setDragY(0)
   }
 
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true)
+    setStartY(e.clientY)
+  }
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging) return
+
+    const currentY = e.clientY
+    const diff = currentY - startY
+
+    if (diff > 0) {
+      setDragY(diff)
+    }
+  }
+
+  const handleMouseUp = () => {
+    setIsDragging(false)
+
+    if (dragY > 100) {
+      onClose()
+    }
+
+    setDragY(0)
+  }
+
   return (
-    <div className="fixed inset-0 z-50 md:hidden">
+    <div className="fixed inset-0 z-50">
       {/* Backdrop */}
       <div
         className={cn(
-          "absolute inset-0 bg-black/40 transition-opacity duration-200",
+          "absolute inset-0 bg-black/50 transition-opacity duration-200",
           isOpen ? "opacity-100" : "opacity-0",
         )}
         onClick={onClose}
@@ -109,15 +133,19 @@ export function BottomSheet({ isOpen, onClose, title, children, height = "auto",
         style={{
           transform: isDragging ? `translateY(${dragY}px)` : undefined,
         }}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
       >
-        {/* Handle */}
+        {/* Drag Handle */}
         <div
-          className="flex justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing"
+          className="flex justify-center pt-4 pb-2 cursor-grab active:cursor-grabbing select-none"
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
+          onMouseDown={handleMouseDown}
         >
-          <div className="w-10 h-1 bg-muted-foreground/30 rounded-full" />
+          <div className="w-12 h-1.5 bg-muted-foreground/30 rounded-full transition-colors hover:bg-muted-foreground/50" />
         </div>
 
         {/* Header */}
