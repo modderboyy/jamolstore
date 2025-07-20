@@ -6,7 +6,6 @@ import { useTelegram } from "@/contexts/TelegramContext"
 import { useRouter, usePathname } from "next/navigation"
 import { Search, User, Phone, MapPin, Clock } from "lucide-react"
 import { useState } from "react"
-import { DesktopNavigation } from "./desktop-navigation"
 
 export function TopBar() {
   const { user } = useAuth()
@@ -88,16 +87,19 @@ export function TopBar() {
             {!isTelegramWebApp && (
               <div className="flex items-center space-x-2 flex-shrink-0">
                 {user ? (
-                  <div className="flex items-center space-x-2 px-3 py-2 bg-muted/50 rounded-xl shadow-sm">
+                  <button
+                    onClick={() => router.push("/profile")}
+                    className="flex items-center space-x-2 px-3 py-2 bg-muted/50 rounded-xl shadow-sm hover:bg-muted/70 transition-colors"
+                  >
                     <div className="w-6 h-6 bg-gradient-to-br from-primary to-primary/80 rounded-full flex items-center justify-center">
                       <span className="text-primary-foreground text-xs font-medium">{user.first_name.charAt(0)}</span>
                     </div>
                     <span className="text-sm font-medium text-foreground hidden sm:block">{user.first_name}</span>
-                  </div>
+                  </button>
                 ) : (
                   <button
                     onClick={() => router.push("/login")}
-                    className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-primary to-primary/90 text-primary-foreground rounded-xl hover:shadow-md transition-all ios-button shadow-sm"
+                    className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-primary to-primary/90 text-primary-foreground rounded-xl hover:shadow-md transition-all shadow-sm"
                   >
                     <User className="w-4 h-4" />
                     <span className="text-sm font-medium">Kirish</span>
@@ -110,7 +112,46 @@ export function TopBar() {
       </div>
 
       {/* Desktop Navigation */}
-      <DesktopNavigation />
+      <div className="hidden md:block bg-background border-b border-border">
+        <div className="container mx-auto px-4">
+          <nav className="flex items-center space-x-8 py-3">
+            <button
+              onClick={() => router.push("/")}
+              className="text-sm font-medium hover:text-primary transition-colors"
+            >
+              Bosh sahifa
+            </button>
+            <button
+              onClick={() => router.push("/catalog")}
+              className="text-sm font-medium hover:text-primary transition-colors"
+            >
+              Katalog
+            </button>
+            <button
+              onClick={() => router.push("/workers")}
+              className="text-sm font-medium hover:text-primary transition-colors"
+            >
+              Ishchilar
+            </button>
+            {user && (
+              <>
+                <button
+                  onClick={() => router.push("/orders")}
+                  className="text-sm font-medium hover:text-primary transition-colors"
+                >
+                  Buyurtmalar
+                </button>
+                <button
+                  onClick={() => router.push("/profile")}
+                  className="text-sm font-medium hover:text-primary transition-colors"
+                >
+                  Profil
+                </button>
+              </>
+            )}
+          </nav>
+        </div>
+      </div>
     </>
   )
 }

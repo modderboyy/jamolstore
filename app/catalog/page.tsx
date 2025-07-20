@@ -5,13 +5,17 @@ import { useSearchParams, useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { BottomNavigation } from "@/components/layout/bottom-navigation"
 import { TopBar } from "@/components/layout/top-bar"
-import { ArrowLeft, ChevronRight, Package } from "lucide-react"
+import { ProductCard } from "@/components/ui/product-card"
+import { ArrowLeft, ChevronRight, Package, Filter, Grid, List } from "lucide-react"
 
 interface Category {
   id: string
   name_uz: string
+  name_ru: string
   icon_name: string
   parent_id: string | null
+  level: number
+  path: string
   sort_order: number
   product_count?: number
   subcategories?: Category[]
@@ -20,10 +24,24 @@ interface Category {
 interface Product {
   id: string
   name_uz: string
+  name_ru: string
+  description_uz: string
   price: number
   unit: string
+  product_type: "sale" | "rental"
+  rental_time_unit?: "hour" | "day" | "week" | "month"
+  rental_price_per_unit?: number
   images: string[]
   category_id: string
+  stock_quantity: number
+  is_available: boolean
+  is_featured: boolean
+  is_popular: boolean
+  category?: {
+    name_uz: string
+  }
+  rating?: number
+  review_count?: number
 }
 
 export default function CatalogPage() {
@@ -32,12 +50,15 @@ export default function CatalogPage() {
 
   const categoryId = searchParams.get("category")
   const searchQuery = searchParams.get("search") || ""
+  const productType = searchParams.get("type") || "all" // all, sale, rental
 
   const [categories, setCategories] = useState<Category[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [currentCategory, setCurrentCategory] = useState<Category | null>(null)
   const [breadcrumb, setBreadcrumb] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
+  const [showFilters, setShowFilters] = useState(false)
 
   useEffect(() => {
     if (categoryId) {
@@ -45,10 +66,11 @@ export default function CatalogPage() {
     } else {
       fetchRootCategories()
     }
-  }, [categoryId, searchQuery])
+  }, [categoryId, searchQuery, productType])
 
   const fetchRootCategories = async () => {
     try {
+      setLoading(true)
       const { data, error } = await supabase
         .from("categories")
         .select("*")
@@ -79,6 +101,8 @@ export default function CatalogPage() {
 
   const fetchCategoryData = async (catId: string) => {
     try {
+      setLoading(true)
+
       // Get current category
       const { data: categoryData, error: categoryError } = await supabase
         .from("categories")
@@ -114,12 +138,8 @@ export default function CatalogPage() {
 
       setCategories(subcategoriesWithCounts)
 
-      // Get products in this category (if no subcategories or if search query exists)
-      if (subcategoriesWithCounts.length === 0 || searchQuery) {
-        await fetchCategoryProducts(catId)
-      } else {
-        setProducts([])
-      }
+      // Get products in this category
+      await fetchCategoryProducts(catId)
     } catch (error) {
       console.error("Kategoriya ma'lumotlarini yuklashda xatolik:", error)
     } finally {
@@ -171,11 +191,18 @@ export default function CatalogPage() {
 
       const categoryIds = await getAllSubcategoryIds(catId)
 
-      const { count, error } = await supabase
+      let query = supabase
         .from("products")
         .select("*", { count: "exact", head: true })
         .in("category_id", categoryIds)
         .eq("is_available", true)
+
+      // Apply product type filter
+      if (productType !== "all") {
+        query = query.eq("product_type", productType)
+      }
+
+      const { count, error } = await query
 
       if (error) throw error
 
@@ -188,13 +215,43 @@ export default function CatalogPage() {
 
   const fetchCategoryProducts = async (catId: string) => {
     try {
+      // Get all subcategory IDs recursively
+      const getAllSubcategoryIds = async (categoryId: string): Promise<string[]> => {
+        const ids = [categoryId]
+
+        const { data: subcats, error } = await supabase
+          .from("categories")
+          .select("id")
+          .eq("parent_id", categoryId)
+          .eq("is_active", true)
+
+        if (error || !subcats) return ids
+
+        for (const subcat of subcats) {
+          const subIds = await getAllSubcategoryIds(subcat.id)
+          ids.push(...subIds)
+        }
+
+        return ids
+      }
+
+      const categoryIds = await getAllSubcategoryIds(catId)
+
       let query = supabase
         .from("products")
-        .select("*")
-        .eq("category_id", catId)
+        .select(`
+          *,
+          category:categories(name_uz)
+        `)
+        .in("category_id", categoryIds)
         .eq("is_available", true)
         .order("created_at", { ascending: false })
-        .limit(20)
+        .limit(50)
+
+      // Apply product type filter
+      if (productType !== "all") {
+        query = query.eq("product_type", productType)
+      }
 
       // Search filter
       if (searchQuery) {
@@ -204,7 +261,15 @@ export default function CatalogPage() {
       const { data, error } = await query
 
       if (error) throw error
-      setProducts(data || [])
+
+      // Add mock ratings for display
+      const productsWithRatings = (data || []).map((product) => ({
+        ...product,
+        rating: 4.0 + Math.random() * 1.0,
+        review_count: Math.floor(Math.random() * 100) + 1,
+      }))
+
+      setProducts(productsWithRatings)
     } catch (error) {
       console.error("Mahsulotlarni yuklashda xatolik:", error)
       setProducts([])
@@ -212,11 +277,21 @@ export default function CatalogPage() {
   }
 
   const handleCategoryClick = (category: Category) => {
-    router.push(`/catalog?category=${category.id}`)
+    const params = new URLSearchParams()
+    params.set("category", category.id)
+    if (productType !== "all") params.set("type", productType)
+    if (searchQuery) params.set("search", searchQuery)
+
+    router.push(`/catalog?${params.toString()}`)
   }
 
-  const handleProductClick = (productId: string) => {
-    router.push(`/product/${productId}`)
+  const handleProductTypeFilter = (type: string) => {
+    const params = new URLSearchParams()
+    if (categoryId) params.set("category", categoryId)
+    if (searchQuery) params.set("search", searchQuery)
+    if (type !== "all") params.set("type", type)
+
+    router.push(`/catalog?${params.toString()}`)
   }
 
   const getIconForCategory = (iconName: string) => {
@@ -265,30 +340,47 @@ export default function CatalogPage() {
       <TopBar />
 
       {/* Header */}
-      <header className="bg-background border-b border-border">
+      <header className="bg-background border-b border-border sticky top-16 z-30">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center space-x-4">
-            {currentCategory && (
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              {currentCategory && (
+                <button
+                  onClick={() => {
+                    if (breadcrumb.length > 1) {
+                      const parentCategory = breadcrumb[breadcrumb.length - 2]
+                      handleCategoryClick(parentCategory)
+                    } else {
+                      router.push("/catalog")
+                    }
+                  }}
+                  className="p-2 hover:bg-muted rounded-lg transition-colors"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
+              )}
+              <div className="flex-1">
+                <h1 className="text-xl font-bold">{currentCategory ? currentCategory.name_uz : "Katalog"}</h1>
+                <p className="text-sm text-muted-foreground">
+                  {categories.length > 0 && `${categories.length} ta kategoriya`}
+                  {products.length > 0 && ` • ${products.length} ta mahsulot`}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2">
               <button
-                onClick={() => {
-                  if (breadcrumb.length > 1) {
-                    const parentCategory = breadcrumb[breadcrumb.length - 2]
-                    router.push(`/catalog?category=${parentCategory.id}`)
-                  } else {
-                    router.push("/catalog")
-                  }
-                }}
+                onClick={() => setShowFilters(!showFilters)}
                 className="p-2 hover:bg-muted rounded-lg transition-colors"
               >
-                <ArrowLeft className="w-5 h-5" />
+                <Filter className="w-5 h-5" />
               </button>
-            )}
-            <div className="flex-1">
-              <h1 className="text-xl font-bold">{currentCategory ? currentCategory.name_uz : "Katalog"}</h1>
-              <p className="text-sm text-muted-foreground">
-                {categories.length > 0 && `${categories.length} ta kategoriya`}
-                {products.length > 0 && ` • ${products.length} ta mahsulot`}
-              </p>
+              <button
+                onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}
+                className="p-2 hover:bg-muted rounded-lg transition-colors"
+              >
+                {viewMode === "grid" ? <List className="w-5 h-5" /> : <Grid className="w-5 h-5" />}
+              </button>
             </div>
           </div>
 
@@ -302,7 +394,7 @@ export default function CatalogPage() {
                 <div key={item.id} className="flex items-center space-x-2">
                   <ChevronRight className="w-4 h-4" />
                   <button
-                    onClick={() => router.push(`/catalog?category=${item.id}`)}
+                    onClick={() => handleCategoryClick(item)}
                     className={`hover:text-primary ${
                       index === breadcrumb.length - 1 ? "text-foreground font-medium" : ""
                     }`}
@@ -311,6 +403,39 @@ export default function CatalogPage() {
                   </button>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Filters */}
+          {showFilters && (
+            <div className="mt-4 p-4 bg-muted/50 rounded-lg">
+              <h3 className="font-medium mb-3">Mahsulot turi</h3>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => handleProductTypeFilter("all")}
+                  className={`px-3 py-1 rounded-full text-sm transition-colors ${
+                    productType === "all" ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"
+                  }`}
+                >
+                  Barchasi
+                </button>
+                <button
+                  onClick={() => handleProductTypeFilter("sale")}
+                  className={`px-3 py-1 rounded-full text-sm transition-colors ${
+                    productType === "sale" ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"
+                  }`}
+                >
+                  Sotish
+                </button>
+                <button
+                  onClick={() => handleProductTypeFilter("rental")}
+                  className={`px-3 py-1 rounded-full text-sm transition-colors ${
+                    productType === "rental" ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"
+                  }`}
+                >
+                  Ijara
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -334,7 +459,9 @@ export default function CatalogPage() {
                   <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors">
                     {category.name_uz}
                   </h3>
-                  <p className="text-sm text-muted-foreground">{category.product_count || 0} ta mahsulot</p>
+                  <p className="text-sm text-muted-foreground">
+                    {category.product_count || 0} ta mahsulot • {category.level + 1}-daraja
+                  </p>
                 </div>
                 <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
               </button>
@@ -346,32 +473,9 @@ export default function CatalogPage() {
         {products.length > 0 && (
           <div>
             <h2 className="text-lg font-semibold mb-4">Mahsulotlar</h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div className={viewMode === "grid" ? "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4" : "space-y-4"}>
               {products.map((product) => (
-                <button
-                  key={product.id}
-                  onClick={() => handleProductClick(product.id)}
-                  className="bg-card rounded-xl p-4 border border-border hover:border-primary/20 hover:shadow-md transition-all text-left group"
-                >
-                  <div className="aspect-square bg-muted rounded-lg mb-3 overflow-hidden">
-                    {product.images && product.images.length > 0 ? (
-                      <img
-                        src={product.images[0] || "/placeholder.svg"}
-                        alt={product.name_uz}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <Package className="w-8 h-8 text-muted-foreground" />
-                      </div>
-                    )}
-                  </div>
-                  <h3 className="font-medium text-sm mb-2 line-clamp-2 group-hover:text-primary transition-colors">
-                    {product.name_uz}
-                  </h3>
-                  <p className="text-primary font-semibold">{formatPrice(product.price)} so'm</p>
-                  <p className="text-xs text-muted-foreground">/{product.unit}</p>
-                </button>
+                <ProductCard key={product.id} product={product} className={viewMode === "list" ? "flex-row" : ""} />
               ))}
             </div>
           </div>
@@ -384,7 +488,11 @@ export default function CatalogPage() {
               <Package className="w-8 h-8 text-muted-foreground" />
             </div>
             <h3 className="text-xl font-semibold mb-2">Hech narsa topilmadi</h3>
-            <p className="text-muted-foreground">Bu kategoriyada hozircha mahsulotlar yo'q</p>
+            <p className="text-muted-foreground">
+              {searchQuery
+                ? `"${searchQuery}" bo'yicha hech narsa topilmadi`
+                : "Bu kategoriyada hozircha mahsulotlar yo'q"}
+            </p>
           </div>
         )}
       </div>

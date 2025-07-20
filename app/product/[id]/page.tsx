@@ -8,7 +8,20 @@ import { useAuth } from "@/contexts/AuthContext"
 import { TopBar } from "@/components/layout/top-bar"
 import { BottomNavigation } from "@/components/layout/bottom-navigation"
 import { ProductCard } from "@/components/ui/product-card"
-import { ArrowLeft, Minus, Plus, ShoppingCart, Star, Truck, Shield, MessageCircle, User } from "lucide-react"
+import {
+  ArrowLeft,
+  Minus,
+  Plus,
+  ShoppingCart,
+  Star,
+  Truck,
+  Shield,
+  MessageCircle,
+  User,
+  Clock,
+  Calendar,
+  Info,
+} from "lucide-react"
 import Image from "next/image"
 
 interface Product {
@@ -19,6 +32,12 @@ interface Product {
   description_ru: string
   price: number
   unit: string
+  product_type: "sale" | "rental"
+  rental_time_unit?: "hour" | "day" | "week" | "month"
+  rental_price_per_unit?: number
+  rental_deposit?: number
+  rental_min_duration?: number
+  rental_max_duration?: number
   images: string[]
   stock_quantity: number
   min_order_quantity: number
@@ -55,6 +74,7 @@ export default function ProductDetailPage() {
   const [reviews, setReviews] = useState<Review[]>([])
   const [loading, setLoading] = useState(true)
   const [quantity, setQuantity] = useState(1)
+  const [rentalDuration, setRentalDuration] = useState(1)
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
   const [isAddingToCart, setIsAddingToCart] = useState(false)
   const [showCartFab, setShowCartFab] = useState(false)
@@ -85,6 +105,7 @@ export default function ProductDetailPage() {
 
       setProduct(data)
       setQuantity(data.min_order_quantity || 1)
+      setRentalDuration(data.rental_min_duration || 1)
 
       // Fetch similar products
       fetchSimilarProducts(data.category_id, productId)
@@ -157,7 +178,16 @@ export default function ProductDetailPage() {
 
     setIsAddingToCart(true)
     try {
-      await addToCart(product.id, quantity)
+      if (product.product_type === "rental") {
+        // For rental products, we need to handle duration
+        await addToCart(product.id, quantity, {
+          rental_duration: rentalDuration,
+          rental_time_unit: product.rental_time_unit,
+        })
+      } else {
+        await addToCart(product.id, quantity)
+      }
+
       // Success feedback
       if (window.Telegram?.WebApp) {
         window.Telegram.WebApp.showAlert("Mahsulot savatga qo'shildi!")
@@ -174,6 +204,48 @@ export default function ProductDetailPage() {
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat("uz-UZ").format(price)
+  }
+
+  const getRentalTimeText = (unit?: string) => {
+    switch (unit) {
+      case "hour":
+        return "soat"
+      case "day":
+        return "kun"
+      case "week":
+        return "hafta"
+      case "month":
+        return "oy"
+      default:
+        return "vaqt"
+    }
+  }
+
+  const getRentalIcon = (unit?: string) => {
+    switch (unit) {
+      case "hour":
+        return <Clock className="w-4 h-4" />
+      case "day":
+      case "week":
+      case "month":
+        return <Calendar className="w-4 h-4" />
+      default:
+        return <Clock className="w-4 h-4" />
+    }
+  }
+
+  const calculateRentalTotal = () => {
+    if (!product || product.product_type !== "rental" || !product.rental_price_per_unit) {
+      return 0
+    }
+    return product.rental_price_per_unit * rentalDuration * quantity
+  }
+
+  const calculateRentalDeposit = () => {
+    if (!product || product.product_type !== "rental" || !product.rental_deposit) {
+      return 0
+    }
+    return product.rental_deposit * quantity
   }
 
   const renderStars = (rating: number) => {
@@ -241,7 +313,15 @@ export default function ProductDetailPage() {
           </button>
           <div className="flex-1">
             <h1 className="text-lg font-bold line-clamp-1">{product.name_uz}</h1>
-            <p className="text-sm text-muted-foreground">{product.category.name_uz}</p>
+            <div className="flex items-center space-x-2">
+              <p className="text-sm text-muted-foreground">{product.category.name_uz}</p>
+              {product.product_type === "rental" && (
+                <span className="px-2 py-1 bg-blue-500 text-white text-xs rounded flex items-center space-x-1">
+                  {getRentalIcon(product.rental_time_unit)}
+                  <span>IJARA</span>
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -304,10 +384,28 @@ export default function ProductDetailPage() {
               )}
             </div>
 
-            <div className="flex items-baseline space-x-2 mb-4">
-              <span className="text-3xl font-bold">{formatPrice(product.price)} so'm</span>
-              <span className="text-muted-foreground">/{product.unit}</span>
-            </div>
+            {product.product_type === "rental" && product.rental_price_per_unit ? (
+              <div className="mb-4">
+                <div className="flex items-baseline space-x-2 mb-2">
+                  <span className="text-3xl font-bold text-blue-600">
+                    {formatPrice(product.rental_price_per_unit)} so'm
+                  </span>
+                  <span className="text-muted-foreground">
+                    /{getRentalTimeText(product.rental_time_unit)} • {product.unit}
+                  </span>
+                </div>
+                {product.rental_deposit && product.rental_deposit > 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    Kafolat puli: {formatPrice(product.rental_deposit)} so'm/{product.unit}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-baseline space-x-2 mb-4">
+                <span className="text-3xl font-bold">{formatPrice(product.price)} so'm</span>
+                <span className="text-muted-foreground">/{product.unit}</span>
+              </div>
+            )}
 
             {product.description_uz && (
               <p className="text-muted-foreground leading-relaxed">{product.description_uz}</p>
@@ -323,12 +421,76 @@ export default function ProductDetailPage() {
               </p>
             </div>
             <div className="bg-muted/50 rounded-xl p-4">
-              <h4 className="text-sm text-muted-foreground mb-1">Minimal buyurtma</h4>
+              <h4 className="text-sm text-muted-foreground mb-1">
+                {product.product_type === "rental" ? "Minimal muddat" : "Minimal buyurtma"}
+              </h4>
               <p className="font-semibold">
-                {product.min_order_quantity} {product.unit}
+                {product.product_type === "rental"
+                  ? `${product.rental_min_duration} ${getRentalTimeText(product.rental_time_unit)}`
+                  : `${product.min_order_quantity} ${product.unit}`}
               </p>
             </div>
           </div>
+
+          {/* Rental Duration Selector */}
+          {product.product_type === "rental" && (
+            <div className="bg-card rounded-xl border border-border p-6">
+              <h3 className="text-lg font-semibold mb-4 flex items-center">
+                {getRentalIcon(product.rental_time_unit)}
+                <span className="ml-2">Ijara muddatini tanlang</span>
+              </h3>
+              <div className="flex items-center space-x-4 mb-4">
+                <button
+                  onClick={() => setRentalDuration(Math.max(product.rental_min_duration || 1, rentalDuration - 1))}
+                  disabled={rentalDuration <= (product.rental_min_duration || 1)}
+                  className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-colors disabled:opacity-50"
+                >
+                  <Minus className="w-5 h-5" />
+                </button>
+                <div className="text-center">
+                  <span className="text-2xl font-semibold">{rentalDuration}</span>
+                  <p className="text-sm text-muted-foreground">{getRentalTimeText(product.rental_time_unit)}</p>
+                </div>
+                <button
+                  onClick={() => setRentalDuration(Math.min(product.rental_max_duration || 365, rentalDuration + 1))}
+                  disabled={rentalDuration >= (product.rental_max_duration || 365)}
+                  className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-colors disabled:opacity-50"
+                >
+                  <Plus className="w-5 h-5" />
+                </button>
+              </div>
+
+              {product.rental_min_duration && product.rental_max_duration && (
+                <p className="text-sm text-muted-foreground mb-4">
+                  Minimal: {product.rental_min_duration} {getRentalTimeText(product.rental_time_unit)} • Maksimal:{" "}
+                  {product.rental_max_duration} {getRentalTimeText(product.rental_time_unit)}
+                </p>
+              )}
+
+              <div className="bg-blue-50 dark:bg-blue-950/20 rounded-lg p-4">
+                <div className="flex items-center space-x-2 mb-2">
+                  <Info className="w-4 h-4 text-blue-600" />
+                  <span className="font-medium text-blue-600">Ijara hisob-kitobi</span>
+                </div>
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span>Ijara narxi:</span>
+                    <span>{formatPrice(calculateRentalTotal())} so'm</span>
+                  </div>
+                  {product.rental_deposit && product.rental_deposit > 0 && (
+                    <div className="flex justify-between">
+                      <span>Kafolat puli:</span>
+                      <span>{formatPrice(calculateRentalDeposit())} so'm</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-semibold border-t pt-1">
+                    <span>Jami to'lov:</span>
+                    <span>{formatPrice(calculateRentalTotal() + calculateRentalDeposit())} so'm</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Quantity Selector - Desktop */}
           <div className="hidden md:block bg-card rounded-xl border border-border p-6">
@@ -353,7 +515,12 @@ export default function ProductDetailPage() {
 
             <div className="flex items-center justify-between mb-4">
               <span className="text-lg">Jami narx:</span>
-              <span className="text-2xl font-bold text-primary">{formatPrice(product.price * quantity)} so'm</span>
+              <span className="text-2xl font-bold text-primary">
+                {product.product_type === "rental"
+                  ? formatPrice(calculateRentalTotal() + calculateRentalDeposit())
+                  : formatPrice(product.price * quantity)}{" "}
+                so'm
+              </span>
             </div>
 
             <button
@@ -366,7 +533,13 @@ export default function ProductDetailPage() {
               ) : (
                 <ShoppingCart className="w-5 h-5" />
               )}
-              <span>{isAddingToCart ? "Qo'shilmoqda..." : "Savatga qo'shish"}</span>
+              <span>
+                {isAddingToCart
+                  ? "Qo'shilmoqda..."
+                  : product.product_type === "rental"
+                    ? "Ijaraga olish"
+                    : "Savatga qo'shish"}
+              </span>
             </button>
           </div>
 
@@ -374,7 +547,7 @@ export default function ProductDetailPage() {
           <div className="bg-card rounded-xl border border-border p-4">
             <h4 className="font-semibold mb-3 flex items-center">
               <Truck className="w-5 h-5 mr-2" />
-              Yetkazib berish
+              {product.product_type === "rental" ? "Yetkazib berish va qaytarish" : "Yetkazib berish"}
             </h4>
             <div className="space-y-2">
               {product.delivery_limit > 0 ? (
@@ -388,7 +561,14 @@ export default function ProductDetailPage() {
                   Yetkazib berish: <span className="font-medium">{formatPrice(product.delivery_price)} so'm</span>
                 </p>
               )}
-              <p className="text-sm text-muted-foreground">Taxminiy yetkazib berish vaqti: 1-3 ish kuni</p>
+              <p className="text-sm text-muted-foreground">
+                Taxminiy yetkazib berish vaqti: {product.product_type === "rental" ? "2-4 soat" : "1-3 ish kuni"}
+              </p>
+              {product.product_type === "rental" && (
+                <p className="text-sm text-muted-foreground">
+                  Qaytarish: Ijara muddati tugagach, mahsulotni qaytarib berish kerak
+                </p>
+              )}
             </div>
           </div>
 
@@ -438,7 +618,7 @@ export default function ProductDetailPage() {
           {similarProducts.length > 0 && (
             <div>
               <h3 className="text-lg font-semibold mb-4">O'xshash mahsulotlar</h3>
-              <div className="product-grid">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {similarProducts.map((similarProduct) => (
                   <ProductCard
                     key={similarProduct.id}
@@ -477,7 +657,12 @@ export default function ProductDetailPage() {
           {/* Price and Add to Cart */}
           <div className="flex-1 flex items-center justify-between">
             <div>
-              <span className="text-lg font-bold">{formatPrice(product.price * quantity)} so'm</span>
+              <span className="text-lg font-bold">
+                {product.product_type === "rental"
+                  ? formatPrice(calculateRentalTotal() + calculateRentalDeposit())
+                  : formatPrice(product.price * quantity)}{" "}
+                so'm
+              </span>
             </div>
             <button
               onClick={handleAddToCart}
@@ -489,7 +674,13 @@ export default function ProductDetailPage() {
               ) : (
                 <ShoppingCart className="w-4 h-4" />
               )}
-              <span>{isAddingToCart ? "Qo'shilmoqda..." : "Savatga qo'shish"}</span>
+              <span>
+                {isAddingToCart
+                  ? "Qo'shilmoqda..."
+                  : product.product_type === "rental"
+                    ? "Ijaraga olish"
+                    : "Savatga qo'shish"}
+              </span>
             </button>
           </div>
         </div>

@@ -5,14 +5,15 @@ import { createContext, useContext, useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { useTelegram } from "./TelegramContext"
 
-interface User {
+interface UserProfile {
   id: string
-  telegram_id: number
+  telegram_id?: string
   first_name: string
   last_name: string
   username?: string
   phone_number?: string
   email?: string
+  avatar_url?: string
   is_verified: boolean
   role: string
   created_at: string
@@ -20,97 +21,192 @@ interface User {
 }
 
 interface AuthContextType {
-  user: User | null
+  user: UserProfile | null
+  profile: UserProfile | null
   loading: boolean
   signOut: () => void
+  checkWebsiteLoginStatus: (token: string) => Promise<UserProfile | null>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
+  const { user: tgUser, isReady, isTelegramWebApp } = useTelegram()
+  const [user, setUser] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
-  const { webApp, isTelegramWebApp } = useTelegram()
 
   useEffect(() => {
-    initializeAuth()
-  }, [webApp, isTelegramWebApp])
-
-  const initializeAuth = async () => {
-    try {
-      if (isTelegramWebApp && webApp?.initDataUnsafe?.user) {
-        // Telegram Web App - automatic login
-        console.log("Telegram Web App detected, attempting auto-login...")
-        const telegramUser = webApp.initDataUnsafe.user
-        await handleTelegramLogin(telegramUser)
+    if (isReady) {
+      if (isTelegramWebApp && tgUser) {
+        // Telegram Web App automatic login - no login required
+        console.log("Starting Telegram Web App auto login...")
+        handleTelegramWebAppLogin()
       } else {
-        // Regular web - check local session
+        // Regular web - check for login token or local session
         console.log("Checking web session...")
-        const savedUser = localStorage.getItem("jamolstroy_user")
-        if (savedUser) {
-          const parsedUser = JSON.parse(savedUser)
-          console.log("Local session found for:", parsedUser.first_name)
-          setUser(parsedUser)
-        }
+        checkWebSession()
       }
+    }
+  }, [isReady, isTelegramWebApp, tgUser])
+
+  const handleTelegramWebAppLogin = async () => {
+    if (!tgUser) {
+      console.log("No Telegram user found")
+      setLoading(false)
+      return
+    }
+
+    try {
+      console.log("Auto login for Telegram Web App user:", tgUser.id)
+
+      // Find user by Telegram ID
+      const { data: existingUser, error: searchError } = await supabase
+        .from("users")
+        .select("*")
+        .eq("telegram_id", tgUser.id.toString())
+        .single()
+
+      if (searchError && searchError.code !== "PGRST116") {
+        throw searchError
+      }
+
+      let userData = existingUser
+
+      // If user doesn't exist, create new user automatically
+      if (!existingUser) {
+        console.log("Creating new user for Telegram Web App ID:", tgUser.id)
+
+        const { data: newUser, error: createError } = await supabase
+          .from("users")
+          .insert([
+            {
+              telegram_id: tgUser.id.toString(),
+              first_name: tgUser.first_name,
+              last_name: tgUser.last_name || "",
+              username: tgUser.username || "",
+              is_verified: true,
+              role: "customer",
+            },
+          ])
+          .select()
+          .single()
+
+        if (createError) {
+          console.error("Error creating user:", createError)
+          throw createError
+        }
+        userData = newUser
+        console.log("New user created successfully:", userData.id)
+      } else {
+        console.log("Existing user found, updating info...")
+
+        // Update existing user info
+        const { data: updatedUser, error: updateError } = await supabase
+          .from("users")
+          .update({
+            first_name: tgUser.first_name,
+            last_name: tgUser.last_name || "",
+            username: tgUser.username || "",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", existingUser.id)
+          .select()
+          .single()
+
+        if (updateError) {
+          console.error("Error updating user:", updateError)
+          throw updateError
+        }
+        userData = updatedUser
+      }
+
+      setUser(userData)
+      localStorage.setItem("jamolstroy_user", JSON.stringify(userData))
+      console.log("Telegram Web App auto login successful for:", userData.first_name)
     } catch (error) {
-      console.error("Auth initialization error:", error)
+      console.error("Telegram Web App login error:", error)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleTelegramLogin = async (telegramUser: any) => {
+  const checkWebSession = async () => {
     try {
-      // Check if user exists in database
-      const { data: existingUser, error: fetchError } = await supabase
-        .from("users")
-        .select("*")
-        .eq("telegram_id", telegramUser.id)
-        .single()
+      // Check for login token in URL
+      const urlParams = new URLSearchParams(window.location.search)
+      const loginToken = urlParams.get("token")
 
-      if (fetchError && fetchError.code !== "PGRST116") {
-        throw fetchError
+      if (loginToken) {
+        console.log("Login token found, checking status...")
+        const userData = await checkWebsiteLoginStatus(loginToken)
+        if (userData) {
+          setUser(userData)
+          localStorage.setItem("jamolstroy_user", JSON.stringify(userData))
+          // Clean up URL
+          window.history.replaceState({}, document.title, window.location.pathname)
+          return
+        }
       }
 
-      let user = existingUser
-
-      if (!existingUser) {
-        // Create new user automatically
-        console.log("Creating new user for Telegram ID:", telegramUser.id)
-        const { data: newUser, error: createError } = await supabase
-          .from("users")
-          .insert({
-            telegram_id: telegramUser.id,
-            first_name: telegramUser.first_name,
-            last_name: telegramUser.last_name || "",
-            username: telegramUser.username || null,
-            is_verified: true,
-            role: "customer",
-          })
-          .select()
-          .single()
-
-        if (createError) throw createError
-        user = newUser
-      }
-
-      if (user) {
-        console.log("Telegram user logged in:", user.first_name)
-        setUser(user)
-        localStorage.setItem("jamolstroy_user", JSON.stringify(user))
+      // Check local storage
+      const savedUser = localStorage.getItem("jamolstroy_user")
+      if (savedUser) {
+        try {
+          const parsedUser = JSON.parse(savedUser)
+          console.log("Local session found for:", parsedUser.first_name)
+          setUser(parsedUser)
+        } catch (parseError) {
+          console.error("Error parsing saved user:", parseError)
+          localStorage.removeItem("jamolstroy_user")
+        }
       }
     } catch (error) {
-      console.error("Telegram login error:", error)
+      console.error("Web session check error:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const checkWebsiteLoginStatus = async (token: string): Promise<UserProfile | null> => {
+    try {
+      console.log("Checking login status for token:", token)
+
+      const { data: session, error: sessionError } = await supabase
+        .from("website_login_sessions")
+        .select(`
+          *,
+          user:users(*)
+        `)
+        .eq("temp_token", token)
+        .eq("status", "approved")
+        .single()
+
+      if (sessionError || !session) {
+        console.log("No approved session found")
+        return null
+      }
+
+      // Check if session is expired
+      if (new Date(session.expires_at) < new Date()) {
+        console.log("Session expired")
+        return null
+      }
+
+      console.log("Login approved, user data:", session.user)
+      return session.user as UserProfile
+    } catch (error) {
+      console.error("Login status check error:", error)
+      return null
     }
   }
 
   const signOut = () => {
+    console.log("Signing out user")
     setUser(null)
     localStorage.removeItem("jamolstroy_user")
     localStorage.removeItem("jamolstroy_cart")
 
-    // Clear all related data
+    // Clear all jamolstroy related data
     const keysToRemove = []
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i)
@@ -121,7 +217,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     keysToRemove.forEach((key) => localStorage.removeItem(key))
   }
 
-  return <AuthContext.Provider value={{ user, loading, signOut }}>{children}</AuthContext.Provider>
+  const value = {
+    user,
+    profile: user, // For backward compatibility
+    loading,
+    signOut,
+    checkWebsiteLoginStatus,
+  }
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
 export function useAuth() {

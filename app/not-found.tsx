@@ -3,8 +3,7 @@
 import { useRouter } from "next/navigation"
 import { TopBar } from "@/components/layout/top-bar"
 import { BottomNavigation } from "@/components/layout/bottom-navigation"
-import { Button } from "@/components/ui/button"
-import { Home, ArrowLeft } from "lucide-react"
+import { Home, ArrowLeft, Phone } from "lucide-react"
 
 export default function NotFound() {
   const router = useRouter()
@@ -13,54 +12,58 @@ export default function NotFound() {
     <div className="min-h-screen bg-background pb-20 md:pb-4">
       <TopBar />
 
-      <div className="container mx-auto px-4 py-20">
+      <div className="container mx-auto px-4 py-12">
         <div className="text-center max-w-md mx-auto">
-          {/* Sad Emoji Sticker */}
+          {/* Sad emoji sticker */}
           <div className="text-8xl mb-6">😢</div>
 
-          {/* JamolStroy Branding */}
-          <div className="mb-6">
-            <div className="flex items-center justify-center space-x-2 mb-2">
-              <div className="w-8 h-8 bg-gradient-to-br from-primary to-primary/80 rounded-lg flex items-center justify-center">
-                <span className="text-primary-foreground font-bold text-sm">J</span>
-              </div>
-              <span className="font-bold text-xl">JamolStroy</span>
+          {/* JamolStroy logo and branding */}
+          <div className="flex items-center justify-center mb-4">
+            <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center mr-2">
+              <span className="text-primary-foreground font-bold text-sm">J</span>
             </div>
-            <p className="text-muted-foreground text-sm">dan yomon xabar</p>
+            <span className="text-xl font-bold">JamolStroy</span>
           </div>
 
-          {/* Error Message */}
+          <p className="text-muted-foreground text-sm mb-6">dan yomon xabar</p>
+
+          {/* Main message */}
           <h1 className="text-2xl font-bold mb-4">Bu sahifa mavjud emas</h1>
-          <p className="text-muted-foreground mb-8">
+
+          <p className="text-muted-foreground mb-8 leading-relaxed">
             Kechirasiz, siz qidirayotgan sahifa topilmadi yoki o'chirilgan bo'lishi mumkin.
           </p>
 
-          {/* Action Buttons */}
-          <div className="space-y-3">
-            <Button onClick={() => router.push("/")} className="w-full">
-              <Home className="w-4 h-4 mr-2" />
-              Bosh sahifaga o'tish
-            </Button>
+          {/* Action buttons */}
+          <div className="space-y-3 mb-8">
+            <button
+              onClick={() => router.push("/")}
+              className="w-full flex items-center justify-center space-x-2 bg-primary text-primary-foreground py-3 px-6 rounded-lg hover:bg-primary/90 transition-colors"
+            >
+              <Home className="w-5 h-5" />
+              <span>Bosh sahifaga o'tish</span>
+            </button>
 
-            <Button variant="outline" onClick={() => router.back()} className="w-full">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Orqaga qaytish
-            </Button>
+            <button
+              onClick={() => router.back()}
+              className="w-full flex items-center justify-center space-x-2 bg-muted text-muted-foreground py-3 px-6 rounded-lg hover:bg-muted/80 transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5" />
+              <span>Orqaga qaytish</span>
+            </button>
           </div>
 
-          {/* Additional Help */}
-          <div className="mt-8 p-4 bg-muted/50 rounded-lg">
-            <p className="text-sm text-muted-foreground">
-              Agar muammo davom etsa, bizning{" "}
-              <button onClick={() => router.push("/catalog")} className="text-primary hover:underline">
-                katalog
-              </button>{" "}
-              bo'limiga tashrif buyuring yoki{" "}
-              <a href="tel:+998901234567" className="text-primary hover:underline">
-                +998 90 123 45 67
-              </a>{" "}
-              raqamiga qo'ng'iroq qiling.
+          {/* Help section */}
+          <div className="bg-card rounded-lg border border-border p-4">
+            <p className="text-sm text-muted-foreground mb-3">
+              Agar muammo davom etsa, bizning <strong>katalog</strong> bo'limiga tashrif buyuring yoki qo'ng'iroq
+              qiling.
             </p>
+
+            <div className="flex items-center justify-center space-x-2 text-sm">
+              <Phone className="w-4 h-4" />
+              <span className="font-medium">+998 90 123 45 67</span>
+            </div>
           </div>
         </div>
       </div>

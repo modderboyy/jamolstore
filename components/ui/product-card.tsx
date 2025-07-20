@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { Star, ShoppingCart } from "lucide-react"
+import { Star, ShoppingCart, Clock, Calendar } from "lucide-react"
 import Image from "next/image"
 import { useCart } from "@/contexts/CartContext"
 import { useAuth } from "@/contexts/AuthContext"
@@ -11,33 +11,105 @@ import { useState } from "react"
 interface Product {
   id: string
   name_uz: string
+  name_ru?: string
+  description_uz?: string
   price: number
   unit: string
-  images: string[]
-  is_featured: boolean
-  is_popular: boolean
+  product_type?: "sale" | "rental"
+  rental_time_unit?: "hour" | "day" | "week" | "month"
+  rental_price_per_unit?: number
+  images?: string[]
   stock_quantity: number
-  min_order_quantity: number
-  rating?: number
-  review_count?: number
-  category: {
+  is_available: boolean
+  is_featured?: boolean
+  is_popular?: boolean
+  category?: {
     name_uz: string
   }
+  rating?: number
+  review_count?: number
 }
 
 interface ProductCardProps {
   product: Product
-  onQuickView: (productId: string) => void
+  onQuickView?: (id: string) => void
+  className?: string
 }
 
-export function ProductCard({ product, onQuickView }: ProductCardProps) {
-  const { addToCart } = useCart()
-  const { user } = useAuth()
+export function ProductCard({ product, onQuickView, className = "" }: ProductCardProps) {
   const router = useRouter()
+  const { user } = useAuth()
+  const { addToCart } = useCart()
   const [isAddingToCart, setIsAddingToCart] = useState(false)
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat("uz-UZ").format(price)
+  }
+
+  const getRentalTimeText = (unit?: string) => {
+    switch (unit) {
+      case "hour":
+        return "soat"
+      case "day":
+        return "kun"
+      case "week":
+        return "hafta"
+      case "month":
+        return "oy"
+      default:
+        return "vaqt"
+    }
+  }
+
+  const getRentalIcon = (unit?: string) => {
+    switch (unit) {
+      case "hour":
+        return <Clock className="w-3 h-3" />
+      case "day":
+      case "week":
+      case "month":
+        return <Calendar className="w-3 h-3" />
+      default:
+        return <Clock className="w-3 h-3" />
+    }
+  }
+
+  const handleAddToCart = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+
+    if (!user) {
+      router.push("/login")
+      return
+    }
+
+    if (product.product_type === "rental") {
+      // For rental products, redirect to product page for duration selection
+      router.push(`/product/${product.id}`)
+      return
+    }
+
+    setIsAddingToCart(true)
+    try {
+      await addToCart(product.id, 1)
+      if (window.Telegram?.WebApp) {
+        window.Telegram.WebApp.showAlert("Mahsulot savatga qo'shildi!")
+      }
+    } catch (error) {
+      console.error("Error adding to cart:", error)
+      if (window.Telegram?.WebApp) {
+        window.Telegram.WebApp.showAlert("Xatolik yuz berdi")
+      }
+    } finally {
+      setIsAddingToCart(false)
+    }
+  }
+
+  const handleCardClick = () => {
+    if (onQuickView) {
+      onQuickView(product.id)
+    } else {
+      router.push(`/product/${product.id}`)
+    }
   }
 
   const renderStars = (rating: number) => {
@@ -64,98 +136,107 @@ export function ProductCard({ product, onQuickView }: ProductCardProps) {
     return stars
   }
 
-  const handleAddToCart = async (e: React.MouseEvent) => {
-    e.stopPropagation()
-
-    if (!user) {
-      router.push("/login")
-      return
-    }
-
-    setIsAddingToCart(true)
-    try {
-      await addToCart(product.id, product.min_order_quantity || 1)
-    } catch (error) {
-      console.error("Savatga qo'shishda xatolik:", error)
-    } finally {
-      setIsAddingToCart(false)
-    }
-  }
-
   return (
     <div
-      onClick={() => onQuickView(product.id)}
-      className="bg-card border border-border rounded-lg p-4 hover:shadow-clean transition-all cursor-pointer product-card group"
+      className={`bg-card rounded-xl border border-border hover:border-primary/20 hover:shadow-md transition-all cursor-pointer group ${className}`}
+      onClick={handleCardClick}
     >
       {/* Product Image */}
-      <div className="aspect-square bg-muted rounded-lg overflow-hidden mb-3 relative">
+      <div className="relative aspect-square bg-muted rounded-t-xl overflow-hidden">
         {product.images && product.images.length > 0 ? (
           <Image
             src={product.images[0] || "/placeholder.svg"}
             alt={product.name_uz}
             fill
             className="object-cover group-hover:scale-105 transition-transform duration-300"
+            sizes="(max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw"
           />
         ) : (
-          <div className="w-full h-full bg-muted flex items-center justify-center">
-            <div className="w-8 h-8 bg-border rounded" />
+          <div className="w-full h-full flex items-center justify-center">
+            <div className="w-12 h-12 bg-muted-foreground/20 rounded-lg" />
           </div>
         )}
 
         {/* Badges */}
         <div className="absolute top-2 left-2 flex flex-col space-y-1">
           {product.is_featured && (
-            <span className="px-2 py-1 bg-primary text-primary-foreground text-xs font-semibold rounded">TOP</span>
+            <span className="px-2 py-1 bg-primary text-primary-foreground text-xs font-medium rounded">TOP</span>
           )}
           {product.is_popular && (
-            <span className="px-2 py-1 bg-orange-500 text-white text-xs font-semibold rounded">HIT</span>
+            <span className="px-2 py-1 bg-red-500 text-white text-xs font-medium rounded">OMMABOP</span>
+          )}
+          {product.product_type === "rental" && (
+            <span className="px-2 py-1 bg-blue-500 text-white text-xs font-medium rounded flex items-center space-x-1">
+              {getRentalIcon(product.rental_time_unit)}
+              <span>IJARA</span>
+            </span>
           )}
         </div>
 
-        {/* Quick Add Button */}
-        <button
-          onClick={handleAddToCart}
-          disabled={isAddingToCart}
-          className="absolute bottom-2 right-2 w-8 h-8 bg-primary text-primary-foreground rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary/90 disabled:opacity-50"
-        >
-          {isAddingToCart ? (
-            <div className="w-3 h-3 border border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-          ) : (
-            <ShoppingCart className="w-4 h-4" />
-          )}
-        </button>
+        {/* Stock Status */}
+        {product.stock_quantity <= 0 && (
+          <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+            <span className="text-white font-medium">Tugagan</span>
+          </div>
+        )}
       </div>
 
       {/* Product Info */}
-      <div className="space-y-2">
-        <h3 className="font-semibold text-card-foreground line-clamp-2 text-sm leading-tight">{product.name_uz}</h3>
+      <div className="p-4">
+        {/* Category */}
+        {product.category && <p className="text-xs text-muted-foreground mb-1">{product.category.name_uz}</p>}
+
+        {/* Product Name */}
+        <h3 className="font-medium text-sm mb-2 line-clamp-2 group-hover:text-primary transition-colors">
+          {product.name_uz}
+        </h3>
 
         {/* Rating */}
         {product.rating && product.review_count && (
-          <div className="flex items-center space-x-2">
-            <div className="flex items-center space-x-1">{renderStars(product.rating)}</div>
-            <span className="text-xs font-medium text-card-foreground">{product.rating.toFixed(1)}</span>
+          <div className="flex items-center space-x-1 mb-2">
+            <div className="flex items-center">{renderStars(product.rating)}</div>
             <span className="text-xs text-muted-foreground">({product.review_count})</span>
           </div>
         )}
 
         {/* Price */}
-        <div className="flex items-baseline space-x-1">
-          <span className="text-lg font-bold text-card-foreground">{formatPrice(product.price)}</span>
-          <span className="text-xs text-muted-foreground">so'm</span>
+        <div className="mb-3">
+          {product.product_type === "rental" && product.rental_price_per_unit ? (
+            <div>
+              <p className="text-primary font-semibold text-sm">{formatPrice(product.rental_price_per_unit)} so'm</p>
+              <p className="text-xs text-muted-foreground">
+                /{getRentalTimeText(product.rental_time_unit)} • {product.unit}
+              </p>
+            </div>
+          ) : (
+            <div>
+              <p className="text-primary font-semibold text-sm">{formatPrice(product.price)} so'm</p>
+              <p className="text-xs text-muted-foreground">/{product.unit}</p>
+            </div>
+          )}
         </div>
 
-        <div className="text-xs text-muted-foreground">
-          {product.unit} | {product.category.name_uz}
-        </div>
-
-        {/* Stock Status */}
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">
-            Omborda: {product.stock_quantity} {product.unit}
-          </span>
-          {product.stock_quantity < 10 && <span className="text-xs text-orange-600 font-medium">Kam qoldi!</span>}
-        </div>
+        {/* Add to Cart Button */}
+        <button
+          onClick={handleAddToCart}
+          disabled={isAddingToCart || product.stock_quantity <= 0}
+          className="w-full flex items-center justify-center space-x-2 bg-primary text-primary-foreground py-2 px-3 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isAddingToCart ? (
+            <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+          ) : (
+            <>
+              <ShoppingCart className="w-4 h-4" />
+              <span>
+                {product.product_type === "rental"
+                  ? "Ijaraga olish"
+                  : product.stock_quantity <= 0
+                    ? "Tugagan"
+                    : "Savatga"}
+              </span>
+            </>
+          )}
+        </button>
       </div>
     </div>
   )
