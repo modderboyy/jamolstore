@@ -38,9 +38,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (isReady) {
       if (isTelegramWebApp && tgUser) {
-        // Telegram Web App automatic login
-        console.log("Starting Telegram auto login...")
-        handleTelegramAutoLogin()
+        // Telegram Web App automatic login - no login required
+        console.log("Starting Telegram Web App auto login...")
+        handleTelegramWebAppLogin()
       } else {
         // Regular web - check for login token or local session
         console.log("Checking web session...")
@@ -49,7 +49,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isReady, isTelegramWebApp, tgUser])
 
-  const handleTelegramAutoLogin = async () => {
+  const handleTelegramWebAppLogin = async () => {
     if (!tgUser) {
       console.log("No Telegram user found")
       setLoading(false)
@@ -57,7 +57,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      console.log("Auto login for Telegram user:", tgUser.id)
+      console.log("Auto login for Telegram Web App user:", tgUser.id)
 
       // Find user by Telegram ID
       const { data: existingUser, error: searchError } = await supabase
@@ -72,9 +72,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       let userData = existingUser
 
-      // If user doesn't exist, create new user
+      // If user doesn't exist, create new user automatically
       if (!existingUser) {
-        console.log("Creating new user for Telegram ID:", tgUser.id)
+        console.log("Creating new user for Telegram Web App ID:", tgUser.id)
 
         const { data: newUser, error: createError } = await supabase
           .from("users")
@@ -122,9 +122,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       setUser(userData)
       localStorage.setItem("jamolstroy_user", JSON.stringify(userData))
-      console.log("Telegram auto login successful for:", userData.first_name)
+      console.log("Telegram Web App auto login successful for:", userData.first_name)
     } catch (error) {
-      console.error("Telegram auto login error:", error)
+      console.error("Telegram Web App auto login error:", error)
     } finally {
       setLoading(false)
     }

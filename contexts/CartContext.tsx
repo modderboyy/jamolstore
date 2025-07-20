@@ -30,6 +30,7 @@ interface CartContextType {
   updateQuantity: (productId: string, quantity: number) => Promise<void>
   removeFromCart: (productId: string) => Promise<void>
   clearCart: () => Promise<void>
+  getTotalPrice: () => number
   loading: boolean
 }
 
@@ -44,72 +45,88 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const freeDeliveryLimit = 100000 // 100,000 so'm
 
   useEffect(() => {
-    loadCart()
+    if (user) {
+      loadCart()
+    } else {
+      // Clear cart when user logs out
+      setItems([])
+    }
   }, [user])
 
   const loadCart = async () => {
+    if (!user) return
+
     setLoading(true)
     try {
-      if (user) {
-        // Login qilgan foydalanuvchilar uchun - ma'lumotlar bazasidan
-        const { data, error } = await supabase
-          .from("cart_items")
-          .select(`
-            *,
-            product:products(*)
-          `)
-          .eq("user_id", user.id)
+      // Load cart from database for logged in users
+      const { data, error } = await supabase
+        .from("cart_items")
+        .select(`
+          *,
+          product:products(*)
+        `)
+        .eq("user_id", user.id)
 
-        if (error) throw error
-        setItems(data || [])
-      } else {
-        // Login qilmagan foydalanuvchilar uchun - localStorage dan
-        const savedCart = localStorage.getItem("jamolstroy_cart")
-        if (savedCart) {
-          const cartData = JSON.parse(savedCart)
+      if (error) throw error
 
-          // Mahsulot ma'lumotlarini olish
-          if (cartData.length > 0) {
-            const productIds = cartData.map((item: any) => item.product_id)
-            const { data: products, error } = await supabase.from("products").select("*").in("id", productIds)
+      const cartItems = (data || []).filter((item) => item.product) // Filter out items with deleted products
+      setItems(cartItems)
 
-            if (!error && products) {
-              const cartItems = cartData
-                .map((cartItem: any) => {
-                  const product = products.find((p) => p.id === cartItem.product_id)
-                  return {
-                    id: cartItem.id || `local_${cartItem.product_id}`,
-                    product_id: cartItem.product_id,
-                    quantity: cartItem.quantity,
-                    product: product,
-                  }
-                })
-                .filter((item: any) => item.product)
-
-              setItems(cartItems)
-            }
-          }
+      // Merge with local storage cart if exists
+      const localCart = localStorage.getItem("jamolstroy_cart")
+      if (localCart) {
+        try {
+          const localCartData = JSON.parse(localCart)
+          await mergeLocalCartWithDatabase(localCartData)
+          localStorage.removeItem("jamolstroy_cart") // Clear local cart after merge
+        } catch (error) {
+          console.error("Error merging local cart:", error)
         }
       }
     } catch (error) {
-      console.error("Savatni yuklashda xatolik:", error)
+      console.error("Error loading cart:", error)
     } finally {
       setLoading(false)
     }
   }
 
+  const mergeLocalCartWithDatabase = async (localCartData: any[]) => {
+    if (!user || !localCartData.length) return
+
+    try {
+      for (const localItem of localCartData) {
+        // Check if product exists in database cart
+        const existingItem = items.find((item) => item.product_id === localItem.product_id)
+
+        if (existingItem) {
+          // Update quantity (add local quantity to database quantity)
+          const newQuantity = existingItem.quantity + localItem.quantity
+          await updateQuantity(localItem.product_id, newQuantity)
+        } else {
+          // Add new item to database cart
+          await addToCart(localItem.product_id, localItem.quantity)
+        }
+      }
+    } catch (error) {
+      console.error("Error merging cart:", error)
+    }
+  }
+
   const saveToLocalStorage = (cartItems: CartItem[]) => {
-    const localCartData = cartItems.map((item) => ({
-      id: item.id,
-      product_id: item.product_id,
-      quantity: item.quantity,
-    }))
-    localStorage.setItem("jamolstroy_cart", JSON.stringify(localCartData))
+    if (!user) {
+      // Only save to localStorage if user is not logged in
+      const localCartData = cartItems.map((item) => ({
+        id: item.id,
+        product_id: item.product_id,
+        quantity: item.quantity,
+      }))
+      localStorage.setItem("jamolstroy_cart", JSON.stringify(localCartData))
+    }
   }
 
   const addToCart = async (productId: string, quantity = 1) => {
     try {
-      // Mahsulot ma'lumotlarini olish
+      // Get product info
       const { data: product, error: productError } = await supabase
         .from("products")
         .select("*")
@@ -123,7 +140,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       const finalQuantity = Math.max(quantity, product.min_order_quantity || 1)
 
       if (user) {
-        // Login qilgan foydalanuvchilar uchun - ma'lumotlar bazasiga
+        // Logged in user - save to database
         const existingItem = items.find((item) => item.product_id === productId)
 
         if (existingItem) {
@@ -147,7 +164,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           setItems((prev) => [...prev, data])
         }
       } else {
-        // Login qilmagan foydalanuvchilar uchun - localStorage ga
+        // Not logged in - save to localStorage
         const existingItem = items.find((item) => item.product_id === productId)
 
         if (existingItem) {
@@ -170,7 +187,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         }
       }
     } catch (error) {
-      console.error("Savatga qo'shishda xatolik:", error)
+      console.error("Error adding to cart:", error)
       throw error
     }
   }
@@ -183,7 +200,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (user) {
-        // Login qilgan foydalanuvchilar uchun
+        // Logged in user - update in database
         const { error } = await supabase
           .from("cart_items")
           .update({ quantity })
@@ -193,7 +210,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         if (error) throw error
       }
 
-      // Local state ni yangilash
+      // Update local state
       const updatedItems = items.map((item) => (item.product_id === productId ? { ...item, quantity } : item))
       setItems(updatedItems)
 
@@ -201,7 +218,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         saveToLocalStorage(updatedItems)
       }
     } catch (error) {
-      console.error("Miqdorni yangilashda xatolik:", error)
+      console.error("Error updating quantity:", error)
       throw error
     }
   }
@@ -209,13 +226,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const removeFromCart = async (productId: string) => {
     try {
       if (user) {
-        // Login qilgan foydalanuvchilar uchun
+        // Logged in user - remove from database
         const { error } = await supabase.from("cart_items").delete().eq("user_id", user.id).eq("product_id", productId)
 
         if (error) throw error
       }
 
-      // Local state ni yangilash
+      // Update local state
       const updatedItems = items.filter((item) => item.product_id !== productId)
       setItems(updatedItems)
 
@@ -223,7 +240,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         saveToLocalStorage(updatedItems)
       }
     } catch (error) {
-      console.error("Mahsulotni o'chirishda xatolik:", error)
+      console.error("Error removing from cart:", error)
       throw error
     }
   }
@@ -231,7 +248,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const clearCart = async () => {
     try {
       if (user) {
-        // Login qilgan foydalanuvchilar uchun
+        // Logged in user - clear database cart
         const { error } = await supabase.from("cart_items").delete().eq("user_id", user.id)
 
         if (error) throw error
@@ -243,16 +260,18 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         localStorage.removeItem("jamolstroy_cart")
       }
     } catch (error) {
-      console.error("Savatni tozalashda xatolik:", error)
+      console.error("Error clearing cart:", error)
       throw error
     }
   }
 
-  // Hisob-kitoblar
+  // Calculations
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0)
   const totalPrice = items.reduce((sum, item) => sum + item.product.price * item.quantity, 0)
   const finalDeliveryFee = totalPrice >= freeDeliveryLimit ? 0 : deliveryFee
   const grandTotal = totalPrice + finalDeliveryFee
+
+  const getTotalPrice = () => totalPrice
 
   const value = {
     items,
@@ -264,6 +283,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     updateQuantity,
     removeFromCart,
     clearCart,
+    getTotalPrice,
     loading,
   }
 

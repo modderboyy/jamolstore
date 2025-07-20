@@ -16,9 +16,9 @@ export async function POST(request: NextRequest) {
       const userId = message.from.id
       const text = message.text
 
-      // Save user info to database
+      // Save telegram user info
       try {
-        const userData = {
+        const telegramUserData = {
           telegram_id: userId.toString(),
           first_name: message.from.first_name || "",
           last_name: message.from.last_name || "",
@@ -26,34 +26,32 @@ export async function POST(request: NextRequest) {
           is_bot: message.from.is_bot || false,
         }
 
-        await supabase.from("telegram_users").upsert(userData, {
+        await supabase.from("telegram_users").upsert(telegramUserData, {
           onConflict: "telegram_id",
         })
       } catch (dbError) {
         console.error("Database error:", dbError)
       }
 
-      // Handle /start command with parameters
+      // Handle /start command
       if (text && text.startsWith("/start")) {
         const startParam = text.replace("/start", "").trim()
 
         if (startParam && startParam.includes("_")) {
-          // Parse login parameters: {temp_token}_{client_id}
+          // Website login request: {temp_token}_{client_id}
           const parts = startParam.split("_")
           if (parts.length >= 2) {
             const tempToken = parts[0]
-            const clientId = parts.slice(1).join("_") // In case client_id has underscores
-
-            console.log("Login request:", { tempToken, clientId, userId })
+            const clientId = parts.slice(1).join("_")
             await handleWebsiteLogin(chatId, userId, message.from, tempToken, clientId)
             return NextResponse.json({ ok: true })
           }
         }
 
-        // Regular start command
+        // Regular start - check if user exists
         await handleRegularStart(chatId, userId, message.from)
       } else if (text === "/help") {
-        const helpMessage = `📋 Yordam:
+        const helpMessage = `📋 *Yordam:*
 
 /start - Botni qayta ishga tushirish
 /help - Yordam ma'lumotlari
@@ -64,10 +62,10 @@ export async function POST(request: NextRequest) {
 
         await sendTelegramMessage(chatId, helpMessage)
       } else if (text === "/catalog") {
-        const catalogMessage = `📦 Mahsulotlar katalogi:
+        const catalogMessage = `📦 *Mahsulotlar katalogi:*
 
 • Qurilish materiallari
-• Elektr jihozlari
+• Elektr jihozlari  
 • Santexnika
 • Bo'yoq va laklar
 • Asboblar
@@ -89,14 +87,14 @@ export async function POST(request: NextRequest) {
 
         await sendTelegramMessage(chatId, catalogMessage, keyboard)
       } else if (text === "/contact") {
-        const contactMessage = `📞 Aloqa ma'lumotlari:
+        const contactMessage = `📞 *Aloqa ma'lumotlari:*
 
 📱 Telefon: +998 90 123 45 67
 📧 Email: info@jamolstroy.uz
 🌐 Website: jamolstroy.uz
 📍 Manzil: Toshkent sh., Chilonzor t.
 
-🕒 Ish vaqti:
+🕒 *Ish vaqti:*
 Dushanba - Shanba: 9:00 - 18:00
 Yakshanba: Dam olish kuni`
 
@@ -108,7 +106,7 @@ Yakshanba: Dam olish kuni`
 Men JamolStroy botiman. Quyidagi buyruqlardan foydalaning:
 
 /start - Botni ishga tushirish
-/catalog - Mahsulotlar katalogi
+/catalog - Mahsulotlar katalogi  
 /contact - Aloqa ma'lumotlari
 /help - Yordam
 
@@ -131,6 +129,15 @@ Yoki web ilovani ochish uchun quyidagi tugmani bosing:`
       }
     }
 
+    // Handle contact sharing
+    if (body.message && body.message.contact) {
+      const contact = body.message.contact
+      const chatId = body.message.chat.id
+      const userId = body.message.from.id
+
+      await handleContactShared(chatId, userId, body.message.from, contact)
+    }
+
     // Callback query handling
     if (body.callback_query) {
       const callbackQuery = body.callback_query
@@ -139,24 +146,24 @@ Yoki web ilovani ochish uchun quyidagi tugmani bosing:`
       const data = callbackQuery.data
 
       if (data === "contact") {
-        const contactMessage = `📞 Aloqa ma'lumotlari:
+        const contactMessage = `📞 *Aloqa ma'lumotlari:*
 
 📱 Telefon: +998 90 123 45 67
 📧 Email: info@jamolstroy.uz
 🌐 Website: jamolstroy.uz
 📍 Manzil: Toshkent sh., Chilonzor t.
 
-🕒 Ish vaqti:
+🕒 *Ish vaqti:*
 Dushanba - Shanba: 9:00 - 18:00
 Yakshanba: Dam olish kuni`
 
         await sendTelegramMessage(chatId, contactMessage)
       } else if (data === "info") {
-        const infoMessage = `ℹ️ JamolStroy haqida:
+        const infoMessage = `ℹ️ *JamolStroy haqida:*
 
 🏗️ Biz qurilish materiallari va jihozlari bo'yicha yetakchi kompaniyamiz.
 
-✅ Bizning afzalliklarimiz:
+✅ *Bizning afzalliklarimiz:*
 • Yuqori sifatli mahsulotlar
 • Raqobatbardosh narxlar
 • Tez yetkazib berish
@@ -180,11 +187,9 @@ Yakshanba: Dam olish kuni`
 
         await sendTelegramMessage(chatId, infoMessage, keyboard)
       } else if (data.startsWith("approve_")) {
-        // Approve login
         const tempToken = data.replace("approve_", "")
         await handleLoginApproval(chatId, userId, callbackQuery.from, tempToken, true, callbackQuery.message.message_id)
       } else if (data.startsWith("reject_")) {
-        // Reject login
         const tempToken = data.replace("reject_", "")
         await handleLoginApproval(
           chatId,
@@ -216,36 +221,136 @@ Yakshanba: Dam olish kuni`
 }
 
 async function handleRegularStart(chatId: number, userId: number, user: any) {
-  const welcomeMessage = `🏗️ JamolStroy ilovasiga xush kelibsiz!
+  try {
+    // Check if user exists in our system
+    const { data: existingUser, error: userError } = await supabase
+      .from("users")
+      .select("*")
+      .eq("telegram_id", userId.toString())
+      .single()
+
+    if (userError && userError.code !== "PGRST116") {
+      throw userError
+    }
+
+    if (existingUser) {
+      // User exists, show welcome message
+      const welcomeMessage = `🏗️ *Qaytib kelganingiz bilan, ${existingUser.first_name}!*
 
 Bizning katalogimizda qurilish materiallari va jihozlarining keng assortimenti mavjud.
 
 📱 Web ilovani ochish uchun quyidagi tugmani bosing:`
 
-  const keyboard = {
-    inline_keyboard: [
-      [
-        {
-          text: "🛒 Ilovani ochish",
-          web_app: {
-            url: process.env.NEXT_PUBLIC_APP_URL || "https://jamolstroy.vercel.app",
-          },
-        },
-      ],
-      [
-        {
-          text: "📞 Aloqa",
-          callback_data: "contact",
-        },
-        {
-          text: "ℹ️ Ma'lumot",
-          callback_data: "info",
-        },
-      ],
-    ],
-  }
+      const keyboard = {
+        inline_keyboard: [
+          [
+            {
+              text: "🛒 Ilovani ochish",
+              web_app: {
+                url: process.env.NEXT_PUBLIC_APP_URL || "https://jamolstroy.vercel.app",
+              },
+            },
+          ],
+          [
+            {
+              text: "📞 Aloqa",
+              callback_data: "contact",
+            },
+            {
+              text: "ℹ️ Ma'lumot",
+              callback_data: "info",
+            },
+          ],
+        ],
+      }
 
-  await sendTelegramMessage(chatId, welcomeMessage, keyboard)
+      await sendTelegramMessage(chatId, welcomeMessage, keyboard)
+    } else {
+      // New user, request phone number
+      const welcomeMessage = `🏗️ *JamolStroy ilovasiga xush kelibsiz!*
+
+Sizni ro'yxatdan o'tkazish uchun telefon raqamingizni ulashing:`
+
+      const keyboard = {
+        keyboard: [
+          [
+            {
+              text: "📱 Telefon raqamni ulashish",
+              request_contact: true,
+            },
+          ],
+        ],
+        resize_keyboard: true,
+        one_time_keyboard: true,
+      }
+
+      await sendTelegramMessage(chatId, welcomeMessage, keyboard)
+    }
+  } catch (error) {
+    console.error("Regular start error:", error)
+    await sendTelegramMessage(chatId, "❌ Xatolik yuz berdi. Qaytadan urinib ko'ring.")
+  }
+}
+
+async function handleContactShared(chatId: number, userId: number, user: any, contact: any) {
+  try {
+    // Create new user with contact info
+    const { data: newUser, error: createError } = await supabase
+      .from("users")
+      .insert([
+        {
+          telegram_id: userId.toString(),
+          first_name: contact.first_name || user.first_name || "",
+          last_name: contact.last_name || user.last_name || "",
+          username: user.username || "",
+          phone_number: contact.phone_number || "",
+          is_verified: true,
+          role: "customer",
+        },
+      ])
+      .select()
+      .single()
+
+    if (createError) {
+      console.error("User creation error:", createError)
+      throw createError
+    }
+
+    const successMessage = `✅ *Ro'yxatdan o'tish muvaffaqiyatli!*
+
+Salom, ${newUser.first_name}! Endi siz JamolStroy ilovasidan foydalanishingiz mumkin.
+
+📱 Web ilovani ochish uchun quyidagi tugmani bosing:`
+
+    const keyboard = {
+      inline_keyboard: [
+        [
+          {
+            text: "🛒 Ilovani ochish",
+            web_app: {
+              url: process.env.NEXT_PUBLIC_APP_URL || "https://jamolstroy.vercel.app",
+            },
+          },
+        ],
+        [
+          {
+            text: "📞 Aloqa",
+            callback_data: "contact",
+          },
+          {
+            text: "ℹ️ Ma'lumot",
+            callback_data: "info",
+          },
+        ],
+      ],
+      remove_keyboard: true,
+    }
+
+    await sendTelegramMessage(chatId, successMessage, keyboard)
+  } catch (error) {
+    console.error("Contact sharing error:", error)
+    await sendTelegramMessage(chatId, "❌ Ro'yxatdan o'tishda xatolik yuz berdi. Qaytadan urinib ko'ring.")
+  }
 }
 
 async function handleWebsiteLogin(chatId: number, userId: number, user: any, tempToken: string, clientId: string) {
@@ -300,6 +405,7 @@ async function handleWebsiteLogin(chatId: number, userId: number, user: any, tem
             last_name: user.last_name || "",
             username: user.username || "",
             is_verified: true,
+            role: "customer",
           },
         ])
         .select()
@@ -313,19 +419,19 @@ async function handleWebsiteLogin(chatId: number, userId: number, user: any, tem
     }
 
     // Show permission request with user info
-    const permissionMessage = `🔐 **Website Login So'rovi**
+    const permissionMessage = `🔐 *Website Login So'rovi*
 
-**JamolStroy** websaytiga kirishga ruxsat berasizmi?
+*JamolStroy* websaytiga kirishga ruxsat berasizmi?
 
-👤 **Sizning ma'lumotlaringiz:**
+👤 *Sizning ma'lumotlaringiz:*
 • Ism: ${userData.first_name} ${userData.last_name}
 • Username: ${userData.username ? "@" + userData.username : "Yo'q"}
 • Telegram ID: ${userId}
 
-🌐 **Client ID:** ${clientId}
-🔑 **Session:** ${tempToken.substring(0, 8)}...
+🌐 *Client ID:* ${clientId}
+🔑 *Session:* ${tempToken.substring(0, 8)}...
 
-⚠️ **Diqqat:** Faqat o'zingiz so'ragan bo'lsangina ruxsat bering!`
+⚠️ *Diqqat:* Faqat o'zingiz so'ragan bo'lsangina ruxsat bering!`
 
     const keyboard = {
       inline_keyboard: [
@@ -374,6 +480,9 @@ async function handleLoginApproval(
     }
 
     if (approved) {
+      // Delete any existing active sessions for this user to avoid duplicate key error
+      await supabase.from("website_login_sessions").delete().eq("user_id", userData.id).eq("status", "approved")
+
       // Update login session with approval
       const { error: updateError } = await supabase
         .from("website_login_sessions")
@@ -394,13 +503,13 @@ async function handleLoginApproval(
       await editTelegramMessage(
         chatId,
         messageId,
-        `✅ **Login Tasdiqlandi!**
+        `✅ *Login Tasdiqlandi!*
 
 🎉 Siz JamolStroy websaytiga muvaffaqiyatli kirdingiz.
 
 🌐 Websaytga qaytib, xaridlaringizni davom ettiring!
 
-👤 **Kirgan foydalanuvchi:** ${userData.first_name} ${userData.last_name}`,
+👤 *Kirgan foydalanuvchi:* ${userData.first_name} ${userData.last_name}`,
       )
     } else {
       // Update login session with rejection
@@ -421,7 +530,7 @@ async function handleLoginApproval(
       await editTelegramMessage(
         chatId,
         messageId,
-        `❌ **Login Rad Etildi**
+        `❌ *Login Rad Etildi*
 
 🔒 Xavfsizlik uchun login so'rovi bekor qilindi.
 

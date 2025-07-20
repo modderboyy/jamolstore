@@ -330,6 +330,46 @@ export default function ProductDetailPage() {
             </div>
           </div>
 
+          {/* Quantity Selector - Desktop */}
+          <div className="hidden md:block bg-card rounded-xl border border-border p-6">
+            <h3 className="text-lg font-semibold mb-4">Miqdorni tanlang</h3>
+            <div className="flex items-center space-x-4 mb-4">
+              <button
+                onClick={() => setQuantity(Math.max(product.min_order_quantity, quantity - 1))}
+                disabled={quantity <= product.min_order_quantity}
+                className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-colors disabled:opacity-50"
+              >
+                <Minus className="w-5 h-5" />
+              </button>
+              <span className="text-2xl font-semibold min-w-[4rem] text-center">{quantity}</span>
+              <button
+                onClick={() => setQuantity(Math.min(product.stock_quantity, quantity + 1))}
+                disabled={quantity >= product.stock_quantity}
+                className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-colors disabled:opacity-50"
+              >
+                <Plus className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-lg">Jami narx:</span>
+              <span className="text-2xl font-bold text-primary">{formatPrice(product.price * quantity)} so'm</span>
+            </div>
+
+            <button
+              onClick={handleAddToCart}
+              disabled={isAddingToCart || quantity > product.stock_quantity}
+              className="w-full px-6 py-4 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2 shadow-sm"
+            >
+              {isAddingToCart ? (
+                <div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+              ) : (
+                <ShoppingCart className="w-5 h-5" />
+              )}
+              <span>{isAddingToCart ? "Qo'shilmoqda..." : "Savatga qo'shish"}</span>
+            </button>
+          </div>
+
           {/* Delivery Info */}
           <div className="bg-card rounded-xl border border-border p-4">
             <h4 className="font-semibold mb-3 flex items-center">
