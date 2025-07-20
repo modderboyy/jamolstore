@@ -68,7 +68,7 @@ Bizning katalogimizda qurilish materiallari va jihozlarining keng assortimenti m
       } else if (text === "/help") {
         const helpMessage = `📋 Yordam:
 
-/start - Botni qayta ishga tushirish
+/start - Botni qayta ishgabb tushirish
 /help - Yordam ma'lumotlari
 /catalog - Mahsulotlar katalogi
 /contact - Aloqa ma'lumotlari
