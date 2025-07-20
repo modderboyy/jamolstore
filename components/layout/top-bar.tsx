@@ -112,46 +112,7 @@ export function TopBar() {
       </div>
 
       {/* Desktop Navigation */}
-      <div className="hidden md:block bg-background border-b border-border">
-        <div className="container mx-auto px-4">
-          <nav className="flex items-center space-x-8 py-3">
-            <button
-              onClick={() => router.push("/")}
-              className="text-sm font-medium hover:text-primary transition-colors"
-            >
-              Bosh sahifa
-            </button>
-            <button
-              onClick={() => router.push("/catalog")}
-              className="text-sm font-medium hover:text-primary transition-colors"
-            >
-              Katalog
-            </button>
-            <button
-              onClick={() => router.push("/workers")}
-              className="text-sm font-medium hover:text-primary transition-colors"
-            >
-              Ishchilar
-            </button>
-            {user && (
-              <>
-                <button
-                  onClick={() => router.push("/orders")}
-                  className="text-sm font-medium hover:text-primary transition-colors"
-                >
-                  Buyurtmalar
-                </button>
-                <button
-                  onClick={() => router.push("/profile")}
-                  className="text-sm font-medium hover:text-primary transition-colors"
-                >
-                  Profil
-                </button>
-              </>
-            )}
-          </nav>
-        </div>
-      </div>
+      
     </>
   )
 }
