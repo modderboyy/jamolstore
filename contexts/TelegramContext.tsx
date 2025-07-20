@@ -1,7 +1,6 @@
 "use client"
 
-import type React from "react"
-import { createContext, useContext, useEffect, useState } from "react"
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
 
 interface TelegramUser {
   id: number
@@ -12,44 +11,8 @@ interface TelegramUser {
   is_premium?: boolean
 }
 
-interface TelegramWebApp {
-  initData: string
-  initDataUnsafe: {
-    user?: TelegramUser
-    chat_type?: string
-    chat_instance?: string
-    start_param?: string
-  }
-  version: string
-  platform: string
-  colorScheme: "light" | "dark"
-  themeParams: any
-  isExpanded: boolean
-  viewportHeight: number
-  viewportStableHeight: number
-  headerColor: string
-  backgroundColor: string
-  isClosingConfirmationEnabled: boolean
-  ready: () => void
-  expand: () => void
-  close: () => void
-  showAlert: (message: string) => void
-  showConfirm: (message: string, callback: (confirmed: boolean) => void) => void
-  showPopup: (params: any, callback?: (buttonId: string) => void) => void
-  setHeaderColor: (color: string) => void
-  setBackgroundColor: (color: string) => void
-  enableClosingConfirmation: () => void
-  disableClosingConfirmation: () => void
-  onEvent: (eventType: string, eventHandler: () => void) => void
-  offEvent: (eventType: string, eventHandler: () => void) => void
-  sendData: (data: string) => void
-  openLink: (url: string) => void
-  openTelegramLink: (url: string) => void
-  openInvoice: (url: string, callback?: (status: string) => void) => void
-}
-
 interface TelegramContextType {
-  webApp: TelegramWebApp | null
+  webApp: any
   user: TelegramUser | null
   isReady: boolean
   isTelegramWebApp: boolean
@@ -57,30 +20,33 @@ interface TelegramContextType {
 
 const TelegramContext = createContext<TelegramContextType | undefined>(undefined)
 
-export function TelegramProvider({ children }: { children: React.ReactNode }) {
-  const [webApp, setWebApp] = useState<TelegramWebApp | null>(null)
+export function TelegramProvider({ children }: { children: ReactNode }) {
+  const [webApp, setWebApp] = useState<any>(null)
   const [user, setUser] = useState<TelegramUser | null>(null)
   const [isReady, setIsReady] = useState(false)
   const [isTelegramWebApp, setIsTelegramWebApp] = useState(false)
 
   useEffect(() => {
-    // Check if we're in Telegram Web App environment
-    const checkTelegramWebApp = () => {
-      if (typeof window !== "undefined") {
-        // Check for Telegram WebApp
-        const tg = (window as any).Telegram?.WebApp
-        if (tg) {
-          console.log("Telegram WebApp detected")
+    const initTelegram = () => {
+      try {
+        // Check if we're in Telegram WebApp environment
+        if (typeof window !== "undefined" && window.Telegram?.WebApp) {
+          const tg = window.Telegram.WebApp
+          console.log("Telegram WebApp detected:", tg)
+
           setWebApp(tg)
           setIsTelegramWebApp(true)
 
-          // Initialize Telegram WebApp
+          // Initialize WebApp
           tg.ready()
           tg.expand()
 
           // Set theme
-          tg.setHeaderColor("#000000")
-          tg.setBackgroundColor("#000000")
+          if (tg.colorScheme === "dark") {
+            document.documentElement.classList.add("dark")
+          } else {
+            document.documentElement.classList.remove("dark")
+          }
 
           // Get user data
           if (tg.initDataUnsafe?.user) {
@@ -94,26 +60,53 @@ export function TelegramProvider({ children }: { children: React.ReactNode }) {
           setIsTelegramWebApp(false)
           setIsReady(true)
         }
+      } catch (error) {
+        console.error("Telegram initialization error:", error)
+        setIsTelegramWebApp(false)
+        setIsReady(true)
       }
     }
 
-    // Check immediately
-    checkTelegramWebApp()
+    // Check if Telegram script is already loaded
+    if (typeof window !== "undefined") {
+      if (window.Telegram?.WebApp) {
+        initTelegram()
+      } else {
+        // Wait for Telegram script to load
+        const checkTelegram = setInterval(() => {
+          if (window.Telegram?.WebApp) {
+            clearInterval(checkTelegram)
+            initTelegram()
+          }
+        }, 100)
 
-    // Also check after a short delay in case the script loads later
-    const timeout = setTimeout(checkTelegramWebApp, 1000)
+        // Fallback timeout
+        setTimeout(() => {
+          clearInterval(checkTelegram)
+          if (!webApp) {
+            console.log("Telegram WebApp not available, continuing without it")
+            setIsTelegramWebApp(false)
+            setIsReady(true)
+          }
+        }, 3000)
 
-    return () => clearTimeout(timeout)
+        return () => clearInterval(checkTelegram)
+      }
+    }
   }, [])
 
-  const value = {
-    webApp,
-    user,
-    isReady,
-    isTelegramWebApp,
-  }
-
-  return <TelegramContext.Provider value={value}>{children}</TelegramContext.Provider>
+  return (
+    <TelegramContext.Provider
+      value={{
+        webApp,
+        user,
+        isReady,
+        isTelegramWebApp,
+      }}
+    >
+      {children}
+    </TelegramContext.Provider>
+  )
 }
 
 export function useTelegram() {
