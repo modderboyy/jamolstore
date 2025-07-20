@@ -3,26 +3,47 @@
 import type React from "react"
 import { createContext, useContext, useEffect, useState } from "react"
 
+interface TelegramUser {
+  id: number
+  first_name: string
+  last_name?: string
+  username?: string
+  language_code?: string
+  is_premium?: boolean
+}
+
 interface TelegramWebApp {
   initData: string
-  initDataUnsafe: any
+  initDataUnsafe: {
+    user?: TelegramUser
+    chat_instance?: string
+    chat_type?: string
+    start_param?: string
+  }
   version: string
   platform: string
   colorScheme: "light" | "dark"
-  themeParams: any
+  themeParams: {
+    link_color: string
+    button_color: string
+    button_text_color: string
+    secondary_bg_color: string
+    hint_color: string
+    bg_color: string
+    text_color: string
+  }
   isExpanded: boolean
   viewportHeight: number
   viewportStableHeight: number
   headerColor: string
   backgroundColor: string
-  isClosingConfirmationEnabled: boolean
-  ready(): void
-  expand(): void
-  close(): void
-  sendData(data: string): void
-  showPopup(params: any): void
-  showAlert(message: string): void
-  showConfirm(message: string): void
+  BackButton: {
+    isVisible: boolean
+    show(): void
+    hide(): void
+    onClick(callback: () => void): void
+    offClick(callback: () => void): void
+  }
   MainButton: {
     text: string
     color: string
@@ -32,30 +53,43 @@ interface TelegramWebApp {
     isProgressVisible: boolean
     setText(text: string): void
     onClick(callback: () => void): void
+    offClick(callback: () => void): void
     show(): void
     hide(): void
     enable(): void
     disable(): void
     showProgress(leaveActive?: boolean): void
     hideProgress(): void
+    setParams(params: {
+      text?: string
+      color?: string
+      text_color?: string
+      is_active?: boolean
+      is_visible?: boolean
+    }): void
   }
-  BackButton: {
-    isVisible: boolean
-    onClick(callback: () => void): void
-    show(): void
-    hide(): void
+  HapticFeedback: {
+    impactOccurred(style: "light" | "medium" | "heavy" | "rigid" | "soft"): void
+    notificationOccurred(type: "error" | "success" | "warning"): void
+    selectionChanged(): void
   }
-}
-
-interface TelegramUser {
-  id: number
-  is_bot?: boolean
-  first_name: string
-  last_name?: string
-  username?: string
-  language_code?: string
-  is_premium?: boolean
-  photo_url?: string
+  showAlert(message: string): void
+  showConfirm(message: string, callback?: (confirmed: boolean) => void): void
+  showPopup(
+    params: {
+      title?: string
+      message: string
+      buttons?: Array<{
+        id?: string
+        type?: "default" | "ok" | "close" | "cancel" | "destructive"
+        text: string
+      }>
+    },
+    callback?: (buttonId: string) => void,
+  ): void
+  ready(): void
+  expand(): void
+  close(): void
 }
 
 interface TelegramContextType {
@@ -63,7 +97,14 @@ interface TelegramContextType {
   user: TelegramUser | null
   isReady: boolean
   isTelegramWebApp: boolean
-  initData: string | null
+}
+
+declare global {
+  interface Window {
+    Telegram?: {
+      WebApp: TelegramWebApp
+    }
+  }
 }
 
 const TelegramContext = createContext<TelegramContextType | undefined>(undefined)
@@ -73,84 +114,77 @@ export function TelegramProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<TelegramUser | null>(null)
   const [isReady, setIsReady] = useState(false)
   const [isTelegramWebApp, setIsTelegramWebApp] = useState(false)
-  const [initData, setInitData] = useState<string | null>(null)
 
   useEffect(() => {
     const initTelegram = () => {
-      if (typeof window !== "undefined") {
-        // Telegram Web App mavjudligini tekshirish
-        const tg = (window as any).Telegram?.WebApp
+      if (typeof window !== "undefined" && window.Telegram?.WebApp) {
+        const tg = window.Telegram.WebApp
+        setWebApp(tg)
+        setIsTelegramWebApp(true)
 
-        if (tg) {
-          console.log("Telegram Web App detected:", tg)
-          setWebApp(tg)
-          setIsTelegramWebApp(true)
-          setInitData(tg.initData)
-
-          // User ma'lumotlarini olish
-          if (tg.initDataUnsafe?.user) {
-            console.log("Telegram user:", tg.initDataUnsafe.user)
-            setUser(tg.initDataUnsafe.user)
-          }
-
-          // Web App ni sozlash
-          tg.ready()
-          tg.expand()
-
-          // Theme ni sozlash
-          if (tg.colorScheme === "dark") {
-            document.documentElement.classList.add("dark")
-          } else {
-            document.documentElement.classList.remove("dark")
-          }
-
-          // Main button ni yashirish
-          tg.MainButton.hide()
-          tg.BackButton.hide()
-
-          setIsReady(true)
-        } else {
-          console.log("Not in Telegram Web App")
-          setIsTelegramWebApp(false)
-          setIsReady(true)
+        // Get user data from Telegram
+        if (tg.initDataUnsafe?.user) {
+          setUser(tg.initDataUnsafe.user)
         }
+
+        // Configure WebApp
+        tg.ready()
+        tg.expand()
+
+        // Set theme
+        if (tg.colorScheme === "dark") {
+          document.documentElement.classList.add("dark")
+        } else {
+          document.documentElement.classList.remove("dark")
+        }
+
+        console.log("Telegram WebApp initialized:", {
+          user: tg.initDataUnsafe?.user,
+          platform: tg.platform,
+          version: tg.version,
+        })
+      } else {
+        setIsTelegramWebApp(false)
       }
+      setIsReady(true)
     }
 
-    // Telegram script yuklanishini kutish
+    // Check if Telegram WebApp script is loaded
     if (typeof window !== "undefined") {
-      if ((window as any).Telegram?.WebApp) {
+      if (window.Telegram?.WebApp) {
         initTelegram()
       } else {
-        // Script yuklanishini kutish
+        // Wait for Telegram WebApp script to load
         const checkTelegram = setInterval(() => {
-          if ((window as any).Telegram?.WebApp) {
+          if (window.Telegram?.WebApp) {
             clearInterval(checkTelegram)
             initTelegram()
           }
         }, 100)
 
-        // 5 soniyadan keyin to'xtatish
+        // Fallback timeout
         setTimeout(() => {
           clearInterval(checkTelegram)
-          if (!webApp) {
-            console.log("Telegram Web App not found after timeout")
-            setIsTelegramWebApp(false)
+          if (!window.Telegram?.WebApp) {
             setIsReady(true)
+            setIsTelegramWebApp(false)
           }
-        }, 5000)
+        }, 3000)
       }
     }
   }, [])
 
-  return (
-    <TelegramContext.Provider value={{ webApp, user, isReady, isTelegramWebApp, initData }}>
-      {children}
-    </TelegramContext.Provider>
-  )
+  const value = {
+    webApp,
+    user,
+    isReady,
+    isTelegramWebApp,
+  }
+
+  return <TelegramContext.Provider value={value}>{children}</TelegramContext.Provider>
 }
 
-export const useTelegram = () => {
+export function useTelegram() {
   const context = useContext(TelegramContext)
   if (context === undefined) {
     throw new Error("useTelegram must be used within a TelegramProvider")
