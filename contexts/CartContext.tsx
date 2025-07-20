@@ -1,47 +1,50 @@
 "use client"
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
+import type React from "react"
+import { createContext, useContext, useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { useAuth } from "./AuthContext"
 
+interface Product {
+  id: string
+  name_uz: string
+  price: number
+  unit: string
+  images: string[]
+  stock_quantity: number
+}
+
 interface CartItem {
   id: string
-  product: {
-    id: string
-    name_uz: string
-    price: number
-    unit: string
-    images: string[]
-    stock_quantity: number
-    min_order_quantity: number
-    product_type: "sale" | "rental"
-    rental_price_per_unit?: number
-    rental_deposit?: number
-    rental_time_unit?: "hour" | "day" | "week" | "month"
-  }
+  product_id: string
   quantity: number
-  rental_duration?: number
-  rental_time_unit?: string
+  product: Product
 }
 
 interface CartContextType {
   items: CartItem[]
   totalItems: number
+  totalPrice: number
+  deliveryFee: number
   grandTotal: number
-  addToCart: (productId: string, quantity: number, rentalOptions?: any) => Promise<void>
-  removeFromCart: (productId: string) => Promise<void>
-  updateQuantity: (productId: string, quantity: number) => Promise<void>
+  addToCart: (productId: string, quantity: number) => Promise<void>
+  removeFromCart: (itemId: string) => Promise<void>
+  updateQuantity: (itemId: string, quantity: number) => Promise<void>
   clearCart: () => Promise<void>
-  getTotalPrice: () => number
   loading: boolean
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined)
 
-export function CartProvider({ children }: { children: ReactNode }) {
+export function CartProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
   const [items, setItems] = useState<CartItem[]>([])
   const [loading, setLoading] = useState(false)
+
+  const deliveryFee = 15000 // 15,000 so'm
+  const totalItems = items.reduce((sum, item) => sum + item.quantity, 0)
+  const totalPrice = items.reduce((sum, item) => sum + item.product.price * item.quantity, 0)
+  const grandTotal = totalPrice + deliveryFee
 
   useEffect(() => {
     if (user) {
@@ -56,59 +59,93 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
     try {
       setLoading(true)
-      const { data, error } = await supabase
+
+      // Load cart from database
+      const { data: dbCart, error } = await supabase
         .from("cart_items")
         .select(`
           *,
-          product:products(
-            id,
-            name_uz,
-            price,
-            unit,
-            images,
-            stock_quantity,
-            min_order_quantity,
-            product_type,
-            rental_price_per_unit,
-            rental_deposit,
-            rental_time_unit
-          )
+          product:products(*)
         `)
         .eq("user_id", user.id)
 
       if (error) throw error
 
-      setItems(data || [])
+      // Load local cart
+      const localCart = getLocalCart()
+
+      // Merge local cart with database cart
+      const mergedCart = [...(dbCart || [])]
+
+      for (const localItem of localCart) {
+        const existingItem = mergedCart.find((item) => item.product_id === localItem.product_id)
+        if (existingItem) {
+          // Update quantity
+          existingItem.quantity += localItem.quantity
+        } else {
+          // Add new item to database
+          const { data: product } = await supabase.from("products").select("*").eq("id", localItem.product_id).single()
+
+          if (product) {
+            const { data: newCartItem } = await supabase
+              .from("cart_items")
+              .insert({
+                user_id: user.id,
+                product_id: localItem.product_id,
+                quantity: localItem.quantity,
+              })
+              .select(`
+                *,
+                product:products(*)
+              `)
+              .single()
+
+            if (newCartItem) {
+              mergedCart.push(newCartItem)
+            }
+          }
+        }
+      }
+
+      // Update database with merged quantities
+      for (const item of mergedCart) {
+        if (item.quantity !== (dbCart?.find((db) => db.id === item.id)?.quantity || 0)) {
+          await supabase.from("cart_items").update({ quantity: item.quantity }).eq("id", item.id)
+        }
+      }
+
+      setItems(mergedCart)
+
+      // Clear local cart after merging
+      localStorage.removeItem("jamolstroy_cart")
     } catch (error) {
-      console.error("Savatni yuklashda xatolik:", error)
+      console.error("Error loading cart:", error)
+      loadLocalCart()
     } finally {
       setLoading(false)
     }
   }
 
   const loadLocalCart = () => {
+    const localCart = getLocalCart()
+    setItems(localCart)
+  }
+
+  const getLocalCart = (): CartItem[] => {
     try {
-      const localCart = localStorage.getItem("cart")
-      if (localCart) {
-        setItems(JSON.parse(localCart))
-      }
-    } catch (error) {
-      console.error("Mahalliy savatni yuklashda xatolik:", error)
+      const saved = localStorage.getItem("jamolstroy_cart")
+      return saved ? JSON.parse(saved) : []
+    } catch {
+      return []
     }
   }
 
   const saveLocalCart = (cartItems: CartItem[]) => {
-    try {
-      localStorage.setItem("cart", JSON.stringify(cartItems))
-    } catch (error) {
-      console.error("Mahalliy savatni saqlashda xatolik:", error)
-    }
+    localStorage.setItem("jamolstroy_cart", JSON.stringify(cartItems))
   }
 
-  const addToCart = async (productId: string, quantity: number, rentalOptions?: any) => {
+  const addToCart = async (productId: string, quantity: number) => {
     try {
-      setLoading(true)
-
       // Get product details
       const { data: product, error: productError } = await supabase
         .from("products")
@@ -116,159 +153,134 @@ export function CartProvider({ children }: { children: ReactNode }) {
         .eq("id", productId)
         .single()
 
-      if (productError) throw productError
-
-      const cartItem: CartItem = {
-        id: productId,
-        product: {
-          id: product.id,
-          name_uz: product.name_uz,
-          price: product.price,
-          unit: product.unit,
-          images: product.images || [],
-          stock_quantity: product.stock_quantity,
-          min_order_quantity: product.min_order_quantity,
-          product_type: product.product_type,
-          rental_price_per_unit: product.rental_price_per_unit,
-          rental_deposit: product.rental_deposit,
-          rental_time_unit: product.rental_time_unit,
-        },
-        quantity,
-        rental_duration: rentalOptions?.rental_duration,
-        rental_time_unit: rentalOptions?.rental_time_unit,
-      }
+      if (productError || !product) throw new Error("Product not found")
 
       if (user) {
-        // Save to database
-        const { error } = await supabase.from("cart_items").upsert({
-          user_id: user.id,
-          product_id: productId,
-          quantity,
-          rental_duration: rentalOptions?.rental_duration,
-          rental_time_unit: rentalOptions?.rental_time_unit,
-        })
+        // Add to database
+        const existingItem = items.find((item) => item.product_id === productId)
 
-        if (error) throw error
-        await loadCart()
-      } else {
-        // Save to local storage
-        const existingIndex = items.findIndex((item) => item.id === productId)
-        let newItems: CartItem[]
+        if (existingItem) {
+          // Update existing item
+          const newQuantity = existingItem.quantity + quantity
+          await supabase.from("cart_items").update({ quantity: newQuantity }).eq("id", existingItem.id)
 
-        if (existingIndex >= 0) {
-          newItems = [...items]
-          newItems[existingIndex].quantity += quantity
+          setItems((prev) =>
+            prev.map((item) => (item.id === existingItem.id ? { ...item, quantity: newQuantity } : item)),
+          )
         } else {
-          newItems = [...items, cartItem]
+          // Add new item
+          const { data: newItem, error } = await supabase
+            .from("cart_items")
+            .insert({
+              user_id: user.id,
+              product_id: productId,
+              quantity,
+            })
+            .select(`
+              *,
+              product:products(*)
+            `)
+            .single()
+
+          if (error) throw error
+
+          setItems((prev) => [...prev, newItem])
+        }
+      } else {
+        // Add to local storage
+        const localCart = getLocalCart()
+        const existingItem = localCart.find((item) => item.product_id === productId)
+
+        if (existingItem) {
+          existingItem.quantity += quantity
+        } else {
+          localCart.push({
+            id: `local_${Date.now()}`,
+            product_id: productId,
+            quantity,
+            product,
+          })
         }
 
-        setItems(newItems)
-        saveLocalCart(newItems)
+        saveLocalCart(localCart)
+        setItems(localCart)
       }
     } catch (error) {
-      console.error("Savatga qo'shishda xatolik:", error)
+      console.error("Error adding to cart:", error)
       throw error
-    } finally {
-      setLoading(false)
     }
   }
 
-  const removeFromCart = async (productId: string) => {
+  const removeFromCart = async (itemId: string) => {
     try {
-      setLoading(true)
+      if (user && !itemId.startsWith("local_")) {
+        // Remove from database
+        await supabase.from("cart_items").delete().eq("id", itemId)
+      }
 
-      if (user) {
-        const { error } = await supabase.from("cart_items").delete().eq("user_id", user.id).eq("product_id", productId)
+      // Remove from state
+      const newItems = items.filter((item) => item.id !== itemId)
+      setItems(newItems)
 
-        if (error) throw error
-        await loadCart()
-      } else {
-        const newItems = items.filter((item) => item.id !== productId)
-        setItems(newItems)
+      if (!user) {
         saveLocalCart(newItems)
       }
     } catch (error) {
-      console.error("Savatdan o'chirishda xatolik:", error)
-      throw error
-    } finally {
-      setLoading(false)
+      console.error("Error removing from cart:", error)
     }
   }
 
-  const updateQuantity = async (productId: string, quantity: number) => {
-    if (quantity <= 0) {
-      await removeFromCart(productId)
-      return
-    }
-
+  const updateQuantity = async (itemId: string, quantity: number) => {
     try {
-      setLoading(true)
+      if (quantity <= 0) {
+        await removeFromCart(itemId)
+        return
+      }
 
-      if (user) {
-        const { error } = await supabase
-          .from("cart_items")
-          .update({ quantity })
-          .eq("user_id", user.id)
-          .eq("product_id", productId)
+      if (user && !itemId.startsWith("local_")) {
+        // Update in database
+        await supabase.from("cart_items").update({ quantity }).eq("id", itemId)
+      }
 
-        if (error) throw error
-        await loadCart()
-      } else {
-        const newItems = items.map((item) => (item.id === productId ? { ...item, quantity } : item))
-        setItems(newItems)
+      // Update in state
+      const newItems = items.map((item) => (item.id === itemId ? { ...item, quantity } : item))
+      setItems(newItems)
+
+      if (!user) {
         saveLocalCart(newItems)
       }
     } catch (error) {
-      console.error("Miqdorni yangilashda xatolik:", error)
-      throw error
-    } finally {
-      setLoading(false)
+      console.error("Error updating quantity:", error)
     }
   }
 
   const clearCart = async () => {
     try {
-      setLoading(true)
-
       if (user) {
-        const { error } = await supabase.from("cart_items").delete().eq("user_id", user.id)
-        if (error) throw error
+        // Clear from database
+        await supabase.from("cart_items").delete().eq("user_id", user.id)
       }
 
+      // Clear from state and local storage
       setItems([])
-      localStorage.removeItem("cart")
+      localStorage.removeItem("jamolstroy_cart")
     } catch (error) {
-      console.error("Savatni tozalashda xatolik:", error)
-    } finally {
-      setLoading(false)
+      console.error("Error clearing cart:", error)
     }
   }
-
-  const getTotalPrice = () => {
-    return items.reduce((total, item) => {
-      if (item.product.product_type === "rental" && item.product.rental_price_per_unit && item.rental_duration) {
-        const rentalTotal = item.product.rental_price_per_unit * item.rental_duration * item.quantity
-        const depositTotal = (item.product.rental_deposit || 0) * item.quantity
-        return total + rentalTotal + depositTotal
-      }
-      return total + item.product.price * item.quantity
-    }, 0)
-  }
-
-  const totalItems = items.reduce((total, item) => total + item.quantity, 0)
-  const grandTotal = getTotalPrice()
 
   return (
     <CartContext.Provider
       value={{
         items,
         totalItems,
+        totalPrice,
+        deliveryFee,
         grandTotal,
         addToCart,
         removeFromCart,
         updateQuantity,
         clearCart,
-        getTotalPrice,
         loading,
       }}
     >

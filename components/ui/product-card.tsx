@@ -1,31 +1,47 @@
 "use client"
 
-import { Star, Clock, Calendar } from "lucide-react"
+import type React from "react"
+import { Star, ShoppingCart, Clock, Calendar } from "lucide-react"
 import Image from "next/image"
+import { useCart } from "@/contexts/CartContext"
+import { useAuth } from "@/contexts/AuthContext"
+import { useRouter } from "next/navigation"
+import { useState } from "react"
 
 interface Product {
   id: string
   name_uz: string
+  name_ru?: string
+  description_uz?: string
   price: number
   unit: string
-  product_type: "sale" | "rental"
-  rental_price_per_unit?: number
+  product_type?: "sale" | "rental"
   rental_time_unit?: "hour" | "day" | "week" | "month"
-  images: string[]
-  is_featured: boolean
-  rating?: number
-  review_count?: number
-  category: {
+  rental_price_per_unit?: number
+  images?: string[]
+  stock_quantity: number
+  is_available: boolean
+  is_featured?: boolean
+  is_popular?: boolean
+  category?: {
     name_uz: string
   }
+  rating?: number
+  review_count?: number
 }
 
 interface ProductCardProps {
   product: Product
-  onQuickView: (productId: string) => void
+  onQuickView?: (id: string) => void
+  className?: string
 }
 
-export function ProductCard({ product, onQuickView }: ProductCardProps) {
+export function ProductCard({ product, onQuickView, className = "" }: ProductCardProps) {
+  const router = useRouter()
+  const { user } = useAuth()
+  const { addToCart } = useCart()
+  const [isAddingToCart, setIsAddingToCart] = useState(false)
+
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat("uz-UZ").format(price)
   }
@@ -58,6 +74,44 @@ export function ProductCard({ product, onQuickView }: ProductCardProps) {
     }
   }
 
+  const handleAddToCart = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+
+    if (!user) {
+      router.push("/login")
+      return
+    }
+
+    if (product.product_type === "rental") {
+      // For rental products, redirect to product page for duration selection
+      router.push(`/product/${product.id}`)
+      return
+    }
+
+    setIsAddingToCart(true)
+    try {
+      await addToCart(product.id, 1)
+      if (window.Telegram?.WebApp) {
+        window.Telegram.WebApp.showAlert("Mahsulot savatga qo'shildi!")
+      }
+    } catch (error) {
+      console.error("Error adding to cart:", error)
+      if (window.Telegram?.WebApp) {
+        window.Telegram.WebApp.showAlert("Xatolik yuz berdi")
+      }
+    } finally {
+      setIsAddingToCart(false)
+    }
+  }
+
+  const handleCardClick = () => {
+    if (onQuickView) {
+      onQuickView(product.id)
+    } else {
+      router.push(`/product/${product.id}`)
+    }
+  }
+
   const renderStars = (rating: number) => {
     const stars = []
     const fullStars = Math.floor(rating)
@@ -84,20 +138,21 @@ export function ProductCard({ product, onQuickView }: ProductCardProps) {
 
   return (
     <div
-      onClick={() => onQuickView(product.id)}
-      className="bg-card rounded-xl border border-border overflow-hidden hover:shadow-md transition-all cursor-pointer group"
+      className={`bg-card rounded-xl border border-border hover:border-primary/20 hover:shadow-md transition-all cursor-pointer group ${className}`}
+      onClick={handleCardClick}
     >
       {/* Product Image */}
-      <div className="aspect-square bg-muted relative overflow-hidden">
+      <div className="relative aspect-square bg-muted rounded-t-xl overflow-hidden">
         {product.images && product.images.length > 0 ? (
           <Image
             src={product.images[0] || "/placeholder.svg"}
             alt={product.name_uz}
             fill
             className="object-cover group-hover:scale-105 transition-transform duration-300"
+            sizes="(max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw"
           />
         ) : (
-          <div className="w-full h-full bg-muted flex items-center justify-center">
+          <div className="w-full h-full flex items-center justify-center">
             <div className="w-12 h-12 bg-muted-foreground/20 rounded-lg" />
           </div>
         )}
@@ -107,6 +162,9 @@ export function ProductCard({ product, onQuickView }: ProductCardProps) {
           {product.is_featured && (
             <span className="px-2 py-1 bg-primary text-primary-foreground text-xs font-medium rounded">TOP</span>
           )}
+          {product.is_popular && (
+            <span className="px-2 py-1 bg-red-500 text-white text-xs font-medium rounded">OMMABOP</span>
+          )}
           {product.product_type === "rental" && (
             <span className="px-2 py-1 bg-blue-500 text-white text-xs font-medium rounded flex items-center space-x-1">
               {getRentalIcon(product.rental_time_unit)}
@@ -114,37 +172,71 @@ export function ProductCard({ product, onQuickView }: ProductCardProps) {
             </span>
           )}
         </div>
+
+        {/* Stock Status */}
+        {product.stock_quantity <= 0 && (
+          <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+            <span className="text-white font-medium">Tugagan</span>
+          </div>
+        )}
       </div>
 
       {/* Product Info */}
       <div className="p-4">
-        <div className="mb-2">
-          <h3 className="font-semibold text-foreground line-clamp-2 text-sm mb-1">{product.name_uz}</h3>
-          <p className="text-xs text-muted-foreground">{product.category.name_uz}</p>
-        </div>
+        {/* Category */}
+        {product.category && <p className="text-xs text-muted-foreground mb-1">{product.category.name_uz}</p>}
+
+        {/* Product Name */}
+        <h3 className="font-medium text-sm mb-2 line-clamp-2 group-hover:text-primary transition-colors">
+          {product.name_uz}
+        </h3>
 
         {/* Rating */}
         {product.rating && product.review_count && (
           <div className="flex items-center space-x-1 mb-2">
-            <div className="flex items-center space-x-1">{renderStars(product.rating)}</div>
+            <div className="flex items-center">{renderStars(product.rating)}</div>
             <span className="text-xs text-muted-foreground">({product.review_count})</span>
           </div>
         )}
 
         {/* Price */}
-        <div className="flex items-baseline space-x-1">
+        <div className="mb-3">
           {product.product_type === "rental" && product.rental_price_per_unit ? (
-            <>
-              <span className="text-lg font-bold text-blue-600">{formatPrice(product.rental_price_per_unit)}</span>
-              <span className="text-xs text-muted-foreground">so'm/{getRentalTimeText(product.rental_time_unit)}</span>
-            </>
+            <div>
+              <p className="text-primary font-semibold text-sm">{formatPrice(product.rental_price_per_unit)} so'm</p>
+              <p className="text-xs text-muted-foreground">
+                /{getRentalTimeText(product.rental_time_unit)} • {product.unit}
+              </p>
+            </div>
           ) : (
-            <>
-              <span className="text-lg font-bold text-foreground">{formatPrice(product.price)}</span>
-              <span className="text-xs text-muted-foreground">so'm/{product.unit}</span>
-            </>
+            <div>
+              <p className="text-primary font-semibold text-sm">{formatPrice(product.price)} so'm</p>
+              <p className="text-xs text-muted-foreground">/{product.unit}</p>
+            </div>
           )}
         </div>
+
+        {/* Add to Cart Button */}
+        <button
+          onClick={handleAddToCart}
+          disabled={isAddingToCart || product.stock_quantity <= 0}
+          className="w-full flex items-center justify-center space-x-2 bg-primary text-primary-foreground py-2 px-3 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isAddingToCart ? (
+            <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+          ) : (
+            <>
+              <ShoppingCart className="w-4 h-4" />
+              <span>
+                {product.product_type === "rental"
+                  ? "Ijaraga olish"
+                  : product.stock_quantity <= 0
+                    ? "Tugagan"
+                    : "Savatga"}
+              </span>
+            </>
+          )}
+        </button>
       </div>
     </div>
   )
