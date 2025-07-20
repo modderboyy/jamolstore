@@ -34,7 +34,58 @@ export async function POST(request: NextRequest) {
       }
 
       // Handle commands
-      if (text === "/start") {
+      // =================== LOGIC TUZATILDI ===================
+
+      // 1. Eng avvalo "deep link" orqali loginni tekshiramiz
+      if (text && text.startsWith("/start login_")) {
+        // Website login request
+        const loginToken = text.replace("/start login_", "") // Tokenni to'g'ri ajratib olamiz
+        console.log("Login request received for token:", loginToken)
+
+        // Check if login session exists
+        const { data: session, error: sessionError } = await supabase
+          .from("website_login_sessions")
+          .select("*")
+          .eq("login_token", loginToken)
+          .eq("status", "pending")
+          .single()
+
+        if (sessionError || !session) {
+          console.log("Login session not found or expired")
+          await sendTelegramMessage(chatId, "❌ Login sessiyasi topilmadi yoki muddati tugagan.")
+          return NextResponse.json({ ok: true })
+        }
+
+        // Send permission request
+        const permissionMessage = `🔐 Website login so'rovi
+
+JamolStroy websaytiga kirishga ruxsat berasizmi?
+
+👤 Sizning ma'lumotlaringiz:
+• Ism: ${message.from.first_name} ${message.from.last_name || ""}
+• Username: @${message.from.username || "yo'q"}
+
+⚠️ Faqat o'zingiz so'ragan bo'lsangina ruxsat bering!`
+
+        const keyboard = {
+          inline_keyboard: [
+            [
+              {
+                text: "✅ Ruxsat berish",
+                callback_data: `approve_${loginToken}`,
+              },
+              {
+                text: "❌ Rad etish",
+                callback_data: `reject_${loginToken}`,
+              },
+            ],
+          ],
+        }
+
+        await sendTelegramMessage(chatId, permissionMessage, keyboard)
+      
+      // 2. Keyin oddiy /start buyrug'ini tekshiramiz
+      } else if (text === "/start") {
         const welcomeMessage = `🏗️ JamolStroy ilovasiga xush kelibsiz!
 
 Bizning katalogimizda qurilish materiallari va jihozlarining keng assortimenti mavjud.
@@ -65,6 +116,8 @@ Bizning katalogimizda qurilish materiallari va jihozlarining keng assortimenti m
         }
 
         await sendTelegramMessage(chatId, welcomeMessage, keyboard)
+
+      // 3. Qolgan buyruqlar avvalgidek qoladi
       } else if (text === "/help") {
         const helpMessage = `📋 Yordam:
 
@@ -114,52 +167,6 @@ Dushanba - Shanba: 9:00 - 18:00
 Yakshanba: Dam olish kuni`
 
         await sendTelegramMessage(chatId, contactMessage)
-      } else if (text && text.startsWith("/login_")) {
-        // Website login request
-        const loginToken = text.replace("/login_", "")
-        console.log("Login request received for token:", loginToken)
-
-        // Check if login session exists
-        const { data: session, error: sessionError } = await supabase
-          .from("website_login_sessions")
-          .select("*")
-          .eq("login_token", loginToken)
-          .eq("status", "pending")
-          .single()
-
-        if (sessionError || !session) {
-          console.log("Login session not found or expired")
-          await sendTelegramMessage(chatId, "❌ Login sessiyasi topilmadi yoki muddati tugagan.")
-          return NextResponse.json({ ok: true })
-        }
-
-        // Send permission request
-        const permissionMessage = `🔐 Website login so'rovi
-
-JamolStroy websaytiga kirishga ruxsat berasizmi?
-
-👤 Sizning ma'lumotlaringiz:
-• Ism: ${message.from.first_name} ${message.from.last_name || ""}
-• Username: @${message.from.username || "yo'q"}
-
-⚠️ Faqat o'zingiz so'ragan bo'lsangina ruxsat bering!`
-
-        const keyboard = {
-          inline_keyboard: [
-            [
-              {
-                text: "✅ Ruxsat berish",
-                callback_data: `approve_${loginToken}`,
-              },
-              {
-                text: "❌ Rad etish",
-                callback_data: `reject_${loginToken}`,
-              },
-            ],
-          ],
-        }
-
-        await sendTelegramMessage(chatId, permissionMessage, keyboard)
       } else {
         // Default response
         const defaultMessage = `Salom! 👋
@@ -190,7 +197,7 @@ Yoki web ilovani ochish uchun quyidagi tugmani bosing:`
       }
     }
 
-    // Callback query handling
+    // Callback query handling (BU QISM O'ZGARTIRILMADI)
     if (body.callback_query) {
       const callbackQuery = body.callback_query
       const chatId = callbackQuery.message.chat.id
@@ -327,59 +334,5 @@ Yakshanba: Dam olish kuni`
   } catch (error) {
     console.error("Webhook error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
-  }
-}
-
-async function sendTelegramMessage(chatId: number, text: string, replyMarkup?: any) {
-  try {
-    const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: text,
-        parse_mode: "HTML",
-        reply_markup: replyMarkup,
-      }),
-    })
-
-    if (!response.ok) {
-      const errorData = await response.json()
-      console.error("Telegram API error:", errorData)
-    }
-
-    return response.json()
-  } catch (error) {
-    console.error("Send message error:", error)
-    throw error
-  }
-}
-
-async function editTelegramMessage(chatId: number, messageId: number, text: string) {
-  try {
-    const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/editMessageText`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        chat_id: chatId,
-        message_id: messageId,
-        text: text,
-        parse_mode: "HTML",
-      }),
-    })
-
-    if (!response.ok) {
-      const errorData = await response.json()
-      console.error("Telegram edit message error:", errorData)
-    }
-
-    return response.json()
-  } catch (error) {
-    console.error("Edit message error:", error)
-    throw error
   }
 }
