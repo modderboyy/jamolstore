@@ -4,12 +4,12 @@ import type React from "react"
 import { useAuth } from "@/contexts/AuthContext"
 import { useTelegram } from "@/contexts/TelegramContext"
 import { useRouter, usePathname } from "next/navigation"
-import { Search, User, LogOut, Phone, MapPin, Clock } from "lucide-react"
+import { Search, User, Phone, MapPin, Clock } from "lucide-react"
 import { useState } from "react"
 import { DesktopNavigation } from "./desktop-navigation"
 
 export function TopBar() {
-  const { user, signOut } = useAuth()
+  const { user } = useAuth()
   const { isTelegramWebApp } = useTelegram()
   const router = useRouter()
   const pathname = usePathname()
@@ -24,11 +24,6 @@ export function TopBar() {
         router.push(`/catalog?search=${encodeURIComponent(searchQuery.trim())}`)
       }
     }
-  }
-
-  const handleLogout = () => {
-    signOut()
-    router.push("/")
   }
 
   const getSearchPlaceholder = () => {
@@ -93,20 +88,11 @@ export function TopBar() {
             {!isTelegramWebApp && (
               <div className="flex items-center space-x-2 flex-shrink-0">
                 {user ? (
-                  <div className="flex items-center space-x-2">
-                    <div className="flex items-center space-x-2 px-3 py-2 bg-muted/50 rounded-xl shadow-sm">
-                      <div className="w-6 h-6 bg-gradient-to-br from-primary to-primary/80 rounded-full flex items-center justify-center">
-                        <span className="text-primary-foreground text-xs font-medium">{user.first_name.charAt(0)}</span>
-                      </div>
-                      <span className="text-sm font-medium text-foreground hidden sm:block">{user.first_name}</span>
+                  <div className="flex items-center space-x-2 px-3 py-2 bg-muted/50 rounded-xl shadow-sm">
+                    <div className="w-6 h-6 bg-gradient-to-br from-primary to-primary/80 rounded-full flex items-center justify-center">
+                      <span className="text-primary-foreground text-xs font-medium">{user.first_name.charAt(0)}</span>
                     </div>
-                    <button
-                      onClick={handleLogout}
-                      className="p-2 hover:bg-muted/50 rounded-xl transition-colors shadow-sm"
-                      title="Chiqish"
-                    >
-                      <LogOut className="w-4 h-4 text-muted-foreground" />
-                    </button>
+                    <span className="text-sm font-medium text-foreground hidden sm:block">{user.first_name}</span>
                   </div>
                 ) : (
                   <button

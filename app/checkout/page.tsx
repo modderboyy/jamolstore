@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
 import { useCart } from "@/contexts/CartContext"
@@ -21,13 +21,16 @@ export default function CheckoutPage() {
   const [deliveryWithService, setDeliveryWithService] = useState(false)
   const [notes, setNotes] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
 
   // Foydalanuvchi ma'lumotlarini yuklash
-  useState(() => {
+  useEffect(() => {
     if (user) {
       fetchUserData()
+    } else {
+      setIsLoading(false)
     }
-  })
+  }, [user])
 
   const fetchUserData = async () => {
     if (!user) return
@@ -42,9 +45,11 @@ export default function CheckoutPage() {
       if (error) throw error
 
       setCustomerName(`${data.first_name} ${data.last_name}`)
-      setCustomerPhone(data.phone_number)
+      setCustomerPhone(data.phone_number || "")
     } catch (error) {
       console.error("Foydalanuvchi ma'lumotlarini yuklashda xatolik:", error)
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -115,6 +120,18 @@ export default function CheckoutPage() {
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background pb-20 md:pb-4">
+        <TopBar />
+        <div className="flex items-center justify-center py-20">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        </div>
+        <BottomNavigation />
+      </div>
+    )
   }
 
   if (!user) {

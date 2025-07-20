@@ -11,9 +11,22 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
-import { User, Phone, Mail, MapPin, Calendar, Shield, LogOut, Edit, Save, X, MessageCircle, ShoppingBag, Heart, Settings } from 'lucide-react'
+import {
+  User,
+  Phone,
+  Mail,
+  Calendar,
+  Shield,
+  Edit,
+  Save,
+  X,
+  MessageCircle,
+  ShoppingBag,
+  Heart,
+  Settings,
+  LogOut,
+} from "lucide-react"
 
 interface UserStats {
   totalOrders: number
@@ -39,6 +52,10 @@ export default function ProfilePage() {
     favoriteProducts: 0,
   })
   const [isSaving, setIsSaving] = useState(false)
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  const [mathQuestion, setMathQuestion] = useState({ question: "", answer: 0 })
+  const [mathAnswer, setMathAnswer] = useState("")
+  const [showFinalConfirm, setShowFinalConfirm] = useState(false)
 
   useEffect(() => {
     if (!loading) {
@@ -127,9 +144,65 @@ export default function ProfilePage() {
     }
   }
 
-  const handleSignOut = () => {
-    signOut()
-    router.push("/login")
+  const generateMathQuestion = () => {
+    const num1 = Math.floor(Math.random() * 10) + 1
+    const num2 = Math.floor(Math.random() * 10) + 1
+    const operations = ["+", "-", "*"]
+    const operation = operations[Math.floor(Math.random() * operations.length)]
+
+    let answer = 0
+    let question = ""
+
+    switch (operation) {
+      case "+":
+        answer = num1 + num2
+        question = `${num1} + ${num2}`
+        break
+      case "-":
+        answer = num1 - num2
+        question = `${num1} - ${num2}`
+        break
+      case "*":
+        answer = num1 * num2
+        question = `${num1} × ${num2}`
+        break
+    }
+
+    setMathQuestion({ question, answer })
+  }
+
+  const handleLogoutClick = () => {
+    setShowLogoutConfirm(true)
+    generateMathQuestion()
+    setMathAnswer("")
+    setShowFinalConfirm(false)
+  }
+
+  const handleMathSubmit = () => {
+    if (Number.parseInt(mathAnswer) === mathQuestion.answer) {
+      setShowFinalConfirm(true)
+    } else {
+      alert("Noto'g'ri javob! Qaytadan urinib ko'ring.")
+      generateMathQuestion()
+      setMathAnswer("")
+    }
+  }
+
+  const handleFinalLogout = async () => {
+    try {
+      // Clear all sessions from database if needed
+      if (user) {
+        await supabase.from("website_login_sessions").delete().eq("user_id", user.id)
+      }
+
+      // Sign out and clear local storage
+      signOut()
+      router.push("/")
+    } catch (error) {
+      console.error("Chiqishda xatolik:", error)
+    }
+    setShowLogoutConfirm(false)
+    setShowFinalConfirm(false)
   }
 
   const formatPrice = (price: number) => {
@@ -209,12 +282,7 @@ export default function ProfilePage() {
                   </CardDescription>
                 </div>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsEditing(!isEditing)}
-                disabled={isSaving}
-              >
+              <Button variant="outline" size="sm" onClick={() => setIsEditing(!isEditing)} disabled={isSaving}>
                 {isEditing ? <X className="w-4 h-4" /> : <Edit className="w-4 h-4" />}
               </Button>
             </div>
@@ -357,7 +425,7 @@ export default function ProfilePage() {
           <CardContent className="space-y-3">
             <Button
               variant="outline"
-              className="w-full justify-start"
+              className="w-full justify-start bg-transparent"
               onClick={() => router.push("/orders")}
             >
               <ShoppingBag className="w-4 h-4 mr-3" />
@@ -365,20 +433,11 @@ export default function ProfilePage() {
             </Button>
             <Button
               variant="outline"
-              className="w-full justify-start"
+              className="w-full justify-start bg-transparent"
               onClick={() => router.push("/catalog")}
             >
               <Settings className="w-4 h-4 mr-3" />
               Katalog
-            </Button>
-            <Separator />
-            <Button
-              variant="outline"
-              className="w-full justify-start text-destructive hover:text-destructive"
-              onClick={handleSignOut}
-            >
-              <LogOut className="w-4 h-4 mr-3" />
-              Chiqish
             </Button>
           </CardContent>
         </Card>
@@ -407,7 +466,64 @@ export default function ProfilePage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Logout Section */}
+        <Card>
+          <CardContent className="p-6">
+            <Button variant="destructive" className="w-full justify-start" onClick={handleLogoutClick}>
+              <LogOut className="w-4 h-4 mr-3" />
+              Hisobdan chiqish
+            </Button>
+          </CardContent>
+        </Card>
       </div>
+
+      {/* Logout Confirmation Modal */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-background rounded-lg p-6 w-full max-w-md">
+            {!showFinalConfirm ? (
+              <>
+                <h3 className="text-lg font-semibold mb-4">Matematik savol</h3>
+                <p className="text-muted-foreground mb-4">Hisobdan chiqish uchun quyidagi savolga javob bering:</p>
+                <div className="text-center mb-4">
+                  <span className="text-2xl font-bold">{mathQuestion.question} = ?</span>
+                </div>
+                <Input
+                  type="number"
+                  value={mathAnswer}
+                  onChange={(e) => setMathAnswer(e.target.value)}
+                  placeholder="Javobni kiriting"
+                  className="mb-4"
+                />
+                <div className="flex space-x-3">
+                  <Button onClick={handleMathSubmit} className="flex-1">
+                    Tekshirish
+                  </Button>
+                  <Button variant="outline" onClick={() => setShowLogoutConfirm(false)} className="flex-1">
+                    Bekor qilish
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-semibold mb-4">Tasdiqlash</h3>
+                <p className="text-muted-foreground mb-6">
+                  Rozimisiz hisobdan chiqishga? Barcha sessiyalar o'chiriladi.
+                </p>
+                <div className="flex space-x-3">
+                  <Button variant="destructive" onClick={handleFinalLogout} className="flex-1">
+                    Ha, chiqish
+                  </Button>
+                  <Button variant="outline" onClick={() => setShowLogoutConfirm(false)} className="flex-1">
+                    Yo'q, qolish
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       <BottomNavigation />
     </div>

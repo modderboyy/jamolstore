@@ -26,7 +26,7 @@ export function DesktopNavigation() {
   return (
     <nav className="hidden md:block bg-background border-b border-border">
       <div className="container mx-auto px-4">
-        <div className="flex items-center justify-center space-x-8">
+        <div className="flex items-center justify-center space-x-1 max-w-2xl mx-auto">
           {navigationItems.map((item) => {
             const isActive = pathname === item.path
             const Icon = item.icon
@@ -35,14 +35,17 @@ export function DesktopNavigation() {
               <Link
                 key={item.id}
                 href={item.path}
-                className={`flex items-center space-x-2 px-4 py-3 rounded-lg transition-colors hover:bg-muted/50 ${
+                className={`flex items-center space-x-2 px-4 py-3 rounded-lg transition-colors relative ${
                   isActive
-                    ? "text-primary bg-primary/10 border-b-2 border-primary"
-                    : "text-muted-foreground hover:text-foreground"
+                    ? "text-primary bg-primary/10"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                 }`}
               >
-                <Icon className="w-5 h-5" />
-                <span className="font-medium">{item.label}</span>
+                <Icon className="w-4 h-4" />
+                <span className="text-sm font-medium">{item.label}</span>
+                {isActive && (
+                  <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-8 h-0.5 bg-primary rounded-full" />
+                )}
               </Link>
             )
           })}

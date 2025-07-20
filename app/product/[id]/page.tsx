@@ -230,7 +230,7 @@ export default function ProductDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background pb-32 md:pb-4">
+    <div className="min-h-screen bg-background pb-40 md:pb-4">
       <TopBar />
 
       {/* Header */}
@@ -452,8 +452,8 @@ export default function ProductDetailPage() {
         </div>
       </div>
 
-      {/* Fixed Bottom Bar - Mobile Only */}
-      <div className="fixed bottom-0 left-0 right-0 bg-background border-t border-border p-4 md:hidden z-30">
+      {/* Fixed Bottom Bar - Mobile Only - Above Bottom Navigation */}
+      <div className="fixed bottom-20 left-0 right-0 bg-background border-t border-border p-4 md:hidden z-30">
         <div className="flex items-center space-x-4">
           {/* Quantity Selector */}
           <div className="flex items-center space-x-2">
@@ -499,7 +499,7 @@ export default function ProductDetailPage() {
       {showCartFab && (
         <button
           onClick={() => router.push("/cart")}
-          className="fixed bottom-24 right-4 w-14 h-14 bg-primary text-primary-foreground rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-all z-40 md:bottom-4"
+          className="fixed bottom-32 right-4 w-14 h-14 bg-primary text-primary-foreground rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-all z-40 md:bottom-4"
         >
           <div className="relative">
             <ShoppingCart className="w-6 h-6" />
