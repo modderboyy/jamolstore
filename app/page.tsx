@@ -10,8 +10,7 @@ import { BottomSheet } from "@/components/ui/bottom-sheet"
 import { TopBar } from "@/components/layout/top-bar"
 import { CategoryBar } from "@/components/layout/category-bar"
 import { AdBanner } from "@/components/layout/ad-banner"
-import { CartBar } from "@/components/layout/cart-bar"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Star, X, ChevronLeft, ChevronRight, Minus, Plus, ShoppingCart, Truck } from "lucide-react"
 import { useCart } from "@/contexts/CartContext"
 import Image from "next/image"
@@ -50,6 +49,8 @@ export default function HomePage() {
   const { user } = useAuth()
   const { webApp, isReady } = useTelegram()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const searchQuery = searchParams.get("search")
   const { addToCart } = useCart()
   const [popularProducts, setPopularProducts] = useState<Product[]>([])
   const [allProducts, setAllProducts] = useState<Product[]>([])
@@ -65,29 +66,72 @@ export default function HomePage() {
   const [imageAutoPlay, setImageAutoPlay] = useState<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
-    fetchPopularProducts()
-    fetchAllProducts()
-  }, [])
+    if (searchQuery) {
+      searchAllProducts(searchQuery)
+    } else {
+      fetchPopularProducts()
+      fetchAllProducts()
+    }
+  }, [searchQuery])
 
   useEffect(() => {
-    // Auto dark/light mode detection
-    const detectTheme = () => {
+    // Auto dark/light mode based on Uzbekistan time
+    const setThemeBasedOnTime = () => {
+      const now = new Date()
+      // Convert to Uzbekistan time (UTC+5)
+      const uzbekTime = new Date(now.getTime() + 5 * 60 * 60 * 1000)
+      const hour = uzbekTime.getHours()
+
+      // Light mode: 6 AM to 6 PM, Dark mode: 6 PM to 6 AM
+      const isDark = hour < 6 || hour >= 18
+
       if (window.Telegram?.WebApp) {
         const tgTheme = window.Telegram.WebApp.colorScheme
         document.documentElement.classList.toggle("dark", tgTheme === "dark")
       } else {
-        const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches
-        document.documentElement.classList.toggle("dark", prefersDark)
+        document.documentElement.classList.toggle("dark", isDark)
       }
     }
 
-    detectTheme()
+    setThemeBasedOnTime()
 
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)")
-    mediaQuery.addEventListener("change", detectTheme)
+    // Update theme every minute
+    const interval = setInterval(setThemeBasedOnTime, 60000)
 
-    return () => mediaQuery.removeEventListener("change", detectTheme)
+    return () => clearInterval(interval)
   }, [])
+
+  const searchAllProducts = async (query: string) => {
+    setLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from("products")
+        .select(`
+          *,
+          category:categories(name_uz)
+        `)
+        .eq("is_available", true)
+        .or(`name_uz.ilike.%${query}%,name_ru.ilike.%${query}%,description_uz.ilike.%${query}%`)
+        .order("view_count", { ascending: false })
+        .limit(50)
+
+      if (error) throw error
+
+      const productsWithRatings = (data || []).map((product) => ({
+        ...product,
+        rating: 4.0 + Math.random() * 1.0,
+        review_count: Math.floor(Math.random() * 100) + 1,
+      }))
+
+      setAllProducts(productsWithRatings)
+      setPopularProducts([])
+      setHasMore(false)
+    } catch (error) {
+      console.error("Qidirishda xatolik:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const fetchPopularProducts = async () => {
     try {
@@ -104,7 +148,6 @@ export default function HomePage() {
 
       if (error) throw error
 
-      // Add mock ratings for demo
       const productsWithRatings = (data || []).map((product) => ({
         ...product,
         rating: 4.2 + Math.random() * 0.8,
@@ -131,7 +174,6 @@ export default function HomePage() {
 
       if (error) throw error
 
-      // Add mock ratings for demo
       const productsWithRatings = (data || []).map((product) => ({
         ...product,
         rating: 4.0 + Math.random() * 1.0,
@@ -155,7 +197,6 @@ export default function HomePage() {
 
   const fetchProductReviews = async (productId: string) => {
     try {
-      // Mock reviews for demo
       const mockReviews: Review[] = [
         {
           id: "1",
@@ -188,7 +229,7 @@ export default function HomePage() {
   }
 
   const loadMoreProducts = () => {
-    if (loadingMore || !hasMore) return
+    if (loadingMore || !hasMore || searchQuery) return
     setLoadingMore(true)
     fetchAllProducts(allProducts.length)
   }
@@ -202,7 +243,6 @@ export default function HomePage() {
       setQuantity(product.min_order_quantity || 1)
       setSelectedImageIndex(0)
 
-      // View count ni oshirish
       try {
         await supabase
           .from("products")
@@ -221,7 +261,6 @@ export default function HomePage() {
       await fetchProductReviews(productId)
       setShowProductSheet(true)
 
-      // Auto image change
       if (product.images && product.images.length > 1) {
         const interval = setInterval(() => {
           setSelectedImageIndex((prev) => (prev + 1) % product.images.length)
@@ -317,18 +356,12 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-4">
-      {/* Top Bar */}
       <TopBar />
-
-      {/* Category Bar */}
       <CategoryBar />
-
-      {/* Ad Banner */}
       <AdBanner />
 
       <div className="container mx-auto px-4">
-        {/* Welcome Message for Users */}
-        {user && (
+        {user && !searchQuery && (
           <div className="py-6">
             <div className="bg-muted rounded-lg p-6 border border-border">
               <h2 className="text-xl font-bold mb-2 text-foreground">
@@ -339,8 +372,14 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* Popular Products */}
-        {popularProducts.length > 0 && (
+        {searchQuery && (
+          <div className="py-6">
+            <h2 className="text-2xl font-bold text-foreground mb-2">"{searchQuery}" bo'yicha qidiruv natijalari</h2>
+            <p className="text-muted-foreground">{allProducts.length} ta mahsulot topildi</p>
+          </div>
+        )}
+
+        {!searchQuery && popularProducts.length > 0 && (
           <section className="py-8">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-bold text-foreground">Mashhur mahsulotlar</h2>
@@ -359,10 +398,11 @@ export default function HomePage() {
           </section>
         )}
 
-        {/* All Products */}
         <section className="py-8">
           <div className="mb-6">
-            <h2 className="text-2xl font-bold text-foreground">Barcha mahsulotlar</h2>
+            <h2 className="text-2xl font-bold text-foreground">
+              {searchQuery ? "Qidiruv natijalari" : "Barcha mahsulotlar"}
+            </h2>
             <p className="text-muted-foreground">Qurilish materiallari va jihozlari</p>
           </div>
 
@@ -372,8 +412,7 @@ export default function HomePage() {
             ))}
           </div>
 
-          {/* Load More Button */}
-          {hasMore && (
+          {hasMore && !searchQuery && (
             <div className="text-center mt-8">
               <button
                 onClick={loadMoreProducts}
@@ -387,17 +426,11 @@ export default function HomePage() {
         </section>
       </div>
 
-      {/* Bottom Navigation */}
       <BottomNavigation />
 
-      {/* Cart Bar */}
-      <CartBar />
-
-      {/* Product Detail Bottom Sheet */}
       <BottomSheet isOpen={showProductSheet} onClose={handleCloseProductSheet} title="" height="full">
         {selectedProduct && (
           <div className="h-full flex flex-col">
-            {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-border flex-shrink-0">
               <h2 className="text-xl font-bold text-foreground">Mahsulot haqida</h2>
               <button
@@ -410,9 +443,7 @@ export default function HomePage() {
 
             <div className="flex-1 overflow-y-auto">
               <div className="md:flex md:space-x-8 p-6">
-                {/* Left Side - Images (Desktop) */}
                 <div className="md:w-1/2">
-                  {/* Main Image */}
                   <div className="aspect-square bg-muted rounded-lg overflow-hidden mb-4 relative">
                     {selectedProduct.images && selectedProduct.images.length > 0 ? (
                       <>
@@ -452,7 +483,6 @@ export default function HomePage() {
                     )}
                   </div>
 
-                  {/* Thumbnail Images */}
                   {selectedProduct.images && selectedProduct.images.length > 1 && (
                     <div className="flex space-x-3 overflow-x-auto pb-2">
                       {selectedProduct.images.map((image, index) => (
@@ -476,14 +506,12 @@ export default function HomePage() {
                   )}
                 </div>
 
-                {/* Right Side - Product Info */}
                 <div className="md:w-1/2 mt-6 md:mt-0">
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex-1">
                       <h3 className="text-2xl font-bold text-foreground mb-2">{selectedProduct.name_uz}</h3>
                       <p className="text-muted-foreground mb-3">{selectedProduct.category.name_uz}</p>
 
-                      {/* Rating */}
                       {selectedProduct.rating && selectedProduct.review_count && (
                         <div className="flex items-center space-x-2 mb-4">
                           <div className="flex items-center space-x-1">{renderStars(selectedProduct.rating)}</div>
@@ -525,7 +553,6 @@ export default function HomePage() {
                     </div>
                   </div>
 
-                  {/* Delivery Info */}
                   <div className="bg-muted rounded-lg p-4 mb-6 border border-border">
                     <h4 className="font-semibold text-foreground mb-2 flex items-center">
                       <Truck className="w-4 h-4 mr-2" />
@@ -539,7 +566,6 @@ export default function HomePage() {
                     <p className="text-xs text-muted-foreground mt-1">Taxminiy yetkazib berish: 1-3 ish kuni</p>
                   </div>
 
-                  {/* Quantity Selector */}
                   <div className="bg-card rounded-lg border border-border p-4 mb-6">
                     <div className="flex items-center justify-between mb-4">
                       <span className="font-medium text-foreground">Miqdor:</span>
@@ -564,7 +590,6 @@ export default function HomePage() {
                       </div>
                     </div>
 
-                    {/* Total Price */}
                     <div className="flex items-center justify-between pt-4 border-t border-border">
                       <span className="font-medium text-foreground">Jami:</span>
                       <span className="text-xl font-bold text-foreground">
@@ -573,7 +598,6 @@ export default function HomePage() {
                     </div>
                   </div>
 
-                  {/* Add to Cart Button */}
                   <button
                     onClick={handleAddToCartFromSheet}
                     disabled={isAddingToCart}
@@ -589,7 +613,6 @@ export default function HomePage() {
                 </div>
               </div>
 
-              {/* Reviews Section */}
               {productReviews.length > 0 && (
                 <div className="px-6 pb-6">
                   <h4 className="text-xl font-bold text-foreground mb-4">Mijozlar sharhlari</h4>

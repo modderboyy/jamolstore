@@ -4,8 +4,24 @@ import type React from "react"
 import { useAuth } from "@/contexts/AuthContext"
 import { useTelegram } from "@/contexts/TelegramContext"
 import { useRouter, usePathname } from "next/navigation"
-import { Search, User, Phone, MapPin, Clock } from "lucide-react"
+import { Search, User, Phone, MapPin, Clock, Home, Grid3X3, Users, ShoppingBag } from "lucide-react"
 import { useState } from "react"
+import Link from "next/link"
+
+interface NavItem {
+  id: string
+  label: string
+  icon: React.ComponentType<{ className?: string }>
+  path: string
+}
+
+const navigationItems: NavItem[] = [
+  { id: "home", label: "Bosh sahifa", icon: Home, path: "/" },
+  { id: "catalog", label: "Katalog", icon: Grid3X3, path: "/catalog" },
+  { id: "workers", label: "Ishchilar", icon: Users, path: "/workers" },
+  { id: "orders", label: "Buyurtmalar", icon: ShoppingBag, path: "/orders" },
+  { id: "profile", label: "Profil", icon: User, path: "/profile" },
+]
 
 export function TopBar() {
   const { user } = useAuth()
@@ -20,7 +36,8 @@ export function TopBar() {
       if (pathname.includes("/workers")) {
         router.push(`/workers?search=${encodeURIComponent(searchQuery.trim())}`)
       } else {
-        router.push(`/catalog?search=${encodeURIComponent(searchQuery.trim())}`)
+        // Search all products, not just catalog
+        router.push(`/?search=${encodeURIComponent(searchQuery.trim())}`)
       }
     }
   }
@@ -109,10 +126,34 @@ export function TopBar() {
             )}
           </div>
         </div>
-      </div>
 
-      {/* Desktop Navigation */}
-      
+        {/* Desktop Navigation - Right under main top bar */}
+        <nav className="hidden md:block border-t border-border">
+          <div className="container mx-auto px-4">
+            <div className="flex items-center justify-center space-x-8 max-w-4xl mx-auto">
+              {navigationItems.map((item) => {
+                const isActive = pathname === item.path
+                const Icon = item.icon
+
+                return (
+                  <Link
+                    key={item.id}
+                    href={item.path}
+                    className={`flex items-center space-x-2 px-6 py-4 border-b-2 transition-colors ${
+                      isActive
+                        ? "text-primary border-primary"
+                        : "text-muted-foreground border-transparent hover:text-foreground hover:border-muted"
+                    }`}
+                  >
+                    <Icon className="w-5 h-5" />
+                    <span className="font-medium">{item.label}</span>
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+        </nav>
+      </div>
     </>
   )
 }
