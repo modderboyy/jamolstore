@@ -1,22 +1,30 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useEffect } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
 import { useTelegram } from "@/contexts/TelegramContext"
-import { ArrowLeft, MessageCircle, AlertCircle, CheckCircle, Clock } from "lucide-react"
-import { supabase } from "@/lib/supabase"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Label } from "@/components/ui/label"
+import { Loader2, MessageCircle, Phone, Mail, ExternalLink } from "lucide-react"
+import { v4 as uuidv4 } from "uuid"
 
 export default function LoginPage() {
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const { user, checkWebsiteLoginStatus } = useAuth()
-  const { isTelegramWebApp, isReady } = useTelegram()
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState("")
-  const [success, setSuccess] = useState("")
-  const [waitingForLogin, setWaitingForLogin] = useState(false)
-  const [loginToken, setLoginToken] = useState<string | null>(null)
+  const { user, loading, loginWithPhone, loginWithEmail } = useAuth()
+  const { isTelegramWebApp } = useTelegram()
+
+  const [phoneNumber, setPhoneNumber] = useState("")
+  const [email, setEmail] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
+  const [telegramLoginUrl, setTelegramLoginUrl] = useState("")
+  const [loginToken, setLoginToken] = useState("")
+  const [loginStatus, setLoginStatus] = useState<"pending" | "approved" | "rejected" | null>(null)
 
   useEffect(() => {
     if (user) {
@@ -25,254 +33,272 @@ export default function LoginPage() {
   }, [user, router])
 
   useEffect(() => {
-    // URL dan login token tekshirish
-    const token = searchParams.get("login_token")
-    if (token) {
-      handleLoginTokenCheck(token)
-    }
-  }, [searchParams])
+    let interval: NodeJS.Timeout
 
-  const handleLoginTokenCheck = async (token: string) => {
-    setLoading(true)
-    try {
-      const loginUser = await checkWebsiteLoginStatus(token)
-      if (loginUser) {
-        setSuccess("Muvaffaqiyatli kirildi!")
-        setTimeout(() => router.push("/"), 1000)
-      } else {
-        setError("Login sessiyasi topilmadi yoki muddati tugagan")
-      }
-    } catch (error) {
-      console.error("Login token check error:", error)
-      setError("Login tekshirishda xatolik yuz berdi")
-    } finally {
-      setLoading(false)
-    }
-  }
+    if (loginToken && loginStatus === "pending") {
+      // Poll for login status
+      interval = setInterval(async () => {
+        try {
+          const response = await fetch(`/api/website-login?token=${loginToken}`)
+          const data = await response.json()
 
-  const generateLoginToken = () => {
-    return `${Date.now()}_${Math.random().toString(36).substring(2)}_${Math.random().toString(36).substring(2)}`
-  }
+          if (data.status === "approved" && data.user) {
+            setLoginStatus("approved")
+            localStorage.setItem("jamolstroy_user", JSON.stringify(data.user))
+            window.location.href = "/"
+          } else if (data.status === "rejected") {
+            setLoginStatus("rejected")
+          }
+        } catch (error) {
+          console.error("Login status check error:", error)
+        }
+      }, 2000)
+    }
+
+    return () => {
+      if (interval) clearInterval(interval)
+    }
+  }, [loginToken, loginStatus])
 
   const handleTelegramLogin = async () => {
-    setLoading(true)
-    setError("")
-    setWaitingForLogin(true)
-
     try {
-      // Unique login token yaratish
-      const token = generateLoginToken()
-      const timestamp = Date.now()
-      const clientId = "jamolstroy_web"
+      setIsLoading(true)
+      const clientId = uuidv4()
 
-      setLoginToken(token)
-
-      console.log("Creating website login session with token:", token)
-
-      // Website login session yaratish
-      const { error: sessionError } = await supabase.from("website_login_sessions").insert({
-        login_token: token,
-        client_id: clientId,
-        status: "pending",
-        expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(), // 5 daqiqa
+      const response = await fetch("/api/website-login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ client_id: clientId }),
       })
 
-      if (sessionError) {
-        console.error("Session creation error:", sessionError)
-        throw new Error("Session yaratishda xatolik")
+      const data = await response.json()
+
+      if (response.ok) {
+        setLoginToken(data.login_token)
+        setTelegramLoginUrl(data.telegram_url)
+        setLoginStatus("pending")
+
+        // Open Telegram
+        window.open(data.telegram_url, "_blank")
+      } else {
+        throw new Error(data.error)
       }
-
-      // Telegram botga yo'naltirish
-      const botUrl = `https://t.me/jamolstroy_bot?start=website_login_${token}_${timestamp}_${clientId}`
-      console.log("Opening bot URL:", botUrl)
-
-      window.open(botUrl, "_blank", "width=400,height=600")
-
-      // Login holatini kuzatish
-      checkLoginStatus(token)
-    } catch (error: any) {
+    } catch (error) {
       console.error("Telegram login error:", error)
-      setError("Telegram orqali kirishda xatolik yuz berdi")
-      setLoading(false)
-      setWaitingForLogin(false)
+      alert("Telegram login xatoligi")
+    } finally {
+      setIsLoading(false)
     }
   }
 
-  const checkLoginStatus = async (token: string) => {
-    let attempts = 0
-    const maxAttempts = 60 // 2 daqiqa
+  const handlePhoneLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!phoneNumber.trim()) return
 
-    const checkStatus = async () => {
-      try {
-        attempts++
-        console.log(`Checking login status, attempt ${attempts}/${maxAttempts}`)
-
-        const loginUser = await checkWebsiteLoginStatus(token)
-
-        if (loginUser) {
-          // Muvaffaqiyatli login
-          console.log("Login successful!")
-          setSuccess("Muvaffaqiyatli kirildi!")
-          setWaitingForLogin(false)
-          setLoading(false)
-          setTimeout(() => router.push("/"), 1000)
-        } else if (attempts >= maxAttempts) {
-          // Vaqt tugadi
-          console.log("Login timeout")
-          setError("Login vaqti tugadi. Qaytadan urinib ko'ring.")
-          setWaitingForLogin(false)
-          setLoading(false)
-        } else {
-          // Kutishda davom etish
-          setTimeout(checkStatus, 2000)
-        }
-      } catch (error) {
-        console.error("Login status check error:", error)
-        if (attempts >= maxAttempts) {
-          setError("Xatolik yuz berdi")
-          setWaitingForLogin(false)
-          setLoading(false)
-        } else {
-          setTimeout(checkStatus, 2000)
-        }
-      }
+    try {
+      setIsLoading(true)
+      await loginWithPhone(phoneNumber)
+      router.push("/")
+    } catch (error) {
+      console.error("Phone login error:", error)
+      alert("Telefon raqam orqali kirish xatoligi")
+    } finally {
+      setIsLoading(false)
     }
-
-    checkStatus()
   }
 
-  const resetLogin = () => {
-    setLoading(false)
-    setWaitingForLogin(false)
-    setLoginToken(null)
-    setError("")
-    setSuccess("")
+  const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!email.trim()) return
+
+    try {
+      setIsLoading(true)
+      await loginWithEmail(email)
+      router.push("/")
+    } catch (error) {
+      console.error("Email login error:", error)
+      alert("Email orqali kirish xatoligi")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  if (!isReady) {
+  if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
           <p className="text-muted-foreground">Yuklanmoqda...</p>
         </div>
       </div>
     )
   }
 
-  // Telegram Web App da login sahifasini ko'rsatmaslik
   if (isTelegramWebApp) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-            <CheckCircle className="w-10 h-10 text-primary" />
-          </div>
-          <h2 className="text-2xl font-bold text-foreground mb-2">Xush kelibsiz!</h2>
-          <p className="text-muted-foreground">Siz allaqachon tizimga kirgansiz</p>
-        </div>
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <CardTitle>Telegram Web App</CardTitle>
+            <CardDescription>Siz allaqachon Telegram orqali kirgansiz</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => router.push("/")} className="w-full">
+              Bosh sahifaga o'tish
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="bg-card border-b border-border p-4">
-        <div className="flex items-center space-x-4">
-          <button onClick={() => router.push("/")} className="p-2 hover:bg-muted rounded-lg transition-colors">
-            <ArrowLeft className="w-5 h-5 text-muted-foreground" />
-          </button>
-          <h1 className="text-lg font-semibold text-foreground">Hisobga kirish</h1>
-        </div>
-      </div>
-
-      <div className="container mx-auto px-4 py-8 max-w-md">
-        {/* Waiting for Login */}
-        {waitingForLogin && (
-          <div className="space-y-6">
-            <div className="text-center">
-              <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Clock className="w-10 h-10 text-primary animate-pulse" />
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl">JamolStroy</CardTitle>
+          <CardDescription>Hisobingizga kiring</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loginStatus === "pending" ? (
+            <div className="text-center space-y-4">
+              <div className="animate-pulse">
+                <MessageCircle className="h-12 w-12 mx-auto mb-4 text-primary" />
               </div>
-              <h2 className="text-2xl font-bold text-foreground mb-2">Kutilmoqda...</h2>
-              <p className="text-muted-foreground">Telegram botda "Ruxsat berish" tugmasini bosing</p>
-            </div>
-
-            <div className="bg-muted rounded-lg p-4 text-center">
-              <p className="text-sm text-muted-foreground mb-2">Agar bot oynasi ochilmagan bo'lsa:</p>
-              <button
+              <h3 className="text-lg font-semibold">Telegram orqali tasdiqlang</h3>
+              <p className="text-muted-foreground text-sm">Telegram botga o'ting va login so'rovini tasdiqlang</p>
+              {telegramLoginUrl && (
+                <Button variant="outline" onClick={() => window.open(telegramLoginUrl, "_blank")} className="w-full">
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  Telegram botni ochish
+                </Button>
+              )}
+              <Button
+                variant="ghost"
                 onClick={() => {
-                  if (loginToken) {
-                    const timestamp = Date.now()
-                    const clientId = "jamolstroy_web"
-                    const botUrl = `https://t.me/jamolstroy_bot?start=website_login_${loginToken}_${timestamp}_${clientId}`
-                    window.open(botUrl, "_blank", "width=400,height=600")
-                  }
+                  setLoginStatus(null)
+                  setLoginToken("")
+                  setTelegramLoginUrl("")
                 }}
-                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm"
+                className="w-full"
               >
-                Botni ochish
-              </button>
+                Bekor qilish
+              </Button>
             </div>
-
-            <button
-              onClick={resetLogin}
-              className="w-full text-muted-foreground hover:text-foreground transition-colors text-sm"
-            >
-              Bekor qilish
-            </button>
-          </div>
-        )}
-
-        {/* Login Form */}
-        {!waitingForLogin && (
-          <div className="space-y-6">
-            <div className="text-center">
-              <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                <MessageCircle className="w-10 h-10 text-primary" />
+          ) : loginStatus === "rejected" ? (
+            <div className="text-center space-y-4">
+              <div className="text-red-500">
+                <MessageCircle className="h-12 w-12 mx-auto mb-4" />
               </div>
-              <h2 className="text-2xl font-bold text-foreground mb-2">Telegram orqali kirish</h2>
-              <p className="text-muted-foreground">
-                Telegram botimiz orqali tez va xavfsiz tarzda hisobingizga kirasiz
-              </p>
-            </div>
-
-            {error && (
-              <div className="bg-destructive/10 border border-destructive/20 rounded-xl p-4 flex items-center space-x-3">
-                <AlertCircle className="w-5 h-5 text-destructive" />
-                <p className="text-destructive text-sm">{error}</p>
-              </div>
-            )}
-
-            {success && (
-              <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center space-x-3">
-                <CheckCircle className="w-5 h-5 text-green-600" />
-                <p className="text-green-700 text-sm">{success}</p>
-              </div>
-            )}
-
-            <div className="space-y-4">
-              <button
-                onClick={handleTelegramLogin}
-                disabled={loading}
-                className="w-full bg-primary text-primary-foreground rounded-xl py-4 flex items-center justify-center space-x-3 hover:bg-primary/90 transition-all font-semibold disabled:opacity-50 shadow-clean ios-button"
+              <h3 className="text-lg font-semibold">Login rad etildi</h3>
+              <p className="text-muted-foreground text-sm">Telegram orqali login rad etildi</p>
+              <Button
+                onClick={() => {
+                  setLoginStatus(null)
+                  setLoginToken("")
+                  setTelegramLoginUrl("")
+                }}
+                className="w-full"
               >
-                {loading ? (
-                  <div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-                ) : (
-                  <MessageCircle className="w-5 h-5" />
-                )}
-                <span>{loading ? "Ochilmoqda..." : "Telegram orqali kirish"}</span>
-              </button>
-
-              <div className="text-center text-sm text-muted-foreground">
-                <p>Telegram botimizga o'tib, "Ruxsat berish" tugmasini bosing</p>
-              </div>
+                Qayta urinish
+              </Button>
             </div>
-          </div>
-        )}
-      </div>
+          ) : (
+            <Tabs defaultValue="telegram" className="w-full">
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="telegram">Telegram</TabsTrigger>
+                <TabsTrigger value="phone">Telefon</TabsTrigger>
+                <TabsTrigger value="email">Email</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="telegram" className="space-y-4">
+                <div className="text-center space-y-4">
+                  <MessageCircle className="h-12 w-12 mx-auto text-primary" />
+                  <div>
+                    <h3 className="text-lg font-semibold">Telegram orqali kirish</h3>
+                    <p className="text-muted-foreground text-sm">
+                      Xavfsiz va tez kirish uchun Telegram akkauntingizdan foydalaning
+                    </p>
+                  </div>
+                  <Button onClick={handleTelegramLogin} disabled={isLoading} className="w-full">
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Yuklanmoqda...
+                      </>
+                    ) : (
+                      <>
+                        <MessageCircle className="h-4 w-4 mr-2" />
+                        Telegram orqali kirish
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="phone" className="space-y-4">
+                <form onSubmit={handlePhoneLogin} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="phone">Telefon raqam</Label>
+                    <Input
+                      id="phone"
+                      type="tel"
+                      placeholder="+998 90 123 45 67"
+                      value={phoneNumber}
+                      onChange={(e) => setPhoneNumber(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <Button type="submit" disabled={isLoading} className="w-full">
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Yuklanmoqda...
+                      </>
+                    ) : (
+                      <>
+                        <Phone className="h-4 w-4 mr-2" />
+                        Telefon orqali kirish
+                      </>
+                    )}
+                  </Button>
+                </form>
+              </TabsContent>
+
+              <TabsContent value="email" className="space-y-4">
+                <form onSubmit={handleEmailLogin} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Email manzil</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="example@gmail.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <Button type="submit" disabled={isLoading} className="w-full">
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Yuklanmoqda...
+                      </>
+                    ) : (
+                      <>
+                        <Mail className="h-4 w-4 mr-2" />
+                        Email orqali kirish
+                      </>
+                    )}
+                  </Button>
+                </form>
+              </TabsContent>
+            </Tabs>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

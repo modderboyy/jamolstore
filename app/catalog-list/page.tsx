@@ -3,68 +3,75 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
-import { TopBar } from "@/components/layout/top-bar"
 import { BottomNavigation } from "@/components/layout/bottom-navigation"
-import { ArrowLeft, ChevronRight, Package, Folder } from "lucide-react"
+import { TopBar } from "@/components/layout/top-bar"
+import { ChevronRight, Package, ArrowLeft } from "lucide-react"
 
 interface Category {
   id: string
   name_uz: string
-  parent_id: string | null
   icon_name: string
+  parent_id: string | null
   sort_order: number
   product_count?: number
   subcategories?: Category[]
 }
 
+interface Product {
+  id: string
+  name_uz: string
+  price: number
+  unit: string
+  images: string[]
+  category_id: string
+}
+
 export default function CatalogListPage() {
   const router = useRouter()
   const [categories, setCategories] = useState<Category[]>([])
+  const [products, setProducts] = useState<Product[]>([])
+  const [selectedCategory, setSelectedCategory] = useState<Category | null>(null)
   const [loading, setLoading] = useState(true)
+  const [breadcrumb, setBreadcrumb] = useState<Category[]>([])
 
   useEffect(() => {
-    fetchCategoriesWithHierarchy()
+    fetchCategories()
   }, [])
 
-  const fetchCategoriesWithHierarchy = async () => {
+  const fetchCategories = async () => {
     try {
-      // Barcha kategoriyalarni olish
-      const { data: allCategories, error: categoriesError } = await supabase
-        .from("categories")
-        .select("*")
-        .eq("is_active", true)
-        .order("sort_order")
+      const { data, error } = await supabase.from("categories").select("*").eq("is_active", true).order("sort_order")
 
-      if (categoriesError) throw categoriesError
+      if (error) throw error
 
-      // Har bir kategoriya uchun mahsulotlar sonini hisoblash
-      const categoriesWithCounts = await Promise.all(
-        (allCategories || []).map(async (category) => {
-          const { count } = await supabase
-            .from("products")
-            .select("*", { count: "exact", head: true })
-            .eq("category_id", category.id)
-            .eq("is_available", true)
+      // Build hierarchy
+      const categoryMap = new Map<string, Category>()
+      const rootCategories: Category[] = []
 
-          return {
-            ...category,
-            product_count: count || 0,
+      // First pass: create map
+      data?.forEach((cat) => {
+        categoryMap.set(cat.id, { ...cat, subcategories: [] })
+      })
+
+      // Second pass: build hierarchy
+      data?.forEach((cat) => {
+        const category = categoryMap.get(cat.id)!
+        if (cat.parent_id) {
+          const parent = categoryMap.get(cat.parent_id)
+          if (parent) {
+            parent.subcategories!.push(category)
           }
-        }),
-      )
+        } else {
+          rootCategories.push(category)
+        }
+      })
 
-      // Ierarxik tuzilma yaratish
-      const buildHierarchy = (parentId: string | null = null): Category[] => {
-        return categoriesWithCounts
-          .filter((cat) => cat.parent_id === parentId)
-          .map((cat) => ({
-            ...cat,
-            subcategories: buildHierarchy(cat.id),
-          }))
+      // Get product counts
+      for (const category of rootCategories) {
+        await getProductCount(category)
       }
 
-      const hierarchicalCategories = buildHierarchy()
-      setCategories(hierarchicalCategories)
+      setCategories(rootCategories)
     } catch (error) {
       console.error("Kategoriyalarni yuklashda xatolik:", error)
     } finally {
@@ -72,74 +79,126 @@ export default function CatalogListPage() {
     }
   }
 
-  const renderCategory = (category: Category, level = 0) => {
-    const hasSubcategories = category.subcategories && category.subcategories.length > 0
-    const hasProducts = category.product_count && category.product_count > 0
+  const getProductCount = async (category: Category) => {
+    try {
+      // Get all subcategory IDs
+      const getAllSubcategoryIds = (cat: Category): string[] => {
+        let ids = [cat.id]
+        if (cat.subcategories) {
+          cat.subcategories.forEach((sub) => {
+            ids = ids.concat(getAllSubcategoryIds(sub))
+          })
+        }
+        return ids
+      }
 
-    return (
-      <div key={category.id} className="space-y-2">
-        {/* Category Item */}
-        <div
-          className={`flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:shadow-sm transition-all cursor-pointer ${
-            level > 0 ? "ml-" + (level * 4) : ""
-          }`}
-          onClick={() => {
-            if (hasProducts) {
-              router.push(`/catalog?category=${category.id}`)
-            }
-          }}
-        >
-          <div className="flex items-center space-x-3">
-            <div
-              className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                level === 0 ? "bg-primary/10" : level === 1 ? "bg-secondary/10" : "bg-muted"
-              }`}
-            >
-              {hasSubcategories ? (
-                <Folder
-                  className={`w-5 h-5 ${
-                    level === 0 ? "text-primary" : level === 1 ? "text-secondary-foreground" : "text-muted-foreground"
-                  }`}
-                />
-              ) : (
-                <Package
-                  className={`w-5 h-5 ${
-                    level === 0 ? "text-primary" : level === 1 ? "text-secondary-foreground" : "text-muted-foreground"
-                  }`}
-                />
-              )}
-            </div>
-            <div>
-              <h3 className={`font-medium ${level === 0 ? "text-lg" : level === 1 ? "text-base" : "text-sm"}`}>
-                {category.name_uz}
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                {hasProducts && `${category.product_count} ta mahsulot`}
-                {hasSubcategories && !hasProducts && `${category.subcategories!.length} ta bo'lim`}
-                {hasSubcategories && hasProducts && ` • ${category.subcategories!.length} ta bo'lim`}
-              </p>
-            </div>
-          </div>
-          {(hasProducts || hasSubcategories) && <ChevronRight className="w-5 h-5 text-muted-foreground" />}
-        </div>
+      const categoryIds = getAllSubcategoryIds(category)
 
-        {/* Subcategories */}
-        {hasSubcategories && (
-          <div className="space-y-2">
-            {category.subcategories!.map((subcategory) => renderCategory(subcategory, level + 1))}
-          </div>
-        )}
-      </div>
-    )
+      const { count, error } = await supabase
+        .from("products")
+        .select("*", { count: "exact", head: true })
+        .in("category_id", categoryIds)
+        .eq("is_available", true)
+
+      if (error) throw error
+
+      category.product_count = count || 0
+
+      // Also get counts for subcategories
+      if (category.subcategories) {
+        for (const sub of category.subcategories) {
+          await getProductCount(sub)
+        }
+      }
+    } catch (error) {
+      console.error("Mahsulot sonini olishda xatolik:", error)
+      category.product_count = 0
+    }
   }
+
+  const fetchCategoryProducts = async (categoryId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .eq("category_id", categoryId)
+        .eq("is_available", true)
+        .order("created_at", { ascending: false })
+        .limit(20)
+
+      if (error) throw error
+      setProducts(data || [])
+    } catch (error) {
+      console.error("Mahsulotlarni yuklashda xatolik:", error)
+      setProducts([])
+    }
+  }
+
+  const handleCategoryClick = async (category: Category) => {
+    if (category.subcategories && category.subcategories.length > 0) {
+      // Has subcategories, show them
+      setSelectedCategory(category)
+      setBreadcrumb([...breadcrumb, category])
+      await fetchCategoryProducts(category.id)
+    } else {
+      // No subcategories, go to catalog
+      router.push(`/catalog?category=${category.id}`)
+    }
+  }
+
+  const handleBackClick = () => {
+    if (breadcrumb.length > 0) {
+      const newBreadcrumb = breadcrumb.slice(0, -1)
+      setBreadcrumb(newBreadcrumb)
+      if (newBreadcrumb.length > 0) {
+        setSelectedCategory(newBreadcrumb[newBreadcrumb.length - 1])
+        fetchCategoryProducts(newBreadcrumb[newBreadcrumb.length - 1].id)
+      } else {
+        setSelectedCategory(null)
+        setProducts([])
+      }
+    }
+  }
+
+  const getIconForCategory = (iconName: string) => {
+    const iconMap: { [key: string]: string } = {
+      construction: "🏗️",
+      electrical: "⚡",
+      plumbing: "🚿",
+      paint: "🎨",
+      tools: "🔧",
+      hardware: "🔩",
+      garden: "🌱",
+      safety: "🦺",
+    }
+    return iconMap[iconName] || "📦"
+  }
+
+  const formatPrice = (price: number) => {
+    return new Intl.NumberFormat("uz-UZ").format(price)
+  }
+
+  const currentCategories = selectedCategory?.subcategories || categories
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-background pb-20 md:pb-4">
         <TopBar />
-        <div className="flex items-center justify-center py-20">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <div className="container mx-auto px-4 py-6">
+          <div className="space-y-4">
+            {[...Array(8)].map((_, i) => (
+              <div key={i} className="flex items-center space-x-4 p-4 bg-card rounded-xl animate-pulse">
+                <div className="w-12 h-12 bg-muted rounded-lg"></div>
+                <div className="flex-1">
+                  <div className="h-4 bg-muted rounded mb-2"></div>
+                  <div className="h-3 bg-muted rounded w-1/3"></div>
+                </div>
+                <div className="w-6 h-6 bg-muted rounded"></div>
+              </div>
+            ))}
+          </div>
         </div>
+        <BottomNavigation />
       </div>
     )
   }
@@ -149,29 +208,116 @@ export default function CatalogListPage() {
       <TopBar />
 
       {/* Header */}
-      <div className="container mx-auto px-4 py-4 border-b border-border">
-        <div className="flex items-center space-x-4">
-          <button onClick={() => router.back()} className="p-2 -ml-2 rounded-xl hover:bg-muted transition-colors">
-            <ArrowLeft className="w-6 h-6" />
-          </button>
-          <div className="flex-1">
-            <h1 className="text-xl font-bold">Katalog ro'yxati</h1>
-            <p className="text-sm text-muted-foreground">Barcha kategoriyalar va mahsulotlar</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Categories List */}
-      <div className="container mx-auto px-4 py-6">
-        <div className="space-y-4">{categories.map((category) => renderCategory(category))}</div>
-
-        {categories.length === 0 && (
-          <div className="text-center py-12">
-            <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
-              <Package className="w-8 h-8 text-muted-foreground" />
+      <header className="bg-background border-b border-border">
+        <div className="container mx-auto px-4 py-4">
+          <div className="flex items-center space-x-4">
+            {breadcrumb.length > 0 && (
+              <button onClick={handleBackClick} className="p-2 hover:bg-muted rounded-lg transition-colors">
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+            )}
+            <div className="flex-1">
+              <h1 className="text-xl font-bold">
+                {selectedCategory ? selectedCategory.name_uz : "Barcha kategoriyalar"}
+              </h1>
+              <p className="text-sm text-muted-foreground">{currentCategories.length} ta kategoriya</p>
             </div>
-            <h3 className="text-xl font-semibold mb-2">Kategoriyalar topilmadi</h3>
-            <p className="text-muted-foreground">Hozircha kategoriyalar mavjud emas</p>
+          </div>
+
+          {/* Breadcrumb */}
+          {breadcrumb.length > 0 && (
+            <div className="flex items-center space-x-2 mt-3 text-sm text-muted-foreground">
+              <button
+                onClick={() => {
+                  setBreadcrumb([])
+                  setSelectedCategory(null)
+                  setProducts([])
+                }}
+                className="hover:text-primary"
+              >
+                Bosh sahifa
+              </button>
+              {breadcrumb.map((item, index) => (
+                <div key={item.id} className="flex items-center space-x-2">
+                  <ChevronRight className="w-4 h-4" />
+                  <button
+                    onClick={() => {
+                      const newBreadcrumb = breadcrumb.slice(0, index + 1)
+                      setBreadcrumb(newBreadcrumb)
+                      setSelectedCategory(item)
+                      fetchCategoryProducts(item.id)
+                    }}
+                    className="hover:text-primary"
+                  >
+                    {item.name_uz}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </header>
+
+      <div className="container mx-auto px-4 py-6">
+        {/* Categories */}
+        <div className="space-y-3 mb-8">
+          {currentCategories.map((category) => (
+            <button
+              key={category.id}
+              onClick={() => handleCategoryClick(category)}
+              className="w-full flex items-center space-x-4 p-4 bg-card rounded-xl border border-border hover:border-primary/20 hover:bg-card/80 transition-all group"
+            >
+              <div className="w-12 h-12 bg-gradient-to-br from-primary/10 to-primary/5 rounded-lg flex items-center justify-center group-hover:from-primary/20 group-hover:to-primary/10 transition-all">
+                <span className="text-xl">{getIconForCategory(category.icon_name)}</span>
+              </div>
+              <div className="flex-1 text-left">
+                <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors">
+                  {category.name_uz}
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  {category.product_count || 0} ta mahsulot
+                  {category.subcategories &&
+                    category.subcategories.length > 0 &&
+                    ` • ${category.subcategories.length} ta bo'lim`}
+                </p>
+              </div>
+              <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
+            </button>
+          ))}
+        </div>
+
+        {/* Products in current category */}
+        {products.length > 0 && (
+          <div>
+            <h2 className="text-lg font-semibold mb-4">{selectedCategory?.name_uz} mahsulotlari</h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {products.map((product) => (
+                <button
+                  key={product.id}
+                  onClick={() => router.push(`/product/${product.id}`)}
+                  className="bg-card rounded-xl p-4 border border-border hover:border-primary/20 hover:shadow-md transition-all text-left group"
+                >
+                  <div className="aspect-square bg-muted rounded-lg mb-3 overflow-hidden">
+                    {product.images && product.images.length > 0 ? (
+                      <img
+                        src={product.images[0] || "/placeholder.svg"}
+                        alt={product.name_uz}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Package className="w-8 h-8 text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
+                  <h3 className="font-medium text-sm mb-2 line-clamp-2 group-hover:text-primary transition-colors">
+                    {product.name_uz}
+                  </h3>
+                  <p className="text-primary font-semibold">{formatPrice(product.price)} so'm</p>
+                  <p className="text-xs text-muted-foreground">/{product.unit}</p>
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>
