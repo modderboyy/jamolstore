@@ -54,6 +54,35 @@ export function TopBar() {
     fetchCompanyInfo()
   }, [])
 
+  useEffect(() => {
+    // Auto dark/light mode based on Uzbekistan time (GMT+5)
+    const setThemeBasedOnTime = () => {
+      const now = new Date()
+      // Convert to Uzbekistan time (UTC+5)
+      const uzbekTime = new Date(now.getTime() + 5 * 60 * 60 * 1000)
+      const hour = uzbekTime.getHours()
+
+      // Light mode: 6 AM to 6 PM, Dark mode: 6 PM to 6 AM
+      const isDark = hour < 6 || hour >= 18
+
+      if (window.Telegram?.WebApp) {
+        // Telegram Web App uchun theme
+        const tgTheme = window.Telegram.WebApp.colorScheme
+        document.documentElement.classList.toggle("dark", tgTheme === "dark" || isDark)
+      } else {
+        // Oddiy web uchun vaqtga qarab
+        document.documentElement.classList.toggle("dark", isDark)
+      }
+    }
+
+    setThemeBasedOnTime()
+
+    // Har daqiqada yangilaymiz
+    const interval = setInterval(setThemeBasedOnTime, 60000)
+
+    return () => clearInterval(interval)
+  }, [])
+
   const fetchCompanyInfo = async () => {
     try {
       const { data, error } = await supabase
@@ -156,9 +185,7 @@ export function TopBar() {
                 </div>
               )}
               <div className="text-left">
-                <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-primary/80 bg-clip-text text-transparent">
-                  {companyInfo?.name || "JamolStroy"}
-                </h1>
+                <h1 className="text-xl font-bold text-gray-900 dark:text-white">{companyInfo?.name || "JamolStroy"}</h1>
                 <p className="text-xs text-muted-foreground hidden sm:block">Qurilish materiallari</p>
               </div>
             </button>

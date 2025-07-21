@@ -67,7 +67,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .single()
 
       if (searchError && searchError.code !== "PGRST116") {
-        throw searchError
+        console.log("Search error handled:", searchError.message)
+        setLoading(false)
+        return
       }
 
       let userData = existingUser
@@ -92,8 +94,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .single()
 
         if (createError) {
-          console.error("Error creating user:", createError)
-          throw createError
+          console.log("Create error handled:", createError.message)
+          setLoading(false)
+          return
         }
         userData = newUser
         console.log("New user created successfully:", userData.id)
@@ -114,17 +117,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .single()
 
         if (updateError) {
-          console.error("Error updating user:", updateError)
-          throw updateError
+          console.log("Update error handled:", updateError.message)
+          userData = existingUser // Use existing data if update fails
+        } else {
+          userData = updatedUser
         }
-        userData = updatedUser
       }
 
       setUser(userData)
       localStorage.setItem("jamolstroy_user", JSON.stringify(userData))
       console.log("Telegram Web App auto login successful for:", userData.first_name)
     } catch (error) {
-      console.error("Telegram Web App login error:", error)
+      console.log("Telegram Web App login error handled:", error)
     } finally {
       setLoading(false)
     }

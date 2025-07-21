@@ -141,8 +141,26 @@ export function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
                       <div className="flex-1 min-w-0">
                         <h4 className="font-medium text-sm line-clamp-2 mb-1">{item.product.name_uz}</h4>
                         <div className="text-sm font-bold mb-2">
-                          {formatPrice(item.product.price)} so'm
-                          <span className="text-xs text-muted-foreground ml-1">/{item.product.unit}</span>
+                          {item.product.product_type === "rental" && item.product.rental_price_per_unit ? (
+                            <>
+                              {formatPrice(item.product.rental_price_per_unit)} so'm
+                              <span className="text-xs text-muted-foreground ml-1">
+                                /
+                                {item.product.rental_time_unit === "hour"
+                                  ? "soat"
+                                  : item.product.rental_time_unit === "day"
+                                    ? "kun"
+                                    : item.product.rental_time_unit === "week"
+                                      ? "hafta"
+                                      : "oy"}
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              {formatPrice(item.product.price)} so'm
+                              <span className="text-xs text-muted-foreground ml-1">/{item.product.unit}</span>
+                            </>
+                          )}
                         </div>
 
                         {/* Quantity Controls */}
@@ -181,8 +199,13 @@ export function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
                     {/* Item Total */}
                     <div className="mt-3 pt-3 border-t border-border flex justify-between items-center">
                       <span className="text-xs text-muted-foreground">Jami:</span>
-                      <span className="text-sm font-bold bg-gradient-to-r from-primary to-primary/80 bg-clip-text text-transparent">
-                        {formatPrice(item.product.price * item.quantity)} so'm
+                      <span className="text-sm font-bold text-blue-600 dark:text-blue-400">
+                        {formatPrice(
+                          (item.product.product_type === "rental" && item.product.rental_price_per_unit
+                            ? item.product.rental_price_per_unit
+                            : item.product.price) * item.quantity,
+                        )}{" "}
+                        so'm
                       </span>
                     </div>
                   </div>

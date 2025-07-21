@@ -29,6 +29,7 @@ interface Product {
   }
   rating?: number
   review_count?: number
+  rental_deposit?: number
 }
 
 interface ProductCardProps {
@@ -214,16 +215,21 @@ export function ProductCard({ product, onQuickView, className = "" }: ProductCar
         <div className="mb-3">
           {product.product_type === "rental" && product.rental_price_per_unit ? (
             <div>
-              <p className="text-primary font-semibold text-sm bg-gradient-to-r from-primary to-primary/80 bg-clip-text text-transparent">
+              <p className="text-blue-600 dark:text-blue-400 font-semibold text-sm">
                 {formatPrice(product.rental_price_per_unit)} so'm
               </p>
               <p className="text-xs text-muted-foreground">
                 /{getRentalTimeText(product.rental_time_unit)} • {product.unit}
               </p>
+              {product.rental_deposit && (
+                <p className="text-xs text-orange-600 font-medium">
+                  Omonat: {formatPrice(product.rental_deposit)} so'm
+                </p>
+              )}
             </div>
           ) : (
             <div>
-              <p className="text-primary font-semibold text-sm bg-gradient-to-r from-primary to-primary/80 bg-clip-text text-transparent">
+              <p className="text-blue-600 dark:text-blue-400 font-semibold text-sm">
                 {formatPrice(product.price)} so'm
               </p>
               <p className="text-xs text-muted-foreground">/{product.unit}</p>

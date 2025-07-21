@@ -80,21 +80,28 @@ export default function HomePage() {
   }, [searchQuery])
 
   useEffect(() => {
-    // Auto dark/light mode based on Uzbekistan time
+    // Auto dark/light mode based on Uzbekistan time (GMT+5)
     const setThemeBasedOnTime = () => {
-      const now = new Date()
-      // Convert to Uzbekistan time (UTC+5)
-      const uzbekTime = new Date(now.getTime() + 5 * 60 * 60 * 1000)
-      const hour = uzbekTime.getHours()
+      try {
+        const now = new Date()
+        // Convert to Uzbekistan time (UTC+5)
+        const uzbekTime = new Date(now.getTime() + 5 * 60 * 60 * 1000)
+        const hour = uzbekTime.getHours()
 
-      // Light mode: 6 AM to 6 PM, Dark mode: 6 PM to 6 AM
-      const isDark = hour < 6 || hour >= 18
+        // Light mode: 6 AM to 6 PM, Dark mode: 6 PM to 6 AM
+        const isDark = hour < 6 || hour >= 18
 
-      if (window.Telegram?.WebApp) {
-        const tgTheme = window.Telegram.WebApp.colorScheme
-        document.documentElement.classList.toggle("dark", tgTheme === "dark")
-      } else {
-        document.documentElement.classList.toggle("dark", isDark)
+        if (typeof window !== "undefined") {
+          if (window.Telegram?.WebApp) {
+            const tgTheme = window.Telegram.WebApp.colorScheme
+            document.documentElement.classList.toggle("dark", tgTheme === "dark" || isDark)
+          } else {
+            document.documentElement.classList.toggle("dark", isDark)
+          }
+        }
+      } catch (error) {
+        // Console errorni oldini olamiz
+        console.log("Theme setting error handled")
       }
     }
 
@@ -573,10 +580,35 @@ export default function HomePage() {
                   )}
 
                   <div className="flex items-baseline space-x-2 mb-6">
-                    <span className="text-3xl font-bold text-foreground">
-                      {formatPrice(selectedProduct.price)} so'm
-                    </span>
-                    <span className="text-muted-foreground">/{selectedProduct.unit}</span>
+                    {selectedProduct.product_type === "rental" && selectedProduct.rental_price_per_unit ? (
+                      <>
+                        <span className="text-3xl font-bold text-gray-900 dark:text-white">
+                          {formatPrice(selectedProduct.rental_price_per_unit)} so'm
+                        </span>
+                        <span className="text-muted-foreground">
+                          /
+                          {selectedProduct.rental_time_unit === "hour"
+                            ? "soat"
+                            : selectedProduct.rental_time_unit === "day"
+                              ? "kun"
+                              : selectedProduct.rental_time_unit === "week"
+                                ? "hafta"
+                                : "oy"}
+                        </span>
+                        {selectedProduct.rental_deposit && (
+                          <div className="text-sm text-orange-600 font-medium">
+                            Omonat: {formatPrice(selectedProduct.rental_deposit)} so'm
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-3xl font-bold text-gray-900 dark:text-white">
+                          {formatPrice(selectedProduct.price)} so'm
+                        </span>
+                        <span className="text-muted-foreground">/{selectedProduct.unit}</span>
+                      </>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-4 mb-6">
@@ -635,8 +667,13 @@ export default function HomePage() {
 
                     <div className="flex items-center justify-between pt-4 border-t border-border">
                       <span className="font-medium text-foreground">Jami:</span>
-                      <span className="text-xl font-bold text-foreground">
-                        {formatPrice(selectedProduct.price * quantity)} so'm
+                      <span className="text-xl font-bold text-gray-900 dark:text-white">
+                        {formatPrice(
+                          (selectedProduct.product_type === "rental" && selectedProduct.rental_price_per_unit
+                            ? selectedProduct.rental_price_per_unit
+                            : selectedProduct.price) * quantity,
+                        )}{" "}
+                        so'm
                       </span>
                     </div>
                   </div>
