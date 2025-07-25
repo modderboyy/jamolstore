@@ -7,7 +7,7 @@ import { useCart } from "@/contexts/CartContext"
 import { supabase } from "@/lib/supabase"
 import { TopBar } from "@/components/layout/top-bar"
 import { BottomNavigation } from "@/components/layout/bottom-navigation"
-import { ArrowLeft, MapPin, User, Truck, Plus, Check, Home } from "lucide-react"
+import { ArrowLeft, User, Truck, Plus, Check, Home, AlertCircle } from "lucide-react"
 import Image from "next/image"
 
 interface Address {
@@ -16,18 +16,27 @@ interface Address {
   address: string
   city?: string
   region?: string
-  postal_code?: string
   is_default: boolean
 }
 
 interface CompanyInfo {
   phone_number: string
+  address: string
+}
+
+interface DeliverySummary {
+  has_delivery_products: boolean
+  has_no_delivery_products: boolean
+  delivery_products: any[]
+  no_delivery_products: any[]
+  max_delivery_fee: number
+  company_address: string
 }
 
 export default function CheckoutPage() {
   const { user } = useAuth()
   const router = useRouter()
-  const { items, totalPrice, setDeliveryFee, grandTotal, clearCart } = useCart()
+  const { items, totalPrice, clearCart } = useCart()
 
   const [customerName, setCustomerName] = useState("")
   const [customerPhone, setCustomerPhone] = useState("")
@@ -42,35 +51,62 @@ export default function CheckoutPage() {
   const [newAddressName, setNewAddressName] = useState("")
   const [newAddress, setNewAddress] = useState("")
   const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(null)
+  const [deliverySummary, setDeliverySummary] = useState<DeliverySummary | null>(null)
+  const [customerLocation, setCustomerLocation] = useState<{ lat: number; lng: number } | null>(null)
 
-  // Foydalanuvchi ma'lumotlarini yuklash
   useEffect(() => {
     if (user) {
       fetchUserData()
       fetchAddresses()
       fetchCompanyInfo()
+      fetchDeliverySummary()
+      getCurrentLocation()
     } else {
       setIsLoading(false)
     }
   }, [user])
 
-  // Calculate delivery fee based on products
-  useEffect(() => {
-    if (items.length > 0 && deliveryWithService) {
-      calculateDeliveryFee()
-    } else {
-      setDeliveryFee(0)
+  const getCurrentLocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setCustomerLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          })
+        },
+        (error) => {
+          console.log("Location access denied:", error)
+        },
+      )
     }
-  }, [items, deliveryWithService])
+  }
 
   const fetchCompanyInfo = async () => {
     try {
-      const { data, error } = await supabase.from("company").select("phone_number").eq("is_active", true).single()
+      const { data, error } = await supabase
+        .from("company")
+        .select("phone_number, address")
+        .eq("is_active", true)
+        .single()
 
       if (error) throw error
       setCompanyInfo(data)
     } catch (error) {
       console.error("Company info error:", error)
+    }
+  }
+
+  const fetchDeliverySummary = async () => {
+    if (!user) return
+
+    try {
+      const { data, error } = await supabase.rpc("get_delivery_summary", { customer_id_param: user.id })
+
+      if (error) throw error
+      setDeliverySummary(data)
+    } catch (error) {
+      console.error("Delivery summary error:", error)
     }
   }
 
@@ -109,7 +145,6 @@ export default function CheckoutPage() {
 
       setAddresses(data || [])
 
-      // Select default address if available
       const defaultAddress = data?.find((addr) => addr.is_default)
       if (defaultAddress) {
         setSelectedAddressId(defaultAddress.id)
@@ -117,34 +152,6 @@ export default function CheckoutPage() {
       }
     } catch (error) {
       console.error("Addresses error:", error)
-    }
-  }
-
-  const calculateDeliveryFee = () => {
-    let maxDeliveryFee = 0
-    let hasDeliveryLimit = false
-    let totalWithDeliveryLimit = 0
-
-    // Find the highest delivery fee among all products
-    for (const item of items) {
-      if (item.product.has_delivery) {
-        if (item.product.delivery_price > maxDeliveryFee) {
-          maxDeliveryFee = item.product.delivery_price
-        }
-
-        // Check if any product has delivery limit
-        if (item.product.delivery_limit > 0) {
-          hasDeliveryLimit = true
-          totalWithDeliveryLimit += item.product.price * item.quantity
-        }
-      }
-    }
-
-    // If total price exceeds delivery limit, delivery is free
-    if (hasDeliveryLimit && totalWithDeliveryLimit >= items[0].product.delivery_limit) {
-      setDeliveryFee(0)
-    } else {
-      setDeliveryFee(maxDeliveryFee)
     }
   }
 
@@ -177,19 +184,17 @@ export default function CheckoutPage() {
           user_id: user.id,
           name: newAddressName.trim(),
           address: newAddress.trim(),
-          is_default: addresses.length === 0, // First address is default
+          is_default: addresses.length === 0,
         })
         .select()
         .single()
 
       if (error) throw error
 
-      // Refresh addresses and select the new one
       fetchAddresses()
       setSelectedAddressId(data.id)
       setDeliveryAddress(data.address)
 
-      // Reset form
       setNewAddressName("")
       setNewAddress("")
       setShowAddressForm(false)
@@ -200,45 +205,31 @@ export default function CheckoutPage() {
   }
 
   const calculateItemTotal = (item: any) => {
-    const basePrice = item.product.price
-    let variationPrice = 0
-
-    // Add variation prices
-    if (item.variations && item.variations.length > 0) {
-      variationPrice = item.variations.reduce((sum: number, variation: any) => {
-        return sum + (variation.price || 0)
-      }, 0)
-    }
-
     if (item.product.product_type === "rental" && item.product.rental_price_per_unit && item.rental_duration) {
-      const rentalTotal = (item.product.rental_price_per_unit + variationPrice) * item.rental_duration * item.quantity
-      const depositTotal = (item.product.rental_deposit || 0) * item.quantity
-      return rentalTotal + depositTotal
+      return item.product.rental_price_per_unit * item.rental_duration * item.quantity
     }
-
-    return (basePrice + variationPrice) * item.quantity
+    return item.product.price * item.quantity
   }
 
-  const getDeliveryInfo = () => {
-    const hasDeliveryProducts = items.some((item) => item.product.has_delivery)
-    const noDeliveryProducts = items.filter((item) => !item.product.has_delivery)
+  const calculateDeliveryFee = () => {
+    if (!deliveryWithService || !deliverySummary?.has_delivery_products) return 0
+    return deliverySummary.max_delivery_fee || 0
+  }
 
-    if (noDeliveryProducts.length > 0 && hasDeliveryProducts) {
-      return "Ba'zi mahsulotlar uchun yetkazib berish mavjud emas"
-    } else if (noDeliveryProducts.length === items.length) {
-      return "Yetkazib berish mavjud emas"
-    } else if (setDeliveryFee === 0) {
-      return "Bepul"
-    } else {
-      return `${formatPrice(setDeliveryFee)} so'm`
-    }
+  const calculateGrandTotal = () => {
+    return totalPrice + calculateDeliveryFee()
   }
 
   const handleSubmitOrder = async () => {
     if (!user || items.length === 0) return
 
-    if (!customerName.trim() || !customerPhone.trim() || !deliveryAddress.trim()) {
-      alert("Iltimos, barcha majburiy maydonlarni to'ldiring")
+    if (!customerName.trim() || !customerPhone.trim()) {
+      alert("Iltimos, ism va telefon raqamini kiriting")
+      return
+    }
+
+    if (deliveryWithService && deliverySummary?.has_delivery_products && !deliveryAddress.trim()) {
+      alert("Yetkazib berish uchun manzil kiriting")
       return
     }
 
@@ -246,9 +237,12 @@ export default function CheckoutPage() {
 
     try {
       const orderNumber = generateOrderNumber()
-      const finalDeliveryFee = deliveryWithService ? setDeliveryFee : null
+      const finalDeliveryFee = calculateDeliveryFee()
+      const finalAddress =
+        deliveryWithService && deliverySummary?.has_delivery_products
+          ? deliveryAddress.trim()
+          : `O'zim olib ketaman: ${companyInfo?.address || "Kompaniya manzili"}`
 
-      // Buyurtmani yaratish
       const { data: order, error: orderError } = await supabase
         .from("orders")
         .insert({
@@ -256,23 +250,22 @@ export default function CheckoutPage() {
           customer_id: user.id,
           customer_name: customerName.trim(),
           customer_phone: customerPhone.trim(),
-          delivery_address: deliveryAddress.trim(),
+          delivery_address: finalAddress,
           address_id: selectedAddressId,
-          delivery_with_service: deliveryWithService,
+          delivery_with_service: deliveryWithService && deliverySummary?.has_delivery_products,
           subtotal: totalPrice,
           delivery_fee: finalDeliveryFee,
-          total_amount: totalPrice + (finalDeliveryFee || 0),
+          total_amount: calculateGrandTotal(),
           notes: notes.trim() || null,
           status: "pending",
+          customer_location: customerLocation ? JSON.stringify(customerLocation) : null,
         })
         .select()
         .single()
 
       if (orderError) throw orderError
 
-      // Buyurtma elementlarini yaratish
       const orderItems = items.map((item) => {
-        // Extract variation data if available
         const variations = item.variations ? JSON.stringify(item.variations) : null
 
         return {
@@ -291,11 +284,9 @@ export default function CheckoutPage() {
 
       if (itemsError) throw itemsError
 
-      // Savatni tozalash
       await clearCart()
 
-      // Show success message and redirect
-      alert("Sizga tez orada aloqaga chiqamiz!")
+      alert("Buyurtma muvaffaqiyatli berildi! Tez orada aloqaga chiqamiz.")
       router.push("/orders")
     } catch (error) {
       console.error("Buyurtma berishda xatolik:", error)
@@ -331,15 +322,14 @@ export default function CheckoutPage() {
     <div className="min-h-screen bg-background pb-20 md:pb-4">
       <TopBar />
 
-      {/* Header */}
       <div className="container mx-auto px-4 py-4 border-b border-border">
         <div className="flex items-center space-x-4">
           <button onClick={() => router.back()} className="p-2 -ml-2 rounded-lg hover:bg-muted transition-colors">
             <ArrowLeft className="w-6 h-6" />
           </button>
           <div>
-            <h1 className="text-title-3 font-bold">Buyurtma berish</h1>
-            <p className="text-footnote text-muted-foreground">{items.length} ta mahsulot</p>
+            <h1 className="text-xl font-bold">Buyurtma berish</h1>
+            <p className="text-sm text-muted-foreground">{items.length} ta mahsulot</p>
           </div>
         </div>
       </div>
@@ -347,80 +337,40 @@ export default function CheckoutPage() {
       <div className="container mx-auto px-4 py-6 space-y-6">
         {/* Order Items */}
         <div className="bg-card rounded-lg border border-border p-4">
-          <h3 className="text-headline font-semibold mb-4">Buyurtma tarkibi</h3>
+          <h3 className="text-lg font-semibold mb-4">Buyurtma tarkibi</h3>
           <div className="space-y-3">
-            {items.map((item) => {
-              const itemTotal = calculateItemTotal(item)
-              const basePrice =
-                item.product.product_type === "rental" && item.product.rental_price_per_unit
-                  ? item.product.rental_price_per_unit
-                  : item.product.price
-              const variationPrice =
-                item.variations?.reduce((sum: number, variation: any) => sum + (variation.price || 0), 0) || 0
-
-              return (
-                <div key={item.id} className="flex space-x-3">
-                  <div className="w-12 h-12 bg-muted rounded-lg overflow-hidden flex-shrink-0">
-                    {item.product.images?.[0] ? (
-                      <Image
-                        src={item.product.images[0] || "/placeholder.svg"}
-                        alt={item.product.name_uz}
-                        width={48}
-                        height={48}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full bg-muted-foreground/20" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="text-sm font-medium line-clamp-1">{item.product.name_uz}</h4>
-
-                    {/* Price breakdown */}
-                    <div className="mt-1 text-xs">
-                      <div className="text-muted-foreground">
-                        Asosiy: {item.quantity} × {formatPrice(basePrice)} = {formatPrice(basePrice * item.quantity)}{" "}
-                        so'm
-                      </div>
-                      {variationPrice > 0 && (
-                        <div className="text-green-600">
-                          Qo'shimcha: {item.quantity} × {formatPrice(variationPrice)} ={" "}
-                          {formatPrice(variationPrice * item.quantity)} so'm
-                        </div>
-                      )}
-                      {item.product.product_type === "rental" && item.product.rental_deposit && (
-                        <div className="text-orange-600">
-                          Kafolat: {item.quantity} × {formatPrice(item.product.rental_deposit)} ={" "}
-                          {formatPrice(item.product.rental_deposit * item.quantity)} so'm
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex items-center justify-between mt-1">
-                      <span className="text-xs text-muted-foreground">Jami:</span>
-                      <span className="text-sm font-semibold">{formatPrice(itemTotal)} so'm</span>
-                    </div>
-
-                    {/* Show variations if available */}
-                    {item.variations && item.variations.length > 0 && (
-                      <div className="mt-1 text-xs text-blue-600">
-                        {item.variations.map((variation: any, idx: number) => (
-                          <span key={idx} className="mr-2">
-                            {variation.type}: {variation.name}
-                          </span>
-                        ))}
-                      </div>
-                    )}
+            {items.map((item) => (
+              <div key={item.id} className="flex space-x-3">
+                <div className="w-12 h-12 bg-muted rounded-lg overflow-hidden flex-shrink-0">
+                  {item.product.images?.[0] ? (
+                    <Image
+                      src={item.product.images[0] || "/placeholder.svg"}
+                      alt={item.product.name_uz}
+                      width={48}
+                      height={48}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-muted-foreground/20" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-medium line-clamp-1">{item.product.name_uz}</h4>
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-xs text-muted-foreground">
+                      {item.quantity} {item.product.unit} × {formatPrice(item.product.price)} so'm
+                    </span>
+                    <span className="text-sm font-semibold">{formatPrice(calculateItemTotal(item))} so'm</span>
                   </div>
                 </div>
-              )
-            })}
+              </div>
+            ))}
           </div>
         </div>
 
         {/* Customer Info */}
         <div className="bg-card rounded-lg border border-border p-4">
-          <h3 className="text-headline font-semibold mb-4 flex items-center">
+          <h3 className="text-lg font-semibold mb-4 flex items-center">
             <User className="w-5 h-5 mr-2" />
             Buyurtmachi ma'lumotlari
           </h3>
@@ -448,153 +398,197 @@ export default function CheckoutPage() {
           </div>
         </div>
 
-        {/* Delivery Info */}
-        <div className="bg-card rounded-lg border border-border p-4">
-          <h3 className="text-headline font-semibold mb-4 flex items-center">
-            <MapPin className="w-5 h-5 mr-2" />
-            Yetkazib berish manzili
-          </h3>
+        {/* Delivery Summary */}
+        {deliverySummary && (
+          <div className="bg-card rounded-lg border border-border p-4">
+            <h3 className="text-lg font-semibold mb-4 flex items-center">
+              <Truck className="w-5 h-5 mr-2" />
+              Yetkazib berish ma'lumotlari
+            </h3>
 
-          {/* Saved Addresses */}
-          {addresses.length > 0 && (
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-2">Saqlangan manzillar</label>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {addresses.map((address) => (
+            {/* Products with delivery */}
+            {deliverySummary.has_delivery_products && (
+              <div className="mb-4">
+                <h4 className="font-medium text-green-600 mb-2">Yetkazib berish mavjud mahsulotlar:</h4>
+                <div className="space-y-2">
+                  {deliverySummary.delivery_products.map((product, index) => (
+                    <div
+                      key={index}
+                      className="flex justify-between items-center text-sm bg-green-50 dark:bg-green-950/20 p-2 rounded"
+                    >
+                      <span>
+                        {product.name} ({product.quantity} ta)
+                      </span>
+                      <span className="font-medium">{formatPrice(product.delivery_price)} so'm</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Delivery service option */}
+                <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg">
                   <button
-                    key={address.id}
-                    onClick={() => handleAddressSelect(address.id)}
-                    className={`text-left p-3 rounded-lg border transition-all ${
-                      selectedAddressId === address.id
-                        ? "border-primary bg-primary/5"
-                        : "border-border bg-muted/50 hover:border-primary/50"
-                    }`}
+                    onClick={() => setDeliveryWithService(!deliveryWithService)}
+                    className="flex items-center space-x-3 w-full text-left"
                   >
-                    <div className="flex items-start">
-                      <div className="mr-3">
-                        <Home
-                          className={`w-5 h-5 ${selectedAddressId === address.id ? "text-primary" : "text-muted-foreground"}`}
-                        />
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium">{address.name}</span>
-                          {selectedAddressId === address.id && <Check className="w-4 h-4 text-primary" />}
-                        </div>
-                        <p className="text-sm text-muted-foreground mt-1">{address.address}</p>
-                        {address.is_default && (
-                          <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded mt-1 inline-block">
-                            Asosiy
-                          </span>
-                        )}
-                      </div>
+                    <div
+                      className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                        deliveryWithService ? "bg-primary border-primary" : "border-gray-300"
+                      }`}
+                    >
+                      {deliveryWithService && <Check className="w-3 h-3 text-white" />}
+                    </div>
+                    <div className="flex-1">
+                      <span className="font-medium">Yetkazib berish xizmatini qo'shish</span>
+                      <p className="text-sm text-muted-foreground">
+                        Narx: {formatPrice(deliverySummary.max_delivery_fee)} so'm
+                      </p>
                     </div>
                   </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Add New Address Button */}
-          {!showAddressForm ? (
-            <button
-              onClick={() => setShowAddressForm(true)}
-              className="flex items-center space-x-2 text-primary hover:text-primary/80 mb-4"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Yangi manzil qo'shish</span>
-            </button>
-          ) : (
-            <div className="bg-muted/30 p-4 rounded-lg mb-4 animate-fadeIn">
-              <h4 className="font-medium mb-3">Yangi manzil</h4>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-sm mb-1">Manzil nomi *</label>
-                  <input
-                    type="text"
-                    value={newAddressName}
-                    onChange={(e) => setNewAddressName(e.target.value)}
-                    className="w-full px-3 py-2 bg-background rounded-lg border border-border focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all"
-                    placeholder="Masalan: Uy, Ish, va h.k."
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm mb-1">To'liq manzil *</label>
-                  <textarea
-                    value={newAddress}
-                    onChange={(e) => setNewAddress(e.target.value)}
-                    rows={2}
-                    className="w-full px-3 py-2 bg-background rounded-lg border border-border focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all resize-none"
-                    placeholder="Masalan: G'uzor tumani, Mustaqillik mahallasi, 10-ko'cha, 34-uy"
-                  />
-                </div>
-                <div className="flex space-x-3">
-                  <button
-                    onClick={() => setShowAddressForm(false)}
-                    className="px-3 py-1.5 bg-muted text-muted-foreground rounded-lg text-sm hover:bg-muted/80 transition-colors"
-                  >
-                    Bekor qilish
-                  </button>
-                  <button
-                    onClick={handleAddNewAddress}
-                    disabled={!newAddressName.trim() || !newAddress.trim()}
-                    className="px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-sm hover:bg-primary/90 transition-colors disabled:opacity-50"
-                  >
-                    Saqlash
-                  </button>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Manual Address Input */}
-          {addresses.length === 0 && !showAddressForm && (
-            <div>
-              <label className="block text-sm font-medium mb-2">To'liq manzil *</label>
-              <textarea
-                value={deliveryAddress}
-                onChange={(e) => setDeliveryAddress(e.target.value)}
-                rows={3}
-                className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all resize-none"
-                placeholder="Masalan: G'uzor tumani, Mustaqillik mahallasi, 10-ko'cha, 34-uy"
-              />
-            </div>
-          )}
+            {/* Products without delivery */}
+            {deliverySummary.has_no_delivery_products && (
+              <div className="mb-4">
+                <h4 className="font-medium text-orange-600 mb-2">Yetkazib berish mavjud emas:</h4>
+                <div className="space-y-2">
+                  {deliverySummary.no_delivery_products.map((product, index) => (
+                    <div key={index} className="text-sm bg-orange-50 dark:bg-orange-950/20 p-2 rounded">
+                      {product.name} ({product.quantity} ta)
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-2 p-3 bg-orange-100 dark:bg-orange-950/30 rounded-lg">
+                  <div className="flex items-start space-x-2">
+                    <AlertCircle className="w-5 h-5 text-orange-600 mt-0.5 flex-shrink-0" />
+                    <div className="text-sm">
+                      <p className="font-medium text-orange-800 dark:text-orange-200">
+                        Bu mahsulotlarni o'zingiz olib ketishingiz kerak
+                      </p>
+                      <p className="text-orange-700 dark:text-orange-300 mt-1">
+                        Manzil: {deliverySummary.company_address}
+                      </p>
+                      <p className="text-orange-700 dark:text-orange-300 mt-1">
+                        O'zingiz bilan ID kodingiz va telegramingiz orqali tasdiqlash uchun telefoningizni ham olib
+                        keling.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
-          <div className="flex items-center space-x-3 mt-4">
-            <input
-              type="checkbox"
-              id="delivery-service"
-              checked={deliveryWithService}
-              onChange={(e) => setDeliveryWithService(e.target.checked)}
-              className="w-4 h-4 text-primary bg-muted border-border rounded focus:ring-primary/20"
-            />
-            <label htmlFor="delivery-service" className="text-sm flex items-center">
-              <Truck className="w-4 h-4 mr-2" />
-              Yetkazib berish xizmati {setDeliveryFee > 0 ? `(${formatPrice(setDeliveryFee)} so'm)` : "(Bepul)"}
-            </label>
+            {/* Address input for delivery */}
+            {deliveryWithService && deliverySummary.has_delivery_products && (
+              <div className="mt-4">
+                <h4 className="font-medium mb-3">Yetkazib berish manzili</h4>
+
+                {addresses.length > 0 && (
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium mb-2">Saqlangan manzillar</label>
+                    <div className="grid grid-cols-1 gap-3">
+                      {addresses.map((address) => (
+                        <button
+                          key={address.id}
+                          onClick={() => handleAddressSelect(address.id)}
+                          className={`text-left p-3 rounded-lg border transition-all ${
+                            selectedAddressId === address.id
+                              ? "border-primary bg-primary/5"
+                              : "border-border bg-muted/50 hover:border-primary/50"
+                          }`}
+                        >
+                          <div className="flex items-start">
+                            <div className="mr-3">
+                              <Home
+                                className={`w-5 h-5 ${selectedAddressId === address.id ? "text-primary" : "text-muted-foreground"}`}
+                              />
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between">
+                                <span className="font-medium">{address.name}</span>
+                                {selectedAddressId === address.id && <Check className="w-4 h-4 text-primary" />}
+                              </div>
+                              <p className="text-sm text-muted-foreground mt-1">{address.address}</p>
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {!showAddressForm ? (
+                  <button
+                    onClick={() => setShowAddressForm(true)}
+                    className="flex items-center space-x-2 text-primary hover:text-primary/80 mb-4"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Yangi manzil qo'shish</span>
+                  </button>
+                ) : (
+                  <div className="bg-muted/30 p-4 rounded-lg mb-4">
+                    <h4 className="font-medium mb-3">Yangi manzil</h4>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-sm mb-1">Manzil nomi *</label>
+                        <input
+                          type="text"
+                          value={newAddressName}
+                          onChange={(e) => setNewAddressName(e.target.value)}
+                          className="w-full px-3 py-2 bg-background rounded-lg border border-border focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all"
+                          placeholder="Masalan: Uy, Ish"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm mb-1">To'liq manzil *</label>
+                        <textarea
+                          value={newAddress}
+                          onChange={(e) => setNewAddress(e.target.value)}
+                          rows={2}
+                          className="w-full px-3 py-2 bg-background rounded-lg border border-border focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all resize-none"
+                          placeholder="To'liq manzilni kiriting"
+                        />
+                      </div>
+                      <div className="flex space-x-3">
+                        <button
+                          onClick={() => setShowAddressForm(false)}
+                          className="px-3 py-1.5 bg-muted text-muted-foreground rounded-lg text-sm hover:bg-muted/80 transition-colors"
+                        >
+                          Bekor qilish
+                        </button>
+                        <button
+                          onClick={handleAddNewAddress}
+                          disabled={!newAddressName.trim() || !newAddress.trim()}
+                          className="px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-sm hover:bg-primary/90 transition-colors disabled:opacity-50"
+                        >
+                          Saqlash
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {addresses.length === 0 && !showAddressForm && (
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Yetkazib berish manzili *</label>
+                    <textarea
+                      value={deliveryAddress}
+                      onChange={(e) => setDeliveryAddress(e.target.value)}
+                      rows={3}
+                      className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all resize-none"
+                      placeholder="To'liq manzilni kiriting"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-
-          {!deliveryWithService && (
-            <p className="text-xs text-muted-foreground mt-2">
-              Yetkazib berish xizmatisiz buyurtma qilsangiz, mahsulotni o'zingiz olib ketishingiz kerak.
-            </p>
-          )}
-
-          {/* No delivery warning */}
-          {items.some((item) => !item.product.has_delivery) && (
-            <div className="mt-4 p-3 bg-orange-50 dark:bg-orange-950/20 rounded-lg">
-              <p className="text-sm text-orange-600">
-                <strong>Diqqat:</strong> Ba'zi mahsulotlar uchun yetkazib berish mavjud emas. Bularni siz o'zingiz
-                kompaniya joylashuviga borib olib kelishingiz kerak.
-              </p>
-            </div>
-          )}
-        </div>
+        )}
 
         {/* Notes */}
         <div className="bg-card rounded-lg border border-border p-4">
-          <h3 className="text-headline font-semibold mb-4">Qo'shimcha izoh</h3>
+          <h3 className="text-lg font-semibold mb-4">Qo'shimcha izoh</h3>
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
@@ -606,22 +600,24 @@ export default function CheckoutPage() {
 
         {/* Order Summary */}
         <div className="bg-card rounded-lg border border-border p-4">
-          <h3 className="text-headline font-semibold mb-4">To'lov xulosasi</h3>
+          <h3 className="text-lg font-semibold mb-4">To'lov xulosasi</h3>
           <div className="space-y-3">
             <div className="flex justify-between">
-              <span className="text-body">Mahsulotlar:</span>
-              <span className="text-body font-medium">{formatPrice(totalPrice)} so'm</span>
+              <span>Mahsulotlar:</span>
+              <span className="font-medium">{formatPrice(totalPrice)} so'm</span>
             </div>
 
             <div className="flex justify-between">
-              <span className="text-body">Yetkazib berish:</span>
-              <span className="text-body font-medium">{getDeliveryInfo()}</span>
+              <span>Yetkazib berish:</span>
+              <span className="font-medium">
+                {calculateDeliveryFee() > 0 ? formatPrice(calculateDeliveryFee()) + " so'm" : "0 so'm"}
+              </span>
             </div>
 
             <div className="border-t border-border pt-3">
               <div className="flex justify-between">
-                <span className="text-title-3 font-bold">Jami to'lov:</span>
-                <span className="text-title-2 font-bold">{formatPrice(grandTotal)} so'm</span>
+                <span className="text-lg font-bold">Jami to'lov:</span>
+                <span className="text-lg font-bold text-primary">{formatPrice(calculateGrandTotal())} so'm</span>
               </div>
             </div>
           </div>
@@ -630,7 +626,7 @@ export default function CheckoutPage() {
         {/* Submit Button */}
         <button
           onClick={handleSubmitOrder}
-          disabled={isSubmitting || !customerName.trim() || !customerPhone.trim() || !deliveryAddress.trim()}
+          disabled={isSubmitting || !customerName.trim() || !customerPhone.trim()}
           className="w-full bg-primary text-primary-foreground rounded-lg py-4 font-medium hover:bg-primary/90 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg hover:scale-[1.01]"
         >
           {isSubmitting ? "Buyurtma berilmoqda..." : "Buyurtmani tasdiqlash"}

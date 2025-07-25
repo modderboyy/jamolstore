@@ -20,7 +20,6 @@ interface Product {
   is_popular: boolean
   stock_quantity: number
   available_quantity: number
-  specifications: Record<string, any> | null
   category: {
     name_uz: string
   }
@@ -110,14 +109,10 @@ export default function HomePage() {
         query = query.eq("category_id", selectedCategory)
       }
 
-      // Apply sorting - Mix featured and popular for default view
+      // Apply sorting
       switch (sortBy) {
         case "featured":
-          // Mix featured and popular products
-          query = query
-            .order("is_featured", { ascending: false })
-            .order("is_popular", { ascending: false })
-            .order("created_at", { ascending: false })
+          query = query.order("is_featured", { ascending: false }).order("is_popular", { ascending: false })
           break
         case "popular":
           query = query.order("is_popular", { ascending: false }).order("view_count", { ascending: false })
@@ -132,7 +127,7 @@ export default function HomePage() {
           query = query.order("created_at", { ascending: false })
           break
         default:
-          query = query.order("is_featured", { ascending: false }).order("is_popular", { ascending: false })
+          query = query.order("is_featured", { ascending: false })
       }
 
       query = query.limit(50)
@@ -157,13 +152,7 @@ export default function HomePage() {
       // Filter out products with 0 available quantity
       const availableProducts = productsWithAvailability.filter((product) => product.available_quantity > 0)
 
-      // Mix products for better variety on homepage
-      if (!searchQuery && !selectedCategory) {
-        const shuffled = [...availableProducts].sort(() => Math.random() - 0.5)
-        setProducts(shuffled)
-      } else {
-        setProducts(availableProducts)
-      }
+      setProducts(availableProducts)
     } catch (error) {
       console.error("Products fetch error:", error)
     } finally {
@@ -280,29 +269,6 @@ export default function HomePage() {
     return Package
   }
 
-  const getVariationDisplay = (product: Product) => {
-    if (!product.specifications) return null
-
-    const variations: string[] = []
-    Object.entries(product.specifications).forEach(([key, value]) => {
-      if (Array.isArray(value) && value.length > 0) {
-        // Show first few options
-        const options = value.slice(0, 3).map((option: any) => {
-          if (typeof option === "object") {
-            return option.name || option.value || ""
-          }
-          return option.toString()
-        })
-
-        if (options.length > 0) {
-          variations.push(`${key}: ${options.join(", ")}${value.length > 3 ? "..." : ""}`)
-        }
-      }
-    })
-
-    return variations.slice(0, 2) // Show max 2 variation types
-  }
-
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-4">
       <TopBar />
@@ -335,7 +301,7 @@ export default function HomePage() {
             onChange={(e) => setSortBy(e.target.value)}
             className="px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 text-sm"
           >
-            <option value="featured">Aralash</option>
+            <option value="featured">Tavsiya etilgan</option>
             <option value="popular">Mashhur</option>
             <option value="newest">Yangi</option>
             <option value="price_low">Arzon narx</option>
@@ -380,22 +346,7 @@ export default function HomePage() {
           <div className="product-grid">
             {products.map((product, index) => (
               <div key={product.id} className="product-card" style={{ animationDelay: `${index * 50}ms` }}>
-                <div className="relative">
-                  <ProductCard product={product} onQuickView={handleProductView} />
-
-                  {/* Variations Display */}
-                  {getVariationDisplay(product) && (
-                    <div className="absolute bottom-2 left-2 right-2">
-                      <div className="bg-black/70 text-white text-xs p-2 rounded backdrop-blur-sm">
-                        {getVariationDisplay(product)?.map((variation, idx) => (
-                          <div key={idx} className="truncate">
-                            {variation}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <ProductCard product={product} onQuickView={handleProductView} />
               </div>
             ))}
           </div>
@@ -422,22 +373,7 @@ export default function HomePage() {
                     className="product-card"
                     style={{ animationDelay: `${index * 50}ms` }}
                   >
-                    <div className="relative">
-                      <ProductCard product={product} onQuickView={handleProductView} />
-
-                      {/* Variations Display */}
-                      {getVariationDisplay(product) && (
-                        <div className="absolute bottom-2 left-2 right-2">
-                          <div className="bg-black/70 text-white text-xs p-2 rounded backdrop-blur-sm">
-                            {getVariationDisplay(product)?.map((variation, idx) => (
-                              <div key={idx} className="truncate">
-                                {variation}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                    <ProductCard product={product} onQuickView={handleProductView} />
                   </div>
                 ))}
             </div>
@@ -465,22 +401,7 @@ export default function HomePage() {
                     className="product-card"
                     style={{ animationDelay: `${index * 50}ms` }}
                   >
-                    <div className="relative">
-                      <ProductCard product={product} onQuickView={handleProductView} />
-
-                      {/* Variations Display */}
-                      {getVariationDisplay(product) && (
-                        <div className="absolute bottom-2 left-2 right-2">
-                          <div className="bg-black/70 text-white text-xs p-2 rounded backdrop-blur-sm">
-                            {getVariationDisplay(product)?.map((variation, idx) => (
-                              <div key={idx} className="truncate">
-                                {variation}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                    <ProductCard product={product} onQuickView={handleProductView} />
                   </div>
                 ))}
             </div>

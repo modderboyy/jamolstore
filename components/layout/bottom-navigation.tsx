@@ -1,7 +1,8 @@
 "use client"
 
 import { usePathname, useRouter } from "next/navigation"
-import { Home, Grid3X3, Users, Package, User } from "lucide-react"
+import { Home, Grid3X3, ShoppingCart, Package, User } from "lucide-react"
+import { useCart } from "@/contexts/CartContext"
 import { useAuth } from "@/contexts/AuthContext"
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
@@ -20,10 +21,10 @@ const navigationItems = [
     path: "/catalog",
   },
   {
-    id: "workers",
-    label: "Ishchilar",
-    icon: Users,
-    path: "/workers",
+    id: "cart",
+    label: "Savat",
+    icon: ShoppingCart,
+    path: "/cart",
   },
   {
     id: "orders",
@@ -42,6 +43,7 @@ const navigationItems = [
 export function BottomNavigation() {
   const pathname = usePathname()
   const router = useRouter()
+  const { totalItems } = useCart()
   const { user } = useAuth()
   const [orderCount, setOrderCount] = useState(0)
 
@@ -69,6 +71,8 @@ export function BottomNavigation() {
 
   const getBadgeCount = (itemId: string) => {
     switch (itemId) {
+      case "cart":
+        return totalItems
       case "orders":
         return orderCount
       default:

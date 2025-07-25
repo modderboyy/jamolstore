@@ -48,12 +48,15 @@ export default function WorkersPage() {
         .from("worker_profiles")
         .select(`
           *,
-          user:users(first_name, last_name, phone_number, avatar_url)
+          user:users!inner(first_name, last_name, phone_number, avatar_url, role)
         `)
         .eq("is_available", true)
+        .eq("user.role", "worker")
 
       if (searchQuery) {
-        query = query.or(`profession_uz.ilike.%${searchQuery}%,skills.cs.{${searchQuery}}`)
+        query = query.or(
+          `profession_uz.ilike.%${searchQuery}%,skills.cs.{${searchQuery}},user.first_name.ilike.%${searchQuery}%,user.last_name.ilike.%${searchQuery}%`,
+        )
       }
 
       const { data, error } = await query.order("rating", { ascending: false })

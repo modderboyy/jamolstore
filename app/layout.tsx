@@ -1,12 +1,19 @@
 import type React from "react"
 import type { Metadata } from "next"
-import ClientLayout from "./client-layout"
-import { DesktopNavigation } from "@/components/layout/desktop-navigation"
-import { BottomNavigation } from "@/components/layout/bottom-navigation"
+import { Inter } from "next/font/google"
+import "./globals.css"
+import { ThemeProvider } from "@/components/theme-provider"
+import { Toaster } from "@/components/ui/toaster"
+import { AuthProvider } from "@/contexts/AuthContext"
+import { CartProvider } from "@/contexts/CartContext"
+import { TelegramProvider } from "@/contexts/TelegramContext"
+import { DraggableFab } from "@/components/ui/draggable-fab"
+
+const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "JamolStroy - Qurilish materiallari va asboblar",
-  description: "Qurilish materiallari, asboblar va jihozlarni sotish va ijaraga berish",
+  title: "JamolStroy - Qurilish materiallari",
+  description: "Qurilish materiallari va jihozlari onlayn do'koni",
     generator: 'v0.dev'
 }
 
@@ -16,13 +23,20 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <ClientLayout>
-      <DesktopNavigation />
-      {children}
-      <BottomNavigation />
-    </ClientLayout>
+    <html lang="uz" suppressHydrationWarning>
+      <body className={inter.className}>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+          <TelegramProvider>
+            <AuthProvider>
+              <CartProvider>
+                {children}
+                <DraggableFab />
+                <Toaster />
+              </CartProvider>
+            </AuthProvider>
+          </TelegramProvider>
+        </ThemeProvider>
+      </body>
+    </html>
   )
 }
-
-
-import './globals.css'

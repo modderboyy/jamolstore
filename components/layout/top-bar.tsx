@@ -3,7 +3,7 @@
 import type React from "react"
 import { useState, useEffect } from "react"
 import { useRouter, useSearchParams, usePathname } from "next/navigation"
-import { Search, ShoppingCart, MapPin, Phone, Clock, Home, Grid3X3, Users, Package, User } from "lucide-react"
+import { Search, ShoppingCart, Home, Grid3X3, Users, Package, User } from "lucide-react"
 import { useCart } from "@/contexts/CartContext"
 import { useAuth } from "@/contexts/AuthContext"
 import { CartSidebar } from "./cart-sidebar"
@@ -115,55 +115,6 @@ export function TopBar() {
   return (
     <>
       <div className="bg-background border-b border-border sticky top-0 z-30">
-        {/* Company Info Bar - Desktop Only */}
-        {companyInfo && (
-          <div className="hidden lg:block bg-gradient-to-r from-muted/50 via-muted/30 to-muted/50 border-b border-border/50">
-            <div className="container mx-auto px-4 py-2">
-              <div className="flex items-center justify-between text-sm text-muted-foreground">
-                <div className="flex items-center space-x-6">
-                  <div className="flex items-center space-x-2 hover:text-primary transition-colors">
-                    <Phone className="w-4 h-4" />
-                    <span>{companyInfo.phone_number}</span>
-                  </div>
-                  <div className="flex items-center space-x-2 hover:text-primary transition-colors">
-                    <MapPin className="w-4 h-4" />
-                    <span>{companyInfo.location}</span>
-                  </div>
-                  <div className="flex items-center space-x-2 hover:text-primary transition-colors">
-                    <Clock className="w-4 h-4" />
-                    <span>{companyInfo.time}</span>
-                  </div>
-                </div>
-                <div className="flex items-center space-x-4">
-                  <span>Ijtimoiy tarmoqlar:</span>
-                  <div className="flex items-center space-x-3">
-                    {companyInfo.social_telegram && (
-                      <a
-                        href={`https://t.me/${companyInfo.social_telegram.replace("@", "")}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="hover:text-blue-500 transition-colors duration-200"
-                      >
-                        Telegram
-                      </a>
-                    )}
-                    {companyInfo.social_instagram && (
-                      <a
-                        href={`https://instagram.com/${companyInfo.social_instagram.replace("@", "")}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="hover:text-pink-500 transition-colors duration-200"
-                      >
-                        Instagram
-                      </a>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Main Header - Responsive */}
         <div className="container mx-auto px-3 md:px-4 py-2 md:py-3">
           <div className="flex items-center justify-between">
@@ -185,7 +136,9 @@ export function TopBar() {
                 </div>
               )}
               <div className="text-left hidden sm:block">
-                <h1 className="text-base md:text-lg font-bold text-foreground">{companyInfo?.name || "JamolStroy"}</h1>
+                <h1 className="text-base md:text-lg font-bold text-gray-900 dark:text-white">
+                  {companyInfo?.name || "JamolStroy"}
+                </h1>
                 <p className="text-xs text-muted-foreground hidden md:block">Qurilish materiallari</p>
               </div>
             </button>
@@ -207,10 +160,10 @@ export function TopBar() {
               </form>
             </div>
 
-            {/* Cart Button - Desktop Only */}
+            {/* Cart Button - Responsive */}
             <button
               onClick={handleCartClick}
-              className="hidden md:block relative p-2 md:p-2.5 bg-gradient-to-r from-primary to-primary/90 text-primary-foreground rounded-lg hover:from-primary/90 hover:to-primary hover:shadow-lg hover:scale-105 transition-all duration-200 shadow-md group flex-shrink-0"
+              className="relative p-2 md:p-2.5 bg-gradient-to-r from-primary to-primary/90 text-primary-foreground rounded-lg hover:from-primary/90 hover:to-primary hover:shadow-lg hover:scale-105 transition-all duration-200 shadow-md group flex-shrink-0"
             >
               <ShoppingCart className="w-4 h-4 md:w-5 md:h-5 group-hover:scale-110 transition-transform duration-200" />
               {totalItems > 0 && (

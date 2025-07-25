@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useCart } from "@/contexts/CartContext"
-import { X, Minus, Plus, Trash2, ShoppingCart, ArrowRight } from "lucide-react"
+import { X, Minus, Plus, Trash2, ShoppingCart } from "lucide-react"
 import Image from "next/image"
 
 interface CartSidebarProps {
@@ -15,19 +15,12 @@ export function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
   const router = useRouter()
   const { items, totalItems, totalPrice, deliveryFee, grandTotal, updateQuantity, removeFromCart } = useCart()
   const [updatingItems, setUpdatingItems] = useState<Set<string>>(new Set())
-  const [showCartGuide, setShowCartGuide] = useState(false)
 
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = "hidden"
-      // Show cart guide after a short delay
-      const timer = setTimeout(() => {
-        setShowCartGuide(true)
-      }, 500)
-      return () => clearTimeout(timer)
     } else {
       document.body.style.overflow = "unset"
-      setShowCartGuide(false)
     }
 
     return () => {
@@ -76,41 +69,6 @@ export function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
     router.push("/checkout")
   }
 
-  const calculateItemTotal = (item: any) => {
-    const basePrice = item.product.price
-    let variationPrice = 0
-
-    // Add variation prices
-    if (item.variations && item.variations.length > 0) {
-      variationPrice = item.variations.reduce((sum: number, variation: any) => {
-        return sum + (variation.price || 0)
-      }, 0)
-    }
-
-    if (item.product.product_type === "rental" && item.product.rental_price_per_unit && item.rental_duration) {
-      const rentalTotal = (item.product.rental_price_per_unit + variationPrice) * item.rental_duration * item.quantity
-      const depositTotal = (item.product.rental_deposit || 0) * item.quantity
-      return rentalTotal + depositTotal
-    }
-
-    return (basePrice + variationPrice) * item.quantity
-  }
-
-  const getDeliveryInfo = () => {
-    const hasDeliveryProducts = items.some((item) => item.product.has_delivery)
-    const noDeliveryProducts = items.filter((item) => !item.product.has_delivery)
-
-    if (noDeliveryProducts.length > 0 && hasDeliveryProducts) {
-      return "Ba'zi mahsulotlar uchun yetkazib berish mavjud emas"
-    } else if (noDeliveryProducts.length === items.length) {
-      return "Yetkazib berish mavjud emas"
-    } else if (deliveryFee === 0) {
-      return "Bepul"
-    } else {
-      return `${formatPrice(deliveryFee)} so'm`
-    }
-  }
-
   return (
     <>
       {/* Backdrop */}
@@ -120,31 +78,6 @@ export function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
         }`}
         onClick={onClose}
       />
-
-      {/* Cart Guide Overlay */}
-      {showCartGuide && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-          <div className="bg-card rounded-xl border border-border p-6 max-w-sm w-full text-center">
-            <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-              <ShoppingCart className="w-8 h-8 text-primary" />
-            </div>
-            <h3 className="text-lg font-semibold mb-2">Savatga qo'shildi!</h3>
-            <p className="text-muted-foreground mb-6">Savatchangizni ko'rish uchun bu oynani ishlatishingiz mumkin</p>
-            <div className="flex items-center justify-center space-x-2 mb-4">
-              <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
-                <ArrowRight className="w-4 h-4 text-primary-foreground" />
-              </div>
-              <span className="text-sm text-muted-foreground">Savatni ko'rish</span>
-            </div>
-            <button
-              onClick={() => setShowCartGuide(false)}
-              className="w-full bg-primary text-primary-foreground py-2 px-4 rounded-lg hover:bg-primary/90 transition-colors"
-            >
-              Tushundim
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Sidebar */}
       <div
@@ -180,13 +113,6 @@ export function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {items.map((item) => {
                 const isUpdating = updatingItems.has(item.id)
-                const itemTotal = calculateItemTotal(item)
-                const basePrice =
-                  item.product.product_type === "rental" && item.product.rental_price_per_unit
-                    ? item.product.rental_price_per_unit
-                    : item.product.price
-                const variationPrice =
-                  item.variations?.reduce((sum: number, variation: any) => sum + (variation.price || 0), 0) || 0
 
                 return (
                   <div
@@ -214,24 +140,10 @@ export function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
                       {/* Product Info */}
                       <div className="flex-1 min-w-0">
                         <h4 className="font-medium text-sm line-clamp-2 mb-1">{item.product.name_uz}</h4>
-
-                        {/* Variations */}
-                        {item.variations && item.variations.length > 0 && (
-                          <div className="mb-1">
-                            {item.variations.map((variation: any, idx: number) => (
-                              <span key={idx} className="text-xs text-blue-600 mr-2">
-                                {variation.type}: {variation.name}
-                                {variation.price > 0 && ` (+${formatPrice(variation.price)} so'm)`}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Price Breakdown */}
-                        <div className="text-sm mb-2">
-                          <div className="font-bold">
-                            Asosiy: {formatPrice(basePrice)} so'm
-                            {item.product.product_type === "rental" && (
+                        <div className="text-sm font-bold mb-2">
+                          {item.product.product_type === "rental" && item.product.rental_price_per_unit ? (
+                            <>
+                              {formatPrice(item.product.rental_price_per_unit)} so'm
                               <span className="text-xs text-muted-foreground ml-1">
                                 /
                                 {item.product.rental_time_unit === "hour"
@@ -242,17 +154,12 @@ export function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
                                       ? "hafta"
                                       : "oy"}
                               </span>
-                            )}
-                          </div>
-                          {variationPrice > 0 && (
-                            <div className="text-xs text-green-600">
-                              Qo'shimcha: +{formatPrice(variationPrice)} so'm
-                            </div>
-                          )}
-                          {item.product.product_type === "rental" && item.product.rental_deposit && (
-                            <div className="text-xs text-orange-600">
-                              Kafolat: {formatPrice(item.product.rental_deposit)} so'm
-                            </div>
+                            </>
+                          ) : (
+                            <>
+                              {formatPrice(item.product.price)} so'm
+                              <span className="text-xs text-muted-foreground ml-1">/{item.product.unit}</span>
+                            </>
                           )}
                         </div>
 
@@ -293,7 +200,12 @@ export function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
                     <div className="mt-3 pt-3 border-t border-border flex justify-between items-center">
                       <span className="text-xs text-muted-foreground">Jami:</span>
                       <span className="text-sm font-bold text-blue-600 dark:text-blue-400">
-                        {formatPrice(itemTotal)} so'm
+                        {formatPrice(
+                          (item.product.product_type === "rental" && item.product.rental_price_per_unit
+                            ? item.product.rental_price_per_unit
+                            : item.product.price) * item.quantity,
+                        )}{" "}
+                        so'm
                       </span>
                     </div>
                   </div>
@@ -311,7 +223,7 @@ export function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Yetkazib berish:</span>
-                  <span>{getDeliveryInfo()}</span>
+                  <span>{deliveryFee === 0 ? "Tekin" : formatPrice(deliveryFee) + " so'm"}</span>
                 </div>
                 <div className="flex justify-between font-bold text-lg">
                   <span>Jami:</span>
