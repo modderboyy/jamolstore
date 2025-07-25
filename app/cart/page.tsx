@@ -76,12 +76,38 @@ export default function CartPage() {
   }
 
   const calculateItemTotal = (item: any) => {
+    const basePrice = item.product.price
+    let variationPrice = 0
+
+    // Add variation prices
+    if (item.variations && item.variations.length > 0) {
+      variationPrice = item.variations.reduce((sum: number, variation: any) => {
+        return sum + (variation.price || 0)
+      }, 0)
+    }
+
     if (item.product.product_type === "rental" && item.product.rental_price_per_unit && item.rental_duration) {
-      const rentalTotal = item.product.rental_price_per_unit * item.rental_duration * item.quantity
+      const rentalTotal = (item.product.rental_price_per_unit + variationPrice) * item.rental_duration * item.quantity
       const depositTotal = (item.product.rental_deposit || 0) * item.quantity
       return rentalTotal + depositTotal
     }
-    return item.product.price * item.quantity
+
+    return (basePrice + variationPrice) * item.quantity
+  }
+
+  const getDeliveryInfo = () => {
+    const hasDeliveryProducts = items.some((item) => item.product.has_delivery)
+    const noDeliveryProducts = items.filter((item) => !item.product.has_delivery)
+
+    if (noDeliveryProducts.length > 0 && hasDeliveryProducts) {
+      return "Ba'zi mahsulotlar uchun yetkazib berish mavjud emas"
+    } else if (noDeliveryProducts.length === items.length) {
+      return "Yetkazib berish mavjud emas"
+    } else if (deliveryFee === 0) {
+      return "Bepul"
+    } else {
+      return `${formatPrice(deliveryFee)} so'm`
+    }
   }
 
   if (loading) {
@@ -129,96 +155,123 @@ export default function CartPage() {
           <div className="space-y-6">
             {/* Cart Items */}
             <div className="space-y-4">
-              {items.map((item) => (
-                <div key={item.id} className="bg-card rounded-xl border border-border p-4">
-                  <div className="flex items-start space-x-4">
-                    {/* Product Image */}
-                    <div className="w-20 h-20 bg-muted rounded-lg overflow-hidden flex-shrink-0">
-                      {item.product.images && item.product.images.length > 0 ? (
-                        <Image
-                          src={item.product.images[0] || "/placeholder.svg"}
-                          alt={item.product.name_uz}
-                          width={80}
-                          height={80}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full bg-muted flex items-center justify-center">
-                          <div className="w-8 h-8 bg-muted-foreground/20 rounded" />
-                        </div>
-                      )}
-                    </div>
+              {items.map((item) => {
+                const itemTotal = calculateItemTotal(item)
+                const basePrice =
+                  item.product.product_type === "rental" && item.product.rental_price_per_unit
+                    ? item.product.rental_price_per_unit
+                    : item.product.price
+                const variationPrice =
+                  item.variations?.reduce((sum: number, variation: any) => sum + (variation.price || 0), 0) || 0
 
-                    {/* Product Info */}
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-foreground line-clamp-2 mb-1">{item.product.name_uz}</h3>
-
-                      {/* Rental Info */}
-                      {item.product.product_type === "rental" && item.rental_duration && (
-                        <div className="flex items-center space-x-1 mb-2">
-                          {getRentalIcon(item.rental_time_unit)}
-                          <span className="text-sm text-blue-600">
-                            {item.rental_duration} {getRentalTimeText(item.rental_time_unit)} ijara
-                          </span>
-                        </div>
-                      )}
-
-                      {/* Price */}
-                      <div className="mb-3">
-                        {item.product.product_type === "rental" && item.product.rental_price_per_unit ? (
-                          <div>
-                            <p className="text-primary font-semibold">
-                              {formatPrice(item.product.rental_price_per_unit)} so'm/
-                              {getRentalTimeText(item.rental_time_unit)}
-                            </p>
-                            {item.product.rental_deposit && item.product.rental_deposit > 0 && (
-                              <p className="text-xs text-muted-foreground">
-                                + {formatPrice(item.product.rental_deposit)} so'm kafolat
-                              </p>
-                            )}
-                          </div>
+                return (
+                  <div key={item.id} className="bg-card rounded-xl border border-border p-4">
+                    <div className="flex items-start space-x-4">
+                      {/* Product Image */}
+                      <div className="w-20 h-20 bg-muted rounded-lg overflow-hidden flex-shrink-0">
+                        {item.product.images && item.product.images.length > 0 ? (
+                          <Image
+                            src={item.product.images[0] || "/placeholder.svg"}
+                            alt={item.product.name_uz}
+                            width={80}
+                            height={80}
+                            className="w-full h-full object-cover"
+                          />
                         ) : (
-                          <p className="text-primary font-semibold">
-                            {formatPrice(item.product.price)} so'm/{item.product.unit}
-                          </p>
+                          <div className="w-full h-full bg-muted flex items-center justify-center">
+                            <div className="w-8 h-8 bg-muted-foreground/20 rounded" />
+                          </div>
                         )}
                       </div>
 
-                      {/* Quantity Controls */}
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <button
-                            onClick={() => handleUpdateQuantity(item.id, item.quantity - 1)}
-                            disabled={isUpdating === item.id || item.quantity <= (item.product.min_order_quantity || 1)}
-                            className="w-8 h-8 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-colors disabled:opacity-50"
-                          >
-                            <Minus className="w-4 h-4" />
-                          </button>
-                          <span className="font-semibold min-w-[2rem] text-center">{item.quantity}</span>
-                          <button
-                            onClick={() => handleUpdateQuantity(item.id, item.quantity + 1)}
-                            disabled={isUpdating === item.id || item.quantity >= item.product.stock_quantity}
-                            className="w-8 h-8 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-colors disabled:opacity-50"
-                          >
-                            <Plus className="w-4 h-4" />
-                          </button>
+                      {/* Product Info */}
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-foreground line-clamp-2 mb-1">{item.product.name_uz}</h3>
+
+                        {/* Variations */}
+                        {item.variations && item.variations.length > 0 && (
+                          <div className="mb-2">
+                            {item.variations.map((variation: any, idx: number) => (
+                              <span key={idx} className="text-sm text-blue-600 mr-3">
+                                {variation.type}: {variation.name}
+                                {variation.price > 0 && ` (+${formatPrice(variation.price)} so'm)`}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Rental Info */}
+                        {item.product.product_type === "rental" && item.rental_duration && (
+                          <div className="flex items-center space-x-1 mb-2">
+                            {getRentalIcon(item.rental_time_unit)}
+                            <span className="text-sm text-blue-600">
+                              {item.rental_duration} {getRentalTimeText(item.rental_time_unit)} ijara
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Price Breakdown */}
+                        <div className="mb-3">
+                          <div className="text-primary font-semibold">
+                            Asosiy: {formatPrice(basePrice)} so'm
+                            {item.product.product_type === "rental" && (
+                              <span className="text-xs text-muted-foreground ml-1">
+                                /{getRentalTimeText(item.rental_time_unit)}
+                              </span>
+                            )}
+                          </div>
+                          {variationPrice > 0 && (
+                            <div className="text-sm text-green-600">
+                              Qo'shimcha: +{formatPrice(variationPrice)} so'm
+                            </div>
+                          )}
+                          {item.product.product_type === "rental" &&
+                            item.product.rental_deposit &&
+                            item.product.rental_deposit > 0 && (
+                              <div className="text-xs text-orange-600">
+                                Kafolat puli: {formatPrice(item.product.rental_deposit)} so'm
+                              </div>
+                            )}
                         </div>
 
-                        <div className="flex items-center space-x-3">
-                          <span className="font-bold text-primary">{formatPrice(calculateItemTotal(item))} so'm</span>
-                          <button
-                            onClick={() => handleRemoveItem(item.id)}
-                            disabled={isUpdating === item.id}
-                            className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg transition-colors disabled:opacity-50"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                        {/* Quantity Controls */}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <button
+                              onClick={() => handleUpdateQuantity(item.id, item.quantity - 1)}
+                              disabled={
+                                isUpdating === item.id || item.quantity <= (item.product.min_order_quantity || 1)
+                              }
+                              className="w-8 h-8 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-colors disabled:opacity-50"
+                            >
+                              <Minus className="w-4 h-4" />
+                            </button>
+                            <span className="font-semibold min-w-[2rem] text-center">{item.quantity}</span>
+                            <button
+                              onClick={() => handleUpdateQuantity(item.id, item.quantity + 1)}
+                              disabled={isUpdating === item.id || item.quantity >= item.product.stock_quantity}
+                              className="w-8 h-8 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-colors disabled:opacity-50"
+                            >
+                              <Plus className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          <div className="flex items-center space-x-3">
+                            <span className="font-bold text-primary">{formatPrice(itemTotal)} so'm</span>
+                            <button
+                              onClick={() => handleRemoveItem(item.id)}
+                              disabled={isUpdating === item.id}
+                              className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg transition-colors disabled:opacity-50"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
 
             {/* Order Summary */}
@@ -231,8 +284,14 @@ export default function CartPage() {
                 </div>
                 <div className="flex justify-between">
                   <span>Yetkazib berish:</span>
-                  <span>{formatPrice(deliveryFee)} so'm</span>
+                  <span>{getDeliveryInfo()}</span>
                 </div>
+                {items.some((item) => !item.product.has_delivery) && (
+                  <div className="text-sm text-orange-600 bg-orange-50 dark:bg-orange-950/20 p-3 rounded-lg">
+                    Ba'zi mahsulotlar uchun yetkazib berish mavjud emas. Bularni siz o'zingiz kompaniya joylashuviga
+                    borib olib kelishingiz kerak.
+                  </div>
+                )}
                 <div className="border-t pt-3">
                   <div className="flex justify-between text-lg font-bold">
                     <span>Jami:</span>

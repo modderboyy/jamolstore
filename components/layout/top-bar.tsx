@@ -185,9 +185,7 @@ export function TopBar() {
                 </div>
               )}
               <div className="text-left hidden sm:block">
-                <h1 className="text-base md:text-lg font-bold text-gray-900 dark:text-white">
-                  {companyInfo?.name || "JamolStroy"}
-                </h1>
+                <h1 className="text-base md:text-lg font-bold text-foreground">{companyInfo?.name || "JamolStroy"}</h1>
                 <p className="text-xs text-muted-foreground hidden md:block">Qurilish materiallari</p>
               </div>
             </button>
@@ -209,10 +207,10 @@ export function TopBar() {
               </form>
             </div>
 
-            {/* Cart Button - Responsive */}
+            {/* Cart Button - Desktop Only */}
             <button
               onClick={handleCartClick}
-              className="relative p-2 md:p-2.5 bg-gradient-to-r from-primary to-primary/90 text-primary-foreground rounded-lg hover:from-primary/90 hover:to-primary hover:shadow-lg hover:scale-105 transition-all duration-200 shadow-md group flex-shrink-0"
+              className="hidden md:block relative p-2 md:p-2.5 bg-gradient-to-r from-primary to-primary/90 text-primary-foreground rounded-lg hover:from-primary/90 hover:to-primary hover:shadow-lg hover:scale-105 transition-all duration-200 shadow-md group flex-shrink-0"
             >
               <ShoppingCart className="w-4 h-4 md:w-5 md:h-5 group-hover:scale-110 transition-transform duration-200" />
               {totalItems > 0 && (

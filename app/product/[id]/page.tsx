@@ -23,6 +23,7 @@ import {
   Info,
   Check,
   Send,
+  ArrowRight,
 } from "lucide-react"
 import Image from "next/image"
 
@@ -101,6 +102,7 @@ export default function ProductDetailPage() {
   const [reviewRating, setReviewRating] = useState(5)
   const [reviewComment, setReviewComment] = useState("")
   const [isSubmittingReview, setIsSubmittingReview] = useState(false)
+  const [showCartGuide, setShowCartGuide] = useState(false)
 
   useEffect(() => {
     if (params.id) {
@@ -359,6 +361,10 @@ export default function ProductDetailPage() {
         })
       }
 
+      // Show cart guide
+      setShowCartGuide(true)
+      setTimeout(() => setShowCartGuide(false), 3000)
+
       if (window.Telegram?.WebApp) {
         window.Telegram.WebApp.showAlert("Mahsulot savatga qo'shildi!")
       }
@@ -564,6 +570,31 @@ export default function ProductDetailPage() {
     <div className="min-h-screen bg-background pb-32 md:pb-4">
       <TopBar />
 
+      {/* Cart Guide Overlay */}
+      {showCartGuide && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-card rounded-xl border border-border p-6 max-w-sm w-full text-center">
+            <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <ShoppingCart className="w-8 h-8 text-primary" />
+            </div>
+            <h3 className="text-lg font-semibold mb-2">Savatga qo'shildi!</h3>
+            <p className="text-muted-foreground mb-6">Savatni ko'rish uchun yuqori o'ng burchakdagi tugmani bosing</p>
+            <div className="flex items-center justify-center space-x-2 mb-4">
+              <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
+                <ArrowRight className="w-4 h-4 text-primary-foreground" />
+              </div>
+              <span className="text-sm text-muted-foreground">Savatni ko'rish</span>
+            </div>
+            <button
+              onClick={() => setShowCartGuide(false)}
+              className="w-full bg-primary text-primary-foreground py-2 px-4 rounded-lg hover:bg-primary/90 transition-colors"
+            >
+              Tushundim
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="container mx-auto px-4 py-4 border-b border-border">
         <div className="flex items-center space-x-4">
@@ -586,432 +617,439 @@ export default function ProductDetailPage() {
       </div>
 
       <div className="container mx-auto px-4 py-6">
-        {/* Product Images */}
-        <div className="mb-6">
-          {/* Main Image */}
-          <div className="aspect-square bg-muted rounded-xl overflow-hidden mb-4 max-w-md mx-auto md:max-w-lg">
-            {product.images && product.images.length > 0 ? (
-              <Image
-                src={product.images[selectedImageIndex] || "/placeholder.svg"}
-                alt={product.name_uz}
-                width={500}
-                height={500}
-                className="w-full h-full object-cover animate-fadeIn transition-all duration-500"
-                priority
-              />
-            ) : (
-              <div className="w-full h-full bg-muted flex items-center justify-center">
-                <div className="w-16 h-16 bg-muted-foreground/20 rounded-lg" />
-              </div>
-            )}
-          </div>
-
-          {/* Thumbnail Images */}
-          {product.images && product.images.length > 1 && (
-            <div className="flex space-x-2 overflow-x-auto pb-2 justify-center">
-              {product.images.map((image, index) => (
-                <button
-                  key={index}
-                  onClick={() => setSelectedImageIndex(index)}
-                  className={`w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 border-2 transition-all duration-300 transform hover:scale-105 ${
-                    selectedImageIndex === index
-                      ? "border-primary scale-105 shadow-md"
-                      : "border-transparent hover:border-primary/50"
-                  }`}
-                >
-                  <Image
-                    src={image || "/placeholder.svg"}
-                    alt={`${product.name_uz} ${index + 1}`}
-                    width={64}
-                    height={64}
-                    className="w-full h-full object-cover"
-                  />
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Product Info */}
-        <div className="space-y-6">
-          {/* Title and Price */}
-          <div className="animate-slideInUp">
-            <div className="flex items-start justify-between mb-2">
-              <h1 className="text-2xl font-bold flex-1">{product.name_uz}</h1>
-              {product.is_featured && (
-                <span className="px-2 py-1 bg-primary text-primary-foreground text-xs font-medium rounded ml-2 animate-pulse">
-                  TOP
-                </span>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Left Column - Images (Desktop) */}
+          <div className="lg:order-1">
+            {/* Main Image */}
+            <div className="aspect-square bg-muted rounded-xl overflow-hidden mb-4">
+              {product.images && product.images.length > 0 ? (
+                <Image
+                  src={product.images[selectedImageIndex] || "/placeholder.svg"}
+                  alt={product.name_uz}
+                  width={600}
+                  height={600}
+                  className="w-full h-full object-cover animate-fadeIn transition-all duration-500"
+                  priority
+                />
+              ) : (
+                <div className="w-full h-full bg-muted flex items-center justify-center">
+                  <div className="w-16 h-16 bg-muted-foreground/20 rounded-lg" />
+                </div>
               )}
             </div>
 
-            {/* Base Price */}
-            <div className="mb-2">
-              <div className="flex items-baseline space-x-2">
-                <span className="text-2xl font-bold text-gray-900 dark:text-white">{formatPrice(basePrice)} so'm</span>
-                <span className="text-muted-foreground">
-                  {product.product_type === "rental"
-                    ? `/${getRentalTimeText(product.rental_time_unit)} • ${product.unit}`
-                    : `/${product.unit}`}
-                </span>
-              </div>
-              {product.product_type === "rental" && product.rental_deposit && product.rental_deposit > 0 && (
-                <p className="text-sm text-muted-foreground">
-                  Kafolat puli: {formatPrice(product.rental_deposit)} so'm/{product.unit}
-                </p>
-              )}
-            </div>
-
-            {/* Calculated Price with Variations */}
-            {variationAddition > 0 && (
-              <div className="bg-blue-50 dark:bg-blue-950/20 rounded-lg p-3 mb-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-blue-600">Hisoblangan narx:</span>
-                  <span className="text-lg font-bold text-blue-600">
-                    {formatPrice(calculatedPrice)} so'm
-                    {product.product_type === "rental"
-                      ? ` /${getRentalTimeText(product.rental_time_unit)}`
-                      : ` /${product.unit}`}
-                  </span>
-                </div>
-                <div className="text-xs text-blue-600/80 mt-1">
-                  Asosiy narx + turlar qo'shimchasi ({formatPrice(variationAddition)} so'm)
-                </div>
-              </div>
-            )}
-
-            {product.description_uz && (
-              <p className="text-muted-foreground leading-relaxed animate-fadeIn">{product.description_uz}</p>
-            )}
-          </div>
-
-          {/* Product Variations */}
-          {variations.length > 0 && (
-            <div className="bg-card rounded-xl border border-border p-6 animate-slideInUp">
-              <h3 className="text-lg font-semibold mb-4">Mahsulot turlari</h3>
-              <div className="space-y-4">
-                {variations.map((variation) => (
-                  <div key={variation.type}>
-                    <h4 className="font-medium mb-2 capitalize">{variation.type}</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {variation.options.map((option) => (
-                        <button
-                          key={option.value}
-                          onClick={() => handleSelectVariation(variation.type, option)}
-                          className={`px-3 py-2 rounded-lg border transition-all duration-300 transform hover:scale-105 ${
-                            selectedVariations[variation.type]?.value === option.value
-                              ? "border-primary bg-primary/10 text-primary font-medium scale-105 shadow-md"
-                              : "border-border bg-muted hover:border-primary/50 hover:bg-primary/5"
-                          }`}
-                        >
-                          <div className="flex items-center space-x-2">
-                            {selectedVariations[variation.type]?.value === option.value && (
-                              <Check className="w-4 h-4 animate-scaleIn" />
-                            )}
-                            <span>{option.name}</span>
-                          </div>
-                          {option.price !== null && option.price !== undefined && option.price > 0 && (
-                            <div className="text-xs mt-1 font-medium text-green-600">
-                              +{formatPrice(option.price)} so'm
-                            </div>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+            {/* Thumbnail Images */}
+            {product.images && product.images.length > 1 && (
+              <div className="flex space-x-2 overflow-x-auto pb-2">
+                {product.images.map((image, index) => (
+                  <button
+                    key={index}
+                    onClick={() => setSelectedImageIndex(index)}
+                    className={`w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 border-2 transition-all duration-300 transform hover:scale-105 ${
+                      selectedImageIndex === index
+                        ? "border-primary scale-105 shadow-md"
+                        : "border-transparent hover:border-primary/50"
+                    }`}
+                  >
+                    <Image
+                      src={image || "/placeholder.svg"}
+                      alt={`${product.name_uz} ${index + 1}`}
+                      width={64}
+                      height={64}
+                      className="w-full h-full object-cover"
+                    />
+                  </button>
                 ))}
               </div>
-            </div>
-          )}
-
-          {/* Stock and Minimum Order */}
-          <div className="grid grid-cols-2 gap-4 animate-slideInUp">
-            <div className="bg-muted/50 rounded-xl p-4 transform hover:scale-105 transition-transform duration-300">
-              <h4 className="text-sm text-muted-foreground mb-1">Omborda</h4>
-              <p className="font-semibold">
-                {availableQuantity} {product.unit}
-              </p>
-            </div>
-            <div className="bg-muted/50 rounded-xl p-4 transform hover:scale-105 transition-transform duration-300">
-              <h4 className="text-sm text-muted-foreground mb-1">
-                {product.product_type === "rental" ? "Minimal muddat" : "Minimal buyurtma"}
-              </h4>
-              <p className="font-semibold">
-                {product.product_type === "rental"
-                  ? `${product.rental_min_duration} ${getRentalTimeText(product.rental_time_unit)}`
-                  : `${product.min_order_quantity} ${product.unit}`}
-              </p>
-            </div>
+            )}
           </div>
 
-          {/* Rental Duration Selector - Desktop Only */}
-          {product.product_type === "rental" && (
+          {/* Right Column - Product Info (Desktop) */}
+          <div className="lg:order-2 space-y-6">
+            {/* Title and Price */}
+            <div className="animate-slideInUp">
+              <div className="flex items-start justify-between mb-2">
+                <h1 className="text-2xl font-bold flex-1">{product.name_uz}</h1>
+                {product.is_featured && (
+                  <span className="px-2 py-1 bg-primary text-primary-foreground text-xs font-medium rounded ml-2 animate-pulse">
+                    TOP
+                  </span>
+                )}
+              </div>
+
+              {/* Base Price */}
+              <div className="mb-2">
+                <div className="flex items-baseline space-x-2">
+                  <span className="text-2xl font-bold text-gray-900 dark:text-white">
+                    {formatPrice(basePrice)} so'm
+                  </span>
+                  <span className="text-muted-foreground">
+                    {product.product_type === "rental"
+                      ? `/${getRentalTimeText(product.rental_time_unit)} • ${product.unit}`
+                      : `/${product.unit}`}
+                  </span>
+                </div>
+                {product.product_type === "rental" && product.rental_deposit && product.rental_deposit > 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    Kafolat puli: {formatPrice(product.rental_deposit)} so'm/{product.unit}
+                  </p>
+                )}
+              </div>
+
+              {/* Calculated Price with Variations */}
+              {variationAddition > 0 && (
+                <div className="bg-blue-50 dark:bg-blue-950/20 rounded-lg p-3 mb-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-blue-600">Hisoblangan narx:</span>
+                    <span className="text-lg font-bold text-blue-600">
+                      {formatPrice(calculatedPrice)} so'm
+                      {product.product_type === "rental"
+                        ? ` /${getRentalTimeText(product.rental_time_unit)}`
+                        : ` /${product.unit}`}
+                    </span>
+                  </div>
+                  <div className="text-xs text-blue-600/80 mt-1">
+                    Asosiy narx + turlar qo'shimchasi ({formatPrice(variationAddition)} so'm)
+                  </div>
+                </div>
+              )}
+
+              {product.description_uz && (
+                <p className="text-muted-foreground leading-relaxed animate-fadeIn">{product.description_uz}</p>
+              )}
+            </div>
+
+            {/* Product Variations */}
+            {variations.length > 0 && (
+              <div className="bg-card rounded-xl border border-border p-6 animate-slideInUp">
+                <h3 className="text-lg font-semibold mb-4">Mahsulot turlari</h3>
+                <div className="space-y-4">
+                  {variations.map((variation) => (
+                    <div key={variation.type}>
+                      <h4 className="font-medium mb-2 capitalize">{variation.type}</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {variation.options.map((option) => (
+                          <button
+                            key={option.value}
+                            onClick={() => handleSelectVariation(variation.type, option)}
+                            className={`px-3 py-2 rounded-lg border transition-all duration-300 transform hover:scale-105 ${
+                              selectedVariations[variation.type]?.value === option.value
+                                ? "border-primary bg-primary/10 text-primary font-medium scale-105 shadow-md"
+                                : "border-border bg-muted hover:border-primary/50 hover:bg-primary/5"
+                            }`}
+                          >
+                            <div className="flex items-center space-x-2">
+                              {selectedVariations[variation.type]?.value === option.value && (
+                                <Check className="w-4 h-4 animate-scaleIn" />
+                              )}
+                              <span>{option.name}</span>
+                            </div>
+                            {option.price !== null && option.price !== undefined && option.price > 0 && (
+                              <div className="text-xs mt-1 font-medium text-green-600">
+                                +{formatPrice(option.price)} so'm
+                              </div>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Stock and Minimum Order */}
+            <div className="grid grid-cols-2 gap-4 animate-slideInUp">
+              <div className="bg-muted/50 rounded-xl p-4 transform hover:scale-105 transition-transform duration-300">
+                <h4 className="text-sm text-muted-foreground mb-1">Omborda</h4>
+                <p className="font-semibold">
+                  {availableQuantity} {product.unit}
+                </p>
+              </div>
+              <div className="bg-muted/50 rounded-xl p-4 transform hover:scale-105 transition-transform duration-300">
+                <h4 className="text-sm text-muted-foreground mb-1">
+                  {product.product_type === "rental" ? "Minimal muddat" : "Minimal buyurtma"}
+                </h4>
+                <p className="font-semibold">
+                  {product.product_type === "rental"
+                    ? `${product.rental_min_duration} ${getRentalTimeText(product.rental_time_unit)}`
+                    : `${product.min_order_quantity} ${product.unit}`}
+                </p>
+              </div>
+            </div>
+
+            {/* Rental Duration Selector - Desktop Only */}
+            {product.product_type === "rental" && (
+              <div className="hidden md:block bg-card rounded-xl border border-border p-6 animate-slideInUp">
+                <h3 className="text-lg font-semibold mb-4 flex items-center">
+                  {getRentalIcon(product.rental_time_unit)}
+                  <span className="ml-2">Ijara muddatini tanlang</span>
+                </h3>
+                <div className="flex items-center space-x-4 mb-4">
+                  <button
+                    onClick={() => setRentalDuration(Math.max(product.rental_min_duration || 1, rentalDuration - 1))}
+                    disabled={rentalDuration <= (product.rental_min_duration || 1)}
+                    className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-all duration-300 disabled:opacity-50 hover:scale-110"
+                  >
+                    <Minus className="w-5 h-5" />
+                  </button>
+                  <div className="text-center">
+                    <span className="text-2xl font-semibold animate-countUp">{rentalDuration}</span>
+                    <p className="text-sm text-muted-foreground">{getRentalTimeText(product.rental_time_unit)}</p>
+                  </div>
+                  <button
+                    onClick={() => setRentalDuration(Math.min(product.rental_max_duration || 365, rentalDuration + 1))}
+                    disabled={rentalDuration >= (product.rental_max_duration || 365)}
+                    className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-all duration-300 disabled:opacity-50 hover:scale-110"
+                  >
+                    <Plus className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="bg-blue-50 dark:bg-blue-950/20 rounded-lg p-4 animate-fadeIn">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <Info className="w-4 h-4 text-blue-600" />
+                    <span className="font-medium text-blue-600">Ijara hisob-kitobi</span>
+                  </div>
+                  <div className="space-y-1 text-sm">
+                    <div className="flex justify-between">
+                      <span>Ijara narxi:</span>
+                      <span className="animate-countUp">
+                        {formatPrice(calculatedPrice * rentalDuration * quantity)} so'm
+                      </span>
+                    </div>
+                    {product.rental_deposit && product.rental_deposit > 0 && (
+                      <div className="flex justify-between">
+                        <span>Kafolat puli:</span>
+                        <span className="animate-countUp">{formatPrice(product.rental_deposit * quantity)} so'm</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between font-semibold border-t pt-1">
+                      <span>Jami to'lov:</span>
+                      <span className="animate-countUp">{formatPrice(calculateTotalPrice())} so'm</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Quantity Selector - Desktop Only */}
             <div className="hidden md:block bg-card rounded-xl border border-border p-6 animate-slideInUp">
-              <h3 className="text-lg font-semibold mb-4 flex items-center">
-                {getRentalIcon(product.rental_time_unit)}
-                <span className="ml-2">Ijara muddatini tanlang</span>
-              </h3>
+              <h3 className="text-lg font-semibold mb-4">Miqdorni tanlang</h3>
               <div className="flex items-center space-x-4 mb-4">
                 <button
-                  onClick={() => setRentalDuration(Math.max(product.rental_min_duration || 1, rentalDuration - 1))}
-                  disabled={rentalDuration <= (product.rental_min_duration || 1)}
+                  onClick={() => setQuantity(Math.max(product.min_order_quantity, quantity - 1))}
+                  disabled={quantity <= product.min_order_quantity}
                   className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-all duration-300 disabled:opacity-50 hover:scale-110"
                 >
                   <Minus className="w-5 h-5" />
                 </button>
-                <div className="text-center">
-                  <span className="text-2xl font-semibold animate-countUp">{rentalDuration}</span>
-                  <p className="text-sm text-muted-foreground">{getRentalTimeText(product.rental_time_unit)}</p>
-                </div>
+                <span className="text-2xl font-semibold min-w-[4rem] text-center animate-countUp">{quantity}</span>
                 <button
-                  onClick={() => setRentalDuration(Math.min(product.rental_max_duration || 365, rentalDuration + 1))}
-                  disabled={rentalDuration >= (product.rental_max_duration || 365)}
+                  onClick={() => setQuantity(Math.min(availableQuantity, quantity + 1))}
+                  disabled={quantity >= availableQuantity}
                   className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-all duration-300 disabled:opacity-50 hover:scale-110"
                 >
                   <Plus className="w-5 h-5" />
                 </button>
               </div>
 
-              <div className="bg-blue-50 dark:bg-blue-950/20 rounded-lg p-4 animate-fadeIn">
-                <div className="flex items-center space-x-2 mb-2">
-                  <Info className="w-4 h-4 text-blue-600" />
-                  <span className="font-medium text-blue-600">Ijara hisob-kitobi</span>
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-lg">Jami narx:</span>
+                <span className="text-2xl font-bold text-primary animate-countUp">
+                  {formatPrice(calculateTotalPrice())} so'm
+                </span>
+              </div>
+
+              <button
+                onClick={handleAddToCart}
+                disabled={isAddingToCart || quantity > availableQuantity}
+                className="w-full px-6 py-4 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all duration-300 disabled:opacity-50 flex items-center justify-center space-x-2 shadow-sm hover:shadow-lg hover:scale-[1.02] transform"
+              >
+                {isAddingToCart ? (
+                  <div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                ) : (
+                  <ShoppingCart className="w-5 h-5 animate-bounce" />
+                )}
+                <span>
+                  {isAddingToCart
+                    ? "Qo'shilmoqda..."
+                    : product.product_type === "rental"
+                      ? "Ijaraga olish"
+                      : "Savatga qo'shish"}
+                </span>
+              </button>
+            </div>
+
+            {/* Delivery Info */}
+            <div className="bg-card rounded-xl border border-border p-4 animate-slideInUp">
+              <h4 className="font-semibold mb-3 flex items-center">
+                <Truck className="w-5 h-5 mr-2" />
+                {product.product_type === "rental" ? "Yetkazib berish va qaytarish" : "Yetkazib berish"}
+              </h4>
+              <div className="space-y-2">
+                {product.has_delivery ? (
+                  <>
+                    {product.delivery_limit > 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        <span className="font-medium text-green-600">
+                          {formatPrice(product.delivery_limit)} so'mdan yuqori buyurtmalarda tekin
+                        </span>
+                      </p>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        Yetkazib berish: <span className="font-medium">{formatPrice(product.delivery_price)} so'm</span>
+                      </p>
+                    )}
+                    <p className="text-sm text-muted-foreground">
+                      Taxminiy yetkazib berish vaqti: {product.product_type === "rental" ? "2-4 soat" : "1-3 ish kuni"}
+                    </p>
+                  </>
+                ) : (
+                  <div className="bg-orange-50 dark:bg-orange-950/20 p-3 rounded-lg">
+                    <p className="text-sm font-medium text-orange-600">Yetkazib berish mavjud emas</p>
+                    <p className="text-xs text-orange-600 mt-1">
+                      Bu mahsulotni siz o'zingiz kompaniya joylashuviga borib olib kelishingiz kerak
+                    </p>
+                  </div>
+                )}
+                {product.product_type === "rental" && (
+                  <p className="text-sm text-muted-foreground">
+                    Qaytarish: Ijara muddati tugagach, mahsulotni qaytarib berish kerak
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Features */}
+            <div className="grid grid-cols-2 gap-4 animate-slideInUp">
+              <div className="flex items-center space-x-2 text-sm transform hover:scale-105 transition-transform duration-300">
+                <Shield className="w-4 h-4 text-green-600" />
+                <span>Sifat kafolati</span>
+              </div>
+              <div className="flex items-center space-x-2 text-sm transform hover:scale-105 transition-transform duration-300">
+                <Star className="w-4 h-4 text-yellow-500" />
+                <span>Yuqori sifat</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Reviews Section */}
+        <div className="mt-8 bg-card rounded-xl border border-border p-6 animate-slideInUp">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold flex items-center">
+              <MessageCircle className="w-5 h-5 mr-2" />
+              Mijozlar sharhlari ({reviews.length})
+            </h3>
+
+            {canReview && !showReviewForm && (
+              <button
+                onClick={() => setShowReviewForm(true)}
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-all duration-300 flex items-center space-x-2 transform hover:scale-105"
+              >
+                <Star className="w-4 h-4" />
+                <span>Sharh qoldirish</span>
+              </button>
+            )}
+          </div>
+
+          {/* Review Form */}
+          {showReviewForm && (
+            <div className="bg-muted/30 rounded-lg p-4 mb-6 animate-slideInDown">
+              <h4 className="font-medium mb-3">Mahsulot haqida fikringizni qoldiring</h4>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm mb-2">Baholash</label>
+                  {renderRatingInput()}
                 </div>
-                <div className="space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <span>Ijara narxi:</span>
-                    <span className="animate-countUp">
-                      {formatPrice(calculatedPrice * rentalDuration * quantity)} so'm
-                    </span>
-                  </div>
-                  {product.rental_deposit && product.rental_deposit > 0 && (
-                    <div className="flex justify-between">
-                      <span>Kafolat puli:</span>
-                      <span className="animate-countUp">{formatPrice(product.rental_deposit * quantity)} so'm</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between font-semibold border-t pt-1">
-                    <span>Jami to'lov:</span>
-                    <span className="animate-countUp">{formatPrice(calculateTotalPrice())} so'm</span>
-                  </div>
+                <div>
+                  <label className="block text-sm mb-2">Izoh (ixtiyoriy)</label>
+                  <textarea
+                    value={reviewComment}
+                    onChange={(e) => setReviewComment(e.target.value)}
+                    className="w-full px-3 py-2 bg-background rounded-lg border border-border focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all duration-300"
+                    rows={3}
+                    placeholder="Mahsulot haqida fikringiz..."
+                  />
+                </div>
+                <div className="flex space-x-3">
+                  <button
+                    onClick={() => setShowReviewForm(false)}
+                    className="px-4 py-2 bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition-all duration-300"
+                  >
+                    Bekor qilish
+                  </button>
+                  <button
+                    onClick={handleSubmitReview}
+                    disabled={isSubmittingReview}
+                    className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-all duration-300 flex items-center space-x-2 transform hover:scale-105"
+                  >
+                    {isSubmittingReview ? (
+                      <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                    ) : (
+                      <Send className="w-4 h-4" />
+                    )}
+                    <span>Yuborish</span>
+                  </button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Quantity Selector - Desktop Only */}
-          <div className="hidden md:block bg-card rounded-xl border border-border p-6 animate-slideInUp">
-            <h3 className="text-lg font-semibold mb-4">Miqdorni tanlang</h3>
-            <div className="flex items-center space-x-4 mb-4">
-              <button
-                onClick={() => setQuantity(Math.max(product.min_order_quantity, quantity - 1))}
-                disabled={quantity <= product.min_order_quantity}
-                className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-all duration-300 disabled:opacity-50 hover:scale-110"
-              >
-                <Minus className="w-5 h-5" />
-              </button>
-              <span className="text-2xl font-semibold min-w-[4rem] text-center animate-countUp">{quantity}</span>
-              <button
-                onClick={() => setQuantity(Math.min(availableQuantity, quantity + 1))}
-                disabled={quantity >= availableQuantity}
-                className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-all duration-300 disabled:opacity-50 hover:scale-110"
-              >
-                <Plus className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-lg">Jami narx:</span>
-              <span className="text-2xl font-bold text-primary animate-countUp">
-                {formatPrice(calculateTotalPrice())} so'm
-              </span>
-            </div>
-
-            <button
-              onClick={handleAddToCart}
-              disabled={isAddingToCart || quantity > availableQuantity}
-              className="w-full px-6 py-4 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all duration-300 disabled:opacity-50 flex items-center justify-center space-x-2 shadow-sm hover:shadow-lg hover:scale-[1.02] transform"
-            >
-              {isAddingToCart ? (
-                <div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-              ) : (
-                <ShoppingCart className="w-5 h-5 animate-bounce" />
-              )}
-              <span>
-                {isAddingToCart
-                  ? "Qo'shilmoqda..."
-                  : product.product_type === "rental"
-                    ? "Ijaraga olish"
-                    : "Savatga qo'shish"}
-              </span>
-            </button>
-          </div>
-
-          {/* Delivery Info */}
-          <div className="bg-card rounded-xl border border-border p-4 animate-slideInUp">
-            <h4 className="font-semibold mb-3 flex items-center">
-              <Truck className="w-5 h-5 mr-2" />
-              {product.product_type === "rental" ? "Yetkazib berish va qaytarish" : "Yetkazib berish"}
-            </h4>
-            <div className="space-y-2">
-              {product.has_delivery ? (
-                <>
-                  {product.delivery_limit > 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      <span className="font-medium text-green-600">
-                        {formatPrice(product.delivery_limit)} so'mdan yuqori buyurtmalarda tekin
-                      </span>
-                    </p>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      Yetkazib berish: <span className="font-medium">{formatPrice(product.delivery_price)} so'm</span>
-                    </p>
-                  )}
-                  <p className="text-sm text-muted-foreground">
-                    Taxminiy yetkazib berish vaqti: {product.product_type === "rental" ? "2-4 soat" : "1-3 ish kuni"}
-                  </p>
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  <span className="font-medium text-orange-600">Bu mahsulot uchun yetkazib berish mavjud emas</span>
-                </p>
-              )}
-              {product.product_type === "rental" && (
-                <p className="text-sm text-muted-foreground">
-                  Qaytarish: Ijara muddati tugagach, mahsulotni qaytarib berish kerak
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* Features */}
-          <div className="grid grid-cols-2 gap-4 animate-slideInUp">
-            <div className="flex items-center space-x-2 text-sm transform hover:scale-105 transition-transform duration-300">
-              <Shield className="w-4 h-4 text-green-600" />
-              <span>Sifat kafolati</span>
-            </div>
-            <div className="flex items-center space-x-2 text-sm transform hover:scale-105 transition-transform duration-300">
-              <Star className="w-4 h-4 text-yellow-500" />
-              <span>Yuqori sifat</span>
-            </div>
-          </div>
-
-          {/* Reviews Section */}
-          <div className="bg-card rounded-xl border border-border p-6 animate-slideInUp">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold flex items-center">
-                <MessageCircle className="w-5 h-5 mr-2" />
-                Mijozlar sharhlari ({reviews.length})
-              </h3>
-
-              {canReview && !showReviewForm && (
-                <button
-                  onClick={() => setShowReviewForm(true)}
-                  className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-all duration-300 flex items-center space-x-2 transform hover:scale-105"
+          {reviews.length > 0 ? (
+            <div className="space-y-4">
+              {reviews.map((review, index) => (
+                <div
+                  key={review.id}
+                  className="border-b border-border pb-4 last:border-b-0 last:pb-0 animate-slideInUp"
+                  style={{ animationDelay: `${index * 100}ms` }}
                 >
-                  <Star className="w-4 h-4" />
-                  <span>Sharh qoldirish</span>
-                </button>
-              )}
-            </div>
-
-            {/* Review Form */}
-            {showReviewForm && (
-              <div className="bg-muted/30 rounded-lg p-4 mb-6 animate-slideInDown">
-                <h4 className="font-medium mb-3">Mahsulot haqida fikringizni qoldiring</h4>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm mb-2">Baholash</label>
-                    {renderRatingInput()}
-                  </div>
-                  <div>
-                    <label className="block text-sm mb-2">Izoh (ixtiyoriy)</label>
-                    <textarea
-                      value={reviewComment}
-                      onChange={(e) => setReviewComment(e.target.value)}
-                      className="w-full px-3 py-2 bg-background rounded-lg border border-border focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all duration-300"
-                      rows={3}
-                      placeholder="Mahsulot haqida fikringiz..."
-                    />
-                  </div>
-                  <div className="flex space-x-3">
-                    <button
-                      onClick={() => setShowReviewForm(false)}
-                      className="px-4 py-2 bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition-all duration-300"
-                    >
-                      Bekor qilish
-                    </button>
-                    <button
-                      onClick={handleSubmitReview}
-                      disabled={isSubmittingReview}
-                      className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-all duration-300 flex items-center space-x-2 transform hover:scale-105"
-                    >
-                      {isSubmittingReview ? (
-                        <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-                      ) : (
-                        <Send className="w-4 h-4" />
-                      )}
-                      <span>Yuborish</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {reviews.length > 0 ? (
-              <div className="space-y-4">
-                {reviews.map((review, index) => (
-                  <div
-                    key={review.id}
-                    className="border-b border-border pb-4 last:border-b-0 last:pb-0 animate-slideInUp"
-                    style={{ animationDelay: `${index * 100}ms` }}
-                  >
-                    <div className="flex items-start space-x-3">
-                      <div className="w-10 h-10 bg-muted rounded-full flex items-center justify-center">
-                        <User className="w-5 h-5 text-muted-foreground" />
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-2 mb-1">
-                          <span className="font-medium">
-                            {review.reviewer.first_name} {review.reviewer.last_name}
-                          </span>
-                          <div className="flex items-center">{renderStars(review.rating)}</div>
-                        </div>
-                        <p className="text-sm text-muted-foreground mb-1">{review.comment}</p>
-                        <span className="text-xs text-muted-foreground">
-                          {new Date(review.created_at).toLocaleDateString("uz-UZ")}
+                  <div className="flex items-start space-x-3">
+                    <div className="w-10 h-10 bg-muted rounded-full flex items-center justify-center">
+                      <User className="w-5 h-5 text-muted-foreground" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-2 mb-1">
+                        <span className="font-medium">
+                          {review.reviewer.first_name} {review.reviewer.last_name}
                         </span>
+                        <div className="flex items-center">{renderStars(review.rating)}</div>
                       </div>
+                      <p className="text-sm text-muted-foreground mb-1">{review.comment}</p>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(review.created_at).toLocaleDateString("uz-UZ")}
+                      </span>
                     </div>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-6 text-muted-foreground">
-                <MessageCircle className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                <p>Bu mahsulot haqida hali sharhlar yo'q</p>
-              </div>
-            )}
-          </div>
-
-          {/* Similar Products */}
-          {similarProducts.length > 0 && (
-            <div className="animate-slideInUp">
-              <h3 className="text-lg font-semibold mb-4">O'xshash mahsulotlar</h3>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {similarProducts.map((similarProduct, index) => (
-                  <div
-                    key={similarProduct.id}
-                    className="animate-slideInUp"
-                    style={{ animationDelay: `${index * 100}ms` }}
-                  >
-                    <ProductCard product={similarProduct} onQuickView={(id) => router.push(`/product/${id}`)} />
-                  </div>
-                ))}
-              </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-6 text-muted-foreground">
+              <MessageCircle className="w-12 h-12 mx-auto mb-3 opacity-20" />
+              <p>Bu mahsulot haqida hali sharhlar yo'q</p>
             </div>
           )}
         </div>
+
+        {/* Similar Products */}
+        {similarProducts.length > 0 && (
+          <div className="mt-8 animate-slideInUp">
+            <h3 className="text-lg font-semibold mb-4">O'xshash mahsulotlar</h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {similarProducts.map((similarProduct, index) => (
+                <div
+                  key={similarProduct.id}
+                  className="animate-slideInUp"
+                  style={{ animationDelay: `${index * 100}ms` }}
+                >
+                  <ProductCard product={similarProduct} onQuickView={(id) => router.push(`/product/${id}`)} />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Fixed Bottom Bar - Mobile Only - Very Compact and Responsive */}

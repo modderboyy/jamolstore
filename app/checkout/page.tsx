@@ -199,6 +199,41 @@ export default function CheckoutPage() {
     }
   }
 
+  const calculateItemTotal = (item: any) => {
+    const basePrice = item.product.price
+    let variationPrice = 0
+
+    // Add variation prices
+    if (item.variations && item.variations.length > 0) {
+      variationPrice = item.variations.reduce((sum: number, variation: any) => {
+        return sum + (variation.price || 0)
+      }, 0)
+    }
+
+    if (item.product.product_type === "rental" && item.product.rental_price_per_unit && item.rental_duration) {
+      const rentalTotal = (item.product.rental_price_per_unit + variationPrice) * item.rental_duration * item.quantity
+      const depositTotal = (item.product.rental_deposit || 0) * item.quantity
+      return rentalTotal + depositTotal
+    }
+
+    return (basePrice + variationPrice) * item.quantity
+  }
+
+  const getDeliveryInfo = () => {
+    const hasDeliveryProducts = items.some((item) => item.product.has_delivery)
+    const noDeliveryProducts = items.filter((item) => !item.product.has_delivery)
+
+    if (noDeliveryProducts.length > 0 && hasDeliveryProducts) {
+      return "Ba'zi mahsulotlar uchun yetkazib berish mavjud emas"
+    } else if (noDeliveryProducts.length === items.length) {
+      return "Yetkazib berish mavjud emas"
+    } else if (setDeliveryFee === 0) {
+      return "Bepul"
+    } else {
+      return `${formatPrice(setDeliveryFee)} so'm`
+    }
+  }
+
   const handleSubmitOrder = async () => {
     if (!user || items.length === 0) return
 
@@ -245,7 +280,7 @@ export default function CheckoutPage() {
           product_id: item.product_id,
           quantity: item.quantity,
           unit_price: item.product.price,
-          total_price: item.product.price * item.quantity,
+          total_price: calculateItemTotal(item),
           variations: variations,
           rental_duration: item.rental_duration,
           rental_time_unit: item.rental_time_unit,
@@ -314,45 +349,72 @@ export default function CheckoutPage() {
         <div className="bg-card rounded-lg border border-border p-4">
           <h3 className="text-headline font-semibold mb-4">Buyurtma tarkibi</h3>
           <div className="space-y-3">
-            {items.map((item) => (
-              <div key={item.id} className="flex space-x-3">
-                <div className="w-12 h-12 bg-muted rounded-lg overflow-hidden flex-shrink-0">
-                  {item.product.images?.[0] ? (
-                    <Image
-                      src={item.product.images[0] || "/placeholder.svg"}
-                      alt={item.product.name_uz}
-                      width={48}
-                      height={48}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full bg-muted-foreground/20" />
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-medium line-clamp-1">{item.product.name_uz}</h4>
-                  <div className="flex items-center justify-between mt-1">
-                    <span className="text-xs text-muted-foreground">
-                      {item.quantity} {item.product.unit} × {formatPrice(item.product.price)} so'm
-                    </span>
-                    <span className="text-sm font-semibold">
-                      {formatPrice(item.product.price * item.quantity)} so'm
-                    </span>
-                  </div>
+            {items.map((item) => {
+              const itemTotal = calculateItemTotal(item)
+              const basePrice =
+                item.product.product_type === "rental" && item.product.rental_price_per_unit
+                  ? item.product.rental_price_per_unit
+                  : item.product.price
+              const variationPrice =
+                item.variations?.reduce((sum: number, variation: any) => sum + (variation.price || 0), 0) || 0
 
-                  {/* Show variations if available */}
-                  {item.variations && item.variations.length > 0 && (
-                    <div className="mt-1 text-xs text-blue-600">
-                      {item.variations.map((variation, idx) => (
-                        <span key={idx} className="mr-2">
-                          {variation.type}: {variation.name}
-                        </span>
-                      ))}
+              return (
+                <div key={item.id} className="flex space-x-3">
+                  <div className="w-12 h-12 bg-muted rounded-lg overflow-hidden flex-shrink-0">
+                    {item.product.images?.[0] ? (
+                      <Image
+                        src={item.product.images[0] || "/placeholder.svg"}
+                        alt={item.product.name_uz}
+                        width={48}
+                        height={48}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-muted-foreground/20" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-sm font-medium line-clamp-1">{item.product.name_uz}</h4>
+
+                    {/* Price breakdown */}
+                    <div className="mt-1 text-xs">
+                      <div className="text-muted-foreground">
+                        Asosiy: {item.quantity} × {formatPrice(basePrice)} = {formatPrice(basePrice * item.quantity)}{" "}
+                        so'm
+                      </div>
+                      {variationPrice > 0 && (
+                        <div className="text-green-600">
+                          Qo'shimcha: {item.quantity} × {formatPrice(variationPrice)} ={" "}
+                          {formatPrice(variationPrice * item.quantity)} so'm
+                        </div>
+                      )}
+                      {item.product.product_type === "rental" && item.product.rental_deposit && (
+                        <div className="text-orange-600">
+                          Kafolat: {item.quantity} × {formatPrice(item.product.rental_deposit)} ={" "}
+                          {formatPrice(item.product.rental_deposit * item.quantity)} so'm
+                        </div>
+                      )}
                     </div>
-                  )}
+
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-xs text-muted-foreground">Jami:</span>
+                      <span className="text-sm font-semibold">{formatPrice(itemTotal)} so'm</span>
+                    </div>
+
+                    {/* Show variations if available */}
+                    {item.variations && item.variations.length > 0 && (
+                      <div className="mt-1 text-xs text-blue-600">
+                        {item.variations.map((variation: any, idx: number) => (
+                          <span key={idx} className="mr-2">
+                            {variation.type}: {variation.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
 
@@ -518,6 +580,16 @@ export default function CheckoutPage() {
               Yetkazib berish xizmatisiz buyurtma qilsangiz, mahsulotni o'zingiz olib ketishingiz kerak.
             </p>
           )}
+
+          {/* No delivery warning */}
+          {items.some((item) => !item.product.has_delivery) && (
+            <div className="mt-4 p-3 bg-orange-50 dark:bg-orange-950/20 rounded-lg">
+              <p className="text-sm text-orange-600">
+                <strong>Diqqat:</strong> Ba'zi mahsulotlar uchun yetkazib berish mavjud emas. Bularni siz o'zingiz
+                kompaniya joylashuviga borib olib kelishingiz kerak.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Notes */}
@@ -543,13 +615,7 @@ export default function CheckoutPage() {
 
             <div className="flex justify-between">
               <span className="text-body">Yetkazib berish:</span>
-              <span className="text-body font-medium">
-                {deliveryWithService
-                  ? setDeliveryFee > 0
-                    ? formatPrice(setDeliveryFee) + " so'm"
-                    : "Bepul"
-                  : "0 so'm"}
-              </span>
+              <span className="text-body font-medium">{getDeliveryInfo()}</span>
             </div>
 
             <div className="border-t border-border pt-3">
