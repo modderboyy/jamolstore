@@ -1,12 +1,34 @@
 "use client"
 
 import { useRouter } from "next/navigation"
+import { useEffect, useState } from "react"
 import { TopBar } from "@/components/layout/top-bar"
 import { BottomNavigation } from "@/components/layout/bottom-navigation"
 import { Home, ArrowLeft, Phone } from "lucide-react"
+import { supabase } from "@/lib/supabase"
+
+interface CompanyInfo {
+  phone_number: string
+}
 
 export default function NotFound() {
   const router = useRouter()
+  const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(null)
+
+  useEffect(() => {
+    fetchCompanyInfo()
+  }, [])
+
+  const fetchCompanyInfo = async () => {
+    try {
+      const { data, error } = await supabase.from("company").select("phone_number").eq("is_active", true).single()
+
+      if (error) throw error
+      setCompanyInfo(data)
+    } catch (error) {
+      console.error("Company info error:", error)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-4">
@@ -62,7 +84,7 @@ export default function NotFound() {
 
             <div className="flex items-center justify-center space-x-2 text-sm">
               <Phone className="w-4 h-4" />
-              <span className="font-medium">+998 90 123 45 67</span>
+              <span className="font-medium">{companyInfo?.phone_number || "+998 90 123 45 67"}</span>
             </div>
           </div>
         </div>

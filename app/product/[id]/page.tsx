@@ -600,7 +600,7 @@ export default function ProductDetailPage() {
                 alt={product.name_uz}
                 width={500}
                 height={500}
-                className="w-full h-full object-cover animate-fadeIn"
+                className="w-full h-full object-cover animate-fadeIn transition-all duration-500"
                 priority
               />
             ) : (
@@ -617,7 +617,7 @@ export default function ProductDetailPage() {
                 <button
                   key={index}
                   onClick={() => setSelectedImageIndex(index)}
-                  className={`w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 border-2 transition-all duration-300 ${
+                  className={`w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 border-2 transition-all duration-300 transform hover:scale-105 ${
                     selectedImageIndex === index
                       ? "border-primary scale-105 shadow-md"
                       : "border-transparent hover:border-primary/50"
@@ -639,11 +639,11 @@ export default function ProductDetailPage() {
         {/* Product Info */}
         <div className="space-y-6">
           {/* Title and Price */}
-          <div>
+          <div className="animate-slideInUp">
             <div className="flex items-start justify-between mb-2">
               <h1 className="text-2xl font-bold flex-1">{product.name_uz}</h1>
               {product.is_featured && (
-                <span className="px-2 py-1 bg-primary text-primary-foreground text-xs font-medium rounded ml-2">
+                <span className="px-2 py-1 bg-primary text-primary-foreground text-xs font-medium rounded ml-2 animate-pulse">
                   TOP
                 </span>
               )}
@@ -652,7 +652,7 @@ export default function ProductDetailPage() {
             {product.product_type === "rental" && product.rental_price_per_unit ? (
               <div className="mb-4">
                 <div className="flex items-baseline space-x-2 mb-2">
-                  <span className="text-3xl font-bold text-blue-600">
+                  <span className="text-3xl font-bold text-blue-600 animate-countUp">
                     {formatPrice(variationPrice || product.rental_price_per_unit)} so'm
                   </span>
                   <span className="text-muted-foreground">
@@ -667,19 +667,21 @@ export default function ProductDetailPage() {
               </div>
             ) : (
               <div className="flex items-baseline space-x-2 mb-4">
-                <span className="text-3xl font-bold">{formatPrice(variationPrice || product.price)} so'm</span>
+                <span className="text-3xl font-bold animate-countUp">
+                  {formatPrice(variationPrice || product.price)} so'm
+                </span>
                 <span className="text-muted-foreground">/{product.unit}</span>
               </div>
             )}
 
             {product.description_uz && (
-              <p className="text-muted-foreground leading-relaxed">{product.description_uz}</p>
+              <p className="text-muted-foreground leading-relaxed animate-fadeIn">{product.description_uz}</p>
             )}
           </div>
 
           {/* Product Variations */}
           {variations.length > 0 && (
-            <div className="bg-card rounded-xl border border-border p-6 animate-fadeIn">
+            <div className="bg-card rounded-xl border border-border p-6 animate-slideInUp">
               <h3 className="text-lg font-semibold mb-4">Mahsulot turlari</h3>
               <div className="space-y-4">
                 {variations.map((variation) => (
@@ -690,15 +692,15 @@ export default function ProductDetailPage() {
                         <button
                           key={option.value}
                           onClick={() => handleSelectVariation(variation.type, option)}
-                          className={`px-3 py-2 rounded-lg border transition-all ${
+                          className={`px-3 py-2 rounded-lg border transition-all duration-300 transform hover:scale-105 ${
                             selectedVariations[variation.type]?.value === option.value
-                              ? "border-primary bg-primary/10 text-primary font-medium"
-                              : "border-border bg-muted hover:border-primary/50"
+                              ? "border-primary bg-primary/10 text-primary font-medium scale-105 shadow-md"
+                              : "border-border bg-muted hover:border-primary/50 hover:bg-primary/5"
                           }`}
                         >
                           <div className="flex items-center space-x-2">
                             {selectedVariations[variation.type]?.value === option.value && (
-                              <Check className="w-4 h-4" />
+                              <Check className="w-4 h-4 animate-scaleIn" />
                             )}
                             <span>{option.name}</span>
                           </div>
@@ -715,14 +717,14 @@ export default function ProductDetailPage() {
           )}
 
           {/* Stock and Minimum Order */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="bg-muted/50 rounded-xl p-4">
+          <div className="grid grid-cols-2 gap-4 animate-slideInUp">
+            <div className="bg-muted/50 rounded-xl p-4 transform hover:scale-105 transition-transform duration-300">
               <h4 className="text-sm text-muted-foreground mb-1">Omborda</h4>
               <p className="font-semibold">
                 {availableQuantity} {product.unit}
               </p>
             </div>
-            <div className="bg-muted/50 rounded-xl p-4">
+            <div className="bg-muted/50 rounded-xl p-4 transform hover:scale-105 transition-transform duration-300">
               <h4 className="text-sm text-muted-foreground mb-1">
                 {product.product_type === "rental" ? "Minimal muddat" : "Minimal buyurtma"}
               </h4>
@@ -736,7 +738,7 @@ export default function ProductDetailPage() {
 
           {/* Rental Duration Selector - Desktop Only */}
           {product.product_type === "rental" && (
-            <div className="hidden md:block bg-card rounded-xl border border-border p-6">
+            <div className="hidden md:block bg-card rounded-xl border border-border p-6 animate-slideInUp">
               <h3 className="text-lg font-semibold mb-4 flex items-center">
                 {getRentalIcon(product.rental_time_unit)}
                 <span className="ml-2">Ijara muddatini tanlang</span>
@@ -745,24 +747,24 @@ export default function ProductDetailPage() {
                 <button
                   onClick={() => setRentalDuration(Math.max(product.rental_min_duration || 1, rentalDuration - 1))}
                   disabled={rentalDuration <= (product.rental_min_duration || 1)}
-                  className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-colors disabled:opacity-50"
+                  className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-all duration-300 disabled:opacity-50 hover:scale-110"
                 >
                   <Minus className="w-5 h-5" />
                 </button>
                 <div className="text-center">
-                  <span className="text-2xl font-semibold">{rentalDuration}</span>
+                  <span className="text-2xl font-semibold animate-countUp">{rentalDuration}</span>
                   <p className="text-sm text-muted-foreground">{getRentalTimeText(product.rental_time_unit)}</p>
                 </div>
                 <button
                   onClick={() => setRentalDuration(Math.min(product.rental_max_duration || 365, rentalDuration + 1))}
                   disabled={rentalDuration >= (product.rental_max_duration || 365)}
-                  className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-colors disabled:opacity-50"
+                  className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-all duration-300 disabled:opacity-50 hover:scale-110"
                 >
                   <Plus className="w-5 h-5" />
                 </button>
               </div>
 
-              <div className="bg-blue-50 dark:bg-blue-950/20 rounded-lg p-4">
+              <div className="bg-blue-50 dark:bg-blue-950/20 rounded-lg p-4 animate-fadeIn">
                 <div className="flex items-center space-x-2 mb-2">
                   <Info className="w-4 h-4 text-blue-600" />
                   <span className="font-medium text-blue-600">Ijara hisob-kitobi</span>
@@ -770,17 +772,19 @@ export default function ProductDetailPage() {
                 <div className="space-y-1 text-sm">
                   <div className="flex justify-between">
                     <span>Ijara narxi:</span>
-                    <span>{formatPrice(calculateRentalTotal())} so'm</span>
+                    <span className="animate-countUp">{formatPrice(calculateRentalTotal())} so'm</span>
                   </div>
                   {product.rental_deposit && product.rental_deposit > 0 && (
                     <div className="flex justify-between">
                       <span>Kafolat puli:</span>
-                      <span>{formatPrice(calculateRentalDeposit())} so'm</span>
+                      <span className="animate-countUp">{formatPrice(calculateRentalDeposit())} so'm</span>
                     </div>
                   )}
                   <div className="flex justify-between font-semibold border-t pt-1">
                     <span>Jami to'lov:</span>
-                    <span>{formatPrice(calculateRentalTotal() + calculateRentalDeposit())} so'm</span>
+                    <span className="animate-countUp">
+                      {formatPrice(calculateRentalTotal() + calculateRentalDeposit())} so'm
+                    </span>
                   </div>
                 </div>
               </div>
@@ -788,21 +792,21 @@ export default function ProductDetailPage() {
           )}
 
           {/* Quantity Selector - Desktop Only */}
-          <div className="hidden md:block bg-card rounded-xl border border-border p-6">
+          <div className="hidden md:block bg-card rounded-xl border border-border p-6 animate-slideInUp">
             <h3 className="text-lg font-semibold mb-4">Miqdorni tanlang</h3>
             <div className="flex items-center space-x-4 mb-4">
               <button
                 onClick={() => setQuantity(Math.max(product.min_order_quantity, quantity - 1))}
                 disabled={quantity <= product.min_order_quantity}
-                className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-colors disabled:opacity-50"
+                className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-all duration-300 disabled:opacity-50 hover:scale-110"
               >
                 <Minus className="w-5 h-5" />
               </button>
-              <span className="text-2xl font-semibold min-w-[4rem] text-center">{quantity}</span>
+              <span className="text-2xl font-semibold min-w-[4rem] text-center animate-countUp">{quantity}</span>
               <button
                 onClick={() => setQuantity(Math.min(availableQuantity, quantity + 1))}
                 disabled={quantity >= availableQuantity}
-                className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-colors disabled:opacity-50"
+                className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-all duration-300 disabled:opacity-50 hover:scale-110"
               >
                 <Plus className="w-5 h-5" />
               </button>
@@ -810,7 +814,7 @@ export default function ProductDetailPage() {
 
             <div className="flex items-center justify-between mb-4">
               <span className="text-lg">Jami narx:</span>
-              <span className="text-2xl font-bold text-primary">
+              <span className="text-2xl font-bold text-primary animate-countUp">
                 {product.product_type === "rental"
                   ? formatPrice(calculateRentalTotal() + calculateRentalDeposit())
                   : formatPrice((variationPrice || product.price) * quantity)}{" "}
@@ -821,12 +825,12 @@ export default function ProductDetailPage() {
             <button
               onClick={handleAddToCart}
               disabled={isAddingToCart || quantity > availableQuantity}
-              className="w-full px-6 py-4 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all duration-300 disabled:opacity-50 flex items-center justify-center space-x-2 shadow-sm hover:shadow-lg hover:scale-[1.02]"
+              className="w-full px-6 py-4 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all duration-300 disabled:opacity-50 flex items-center justify-center space-x-2 shadow-sm hover:shadow-lg hover:scale-[1.02] transform"
             >
               {isAddingToCart ? (
                 <div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
               ) : (
-                <ShoppingCart className="w-5 h-5" />
+                <ShoppingCart className="w-5 h-5 animate-bounce" />
               )}
               <span>
                 {isAddingToCart
@@ -839,7 +843,7 @@ export default function ProductDetailPage() {
           </div>
 
           {/* Delivery Info */}
-          <div className="bg-card rounded-xl border border-border p-4">
+          <div className="bg-card rounded-xl border border-border p-4 animate-slideInUp">
             <h4 className="font-semibold mb-3 flex items-center">
               <Truck className="w-5 h-5 mr-2" />
               {product.product_type === "rental" ? "Yetkazib berish va qaytarish" : "Yetkazib berish"}
@@ -876,19 +880,19 @@ export default function ProductDetailPage() {
           </div>
 
           {/* Features */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex items-center space-x-2 text-sm">
+          <div className="grid grid-cols-2 gap-4 animate-slideInUp">
+            <div className="flex items-center space-x-2 text-sm transform hover:scale-105 transition-transform duration-300">
               <Shield className="w-4 h-4 text-green-600" />
               <span>Sifat kafolati</span>
             </div>
-            <div className="flex items-center space-x-2 text-sm">
+            <div className="flex items-center space-x-2 text-sm transform hover:scale-105 transition-transform duration-300">
               <Star className="w-4 h-4 text-yellow-500" />
               <span>Yuqori sifat</span>
             </div>
           </div>
 
           {/* Reviews Section */}
-          <div className="bg-card rounded-xl border border-border p-6">
+          <div className="bg-card rounded-xl border border-border p-6 animate-slideInUp">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold flex items-center">
                 <MessageCircle className="w-5 h-5 mr-2" />
@@ -898,7 +902,7 @@ export default function ProductDetailPage() {
               {canReview && !showReviewForm && (
                 <button
                   onClick={() => setShowReviewForm(true)}
-                  className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors flex items-center space-x-2"
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-all duration-300 flex items-center space-x-2 transform hover:scale-105"
                 >
                   <Star className="w-4 h-4" />
                   <span>Sharh qoldirish</span>
@@ -908,7 +912,7 @@ export default function ProductDetailPage() {
 
             {/* Review Form */}
             {showReviewForm && (
-              <div className="bg-muted/30 rounded-lg p-4 mb-6 animate-fadeIn">
+              <div className="bg-muted/30 rounded-lg p-4 mb-6 animate-slideInDown">
                 <h4 className="font-medium mb-3">Mahsulot haqida fikringizni qoldiring</h4>
                 <div className="space-y-4">
                   <div>
@@ -920,7 +924,7 @@ export default function ProductDetailPage() {
                     <textarea
                       value={reviewComment}
                       onChange={(e) => setReviewComment(e.target.value)}
-                      className="w-full px-3 py-2 bg-background rounded-lg border border-border focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all"
+                      className="w-full px-3 py-2 bg-background rounded-lg border border-border focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all duration-300"
                       rows={3}
                       placeholder="Mahsulot haqida fikringiz..."
                     />
@@ -928,14 +932,14 @@ export default function ProductDetailPage() {
                   <div className="flex space-x-3">
                     <button
                       onClick={() => setShowReviewForm(false)}
-                      className="px-4 py-2 bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition-colors"
+                      className="px-4 py-2 bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition-all duration-300"
                     >
                       Bekor qilish
                     </button>
                     <button
                       onClick={handleSubmitReview}
                       disabled={isSubmittingReview}
-                      className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors flex items-center space-x-2"
+                      className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-all duration-300 flex items-center space-x-2 transform hover:scale-105"
                     >
                       {isSubmittingReview ? (
                         <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
@@ -951,8 +955,12 @@ export default function ProductDetailPage() {
 
             {reviews.length > 0 ? (
               <div className="space-y-4">
-                {reviews.map((review) => (
-                  <div key={review.id} className="border-b border-border pb-4 last:border-b-0 last:pb-0">
+                {reviews.map((review, index) => (
+                  <div
+                    key={review.id}
+                    className="border-b border-border pb-4 last:border-b-0 last:pb-0 animate-slideInUp"
+                    style={{ animationDelay: `${index * 100}ms` }}
+                  >
                     <div className="flex items-start space-x-3">
                       <div className="w-10 h-10 bg-muted rounded-full flex items-center justify-center">
                         <User className="w-5 h-5 text-muted-foreground" />
@@ -983,15 +991,17 @@ export default function ProductDetailPage() {
 
           {/* Similar Products */}
           {similarProducts.length > 0 && (
-            <div>
+            <div className="animate-slideInUp">
               <h3 className="text-lg font-semibold mb-4">O'xshash mahsulotlar</h3>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {similarProducts.map((similarProduct) => (
-                  <ProductCard
+                {similarProducts.map((similarProduct, index) => (
+                  <div
                     key={similarProduct.id}
-                    product={similarProduct}
-                    onQuickView={(id) => router.push(`/product/${id}`)}
-                  />
+                    className="animate-slideInUp"
+                    style={{ animationDelay: `${index * 100}ms` }}
+                  >
+                    <ProductCard product={similarProduct} onQuickView={(id) => router.push(`/product/${id}`)} />
+                  </div>
                 ))}
               </div>
             </div>
@@ -1000,7 +1010,7 @@ export default function ProductDetailPage() {
       </div>
 
       {/* Fixed Bottom Bar - Mobile Only - Responsive */}
-      <div className="fixed bottom-20 left-0 right-0 bg-background border-t border-border p-4 md:hidden z-30 safe-area-bottom">
+      <div className="fixed bottom-20 left-0 right-0 bg-background border-t border-border p-4 md:hidden z-30 safe-area-bottom animate-slideInUp">
         <div className="max-w-sm mx-auto">
           {/* Rental Duration Selector for Mobile */}
           {product.product_type === "rental" && (
@@ -1011,17 +1021,17 @@ export default function ProductDetailPage() {
                   <button
                     onClick={() => setRentalDuration(Math.max(product.rental_min_duration || 1, rentalDuration - 1))}
                     disabled={rentalDuration <= (product.rental_min_duration || 1)}
-                    className="w-8 h-8 bg-muted rounded-lg flex items-center justify-center disabled:opacity-50"
+                    className="w-8 h-8 bg-muted rounded-lg flex items-center justify-center disabled:opacity-50 hover:scale-110 transition-transform duration-300"
                   >
                     <Minus className="w-3 h-3" />
                   </button>
-                  <span className="text-sm font-semibold min-w-[4rem] text-center">
+                  <span className="text-sm font-semibold min-w-[4rem] text-center animate-countUp">
                     {rentalDuration} {getRentalTimeText(product.rental_time_unit)}
                   </span>
                   <button
                     onClick={() => setRentalDuration(Math.min(product.rental_max_duration || 365, rentalDuration + 1))}
                     disabled={rentalDuration >= (product.rental_max_duration || 365)}
-                    className="w-8 h-8 bg-muted rounded-lg flex items-center justify-center disabled:opacity-50"
+                    className="w-8 h-8 bg-muted rounded-lg flex items-center justify-center disabled:opacity-50 hover:scale-110 transition-transform duration-300"
                   >
                     <Plus className="w-3 h-3" />
                   </button>
@@ -1037,15 +1047,15 @@ export default function ProductDetailPage() {
               <button
                 onClick={() => setQuantity(Math.max(product.min_order_quantity, quantity - 1))}
                 disabled={quantity <= product.min_order_quantity}
-                className="w-10 h-10 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-colors disabled:opacity-50"
+                className="w-10 h-10 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-all duration-300 disabled:opacity-50 hover:scale-110"
               >
                 <Minus className="w-4 h-4" />
               </button>
-              <span className="text-lg font-semibold min-w-[3rem] text-center">{quantity}</span>
+              <span className="text-lg font-semibold min-w-[3rem] text-center animate-countUp">{quantity}</span>
               <button
                 onClick={() => setQuantity(Math.min(availableQuantity, quantity + 1))}
                 disabled={quantity >= availableQuantity}
-                className="w-10 h-10 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-colors disabled:opacity-50"
+                className="w-10 h-10 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-all duration-300 disabled:opacity-50 hover:scale-110"
               >
                 <Plus className="w-4 h-4" />
               </button>
@@ -1054,7 +1064,7 @@ export default function ProductDetailPage() {
             {/* Price and Add to Cart - Responsive */}
             <div className="flex-1 flex flex-col space-y-2">
               <div className="text-right">
-                <div className="text-lg font-bold">
+                <div className="text-lg font-bold animate-countUp">
                   {product.product_type === "rental"
                     ? formatPrice(calculateRentalTotal() + calculateRentalDeposit())
                     : formatPrice((variationPrice || product.price) * quantity)}{" "}
@@ -1064,12 +1074,12 @@ export default function ProductDetailPage() {
               <button
                 onClick={handleAddToCart}
                 disabled={isAddingToCart || quantity > availableQuantity}
-                className="w-full px-4 py-3 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all duration-300 disabled:opacity-50 flex items-center justify-center space-x-2 shadow-sm hover:shadow-md hover:scale-[1.02]"
+                className="w-full px-4 py-3 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all duration-300 disabled:opacity-50 flex items-center justify-center space-x-2 shadow-sm hover:shadow-md hover:scale-[1.02] transform"
               >
                 {isAddingToCart ? (
                   <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
                 ) : (
-                  <ShoppingCart className="w-4 h-4" />
+                  <ShoppingCart className="w-4 h-4 animate-bounce" />
                 )}
                 <span className="text-sm">
                   {isAddingToCart
@@ -1088,7 +1098,7 @@ export default function ProductDetailPage() {
       {showCartFab && (
         <button
           onClick={() => router.push("/cart")}
-          className="fixed bottom-32 right-4 w-14 h-14 bg-primary text-primary-foreground rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-all z-40 md:bottom-4 animate-fadeIn hover:scale-110"
+          className="fixed bottom-32 right-4 w-14 h-14 bg-primary text-primary-foreground rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-all z-40 md:bottom-4 animate-fadeIn hover:scale-110 transform duration-300"
         >
           <div className="relative">
             <ShoppingCart className="w-6 h-6" />
@@ -1102,6 +1112,77 @@ export default function ProductDetailPage() {
       )}
 
       <BottomNavigation />
+
+      <style jsx>{`
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        
+        @keyframes slideInUp {
+          from { 
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to { 
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        
+        @keyframes slideInDown {
+          from { 
+            opacity: 0;
+            transform: translateY(-20px);
+          }
+          to { 
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        
+        @keyframes scaleIn {
+          from { 
+            opacity: 0;
+            transform: scale(0);
+          }
+          to { 
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
+        
+        @keyframes countUp {
+          from { 
+            opacity: 0;
+            transform: scale(0.8);
+          }
+          to { 
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
+        
+        .animate-fadeIn {
+          animation: fadeIn 0.5s ease-out;
+        }
+        
+        .animate-slideInUp {
+          animation: slideInUp 0.6s ease-out;
+        }
+        
+        .animate-slideInDown {
+          animation: slideInDown 0.4s ease-out;
+        }
+        
+        .animate-scaleIn {
+          animation: scaleIn 0.3s ease-out;
+        }
+        
+        .animate-countUp {
+          animation: countUp 0.4s ease-out;
+        }
+      `}</style>
     </div>
   )
 }

@@ -164,28 +164,30 @@ export function TopBar() {
           </div>
         )}
 
-        {/* Main Header */}
-        <div className="container mx-auto px-4 py-4">
+        {/* Main Header - Smaller on mobile */}
+        <div className="container mx-auto px-4 py-2 md:py-4">
           <div className="flex items-center justify-between">
-            {/* Logo */}
+            {/* Logo - Smaller on mobile */}
             <button
               onClick={() => router.push("/")}
-              className="flex items-center space-x-3 hover:opacity-80 transition-opacity group"
+              className="flex items-center space-x-2 md:space-x-3 hover:opacity-80 transition-opacity group"
             >
               {companyInfo?.logo_url && (
                 <div className="relative">
                   <Image
                     src={companyInfo.logo_url || "/placeholder.svg"}
                     alt={companyInfo.name}
-                    width={40}
-                    height={40}
-                    className="w-10 h-10 rounded-lg group-hover:scale-105 transition-transform duration-200"
+                    width={32}
+                    height={32}
+                    className="w-8 h-8 md:w-10 md:h-10 rounded-lg group-hover:scale-105 transition-transform duration-200"
                   />
                   <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-transparent rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
                 </div>
               )}
               <div className="text-left">
-                <h1 className="text-xl font-bold text-gray-900 dark:text-white">{companyInfo?.name || "JamolStroy"}</h1>
+                <h1 className="text-lg md:text-xl font-bold text-gray-900 dark:text-white">
+                  {companyInfo?.name || "JamolStroy"}
+                </h1>
                 <p className="text-xs text-muted-foreground hidden sm:block">Qurilish materiallari</p>
               </div>
             </button>
@@ -207,14 +209,14 @@ export function TopBar() {
               </form>
             </div>
 
-            {/* Cart Button */}
+            {/* Cart Button - Smaller on mobile */}
             <button
               onClick={handleCartClick}
-              className="relative p-3 bg-gradient-to-r from-primary to-primary/90 text-primary-foreground rounded-lg hover:from-primary/90 hover:to-primary hover:shadow-lg hover:scale-105 transition-all duration-200 shadow-md group"
+              className="relative p-2 md:p-3 bg-gradient-to-r from-primary to-primary/90 text-primary-foreground rounded-lg hover:from-primary/90 hover:to-primary hover:shadow-lg hover:scale-105 transition-all duration-200 shadow-md group"
             >
-              <ShoppingCart className="w-5 h-5 group-hover:scale-110 transition-transform duration-200" />
+              <ShoppingCart className="w-4 h-4 md:w-5 md:h-5 group-hover:scale-110 transition-transform duration-200" />
               {totalItems > 0 && (
-                <span className="absolute -top-2 -right-2 bg-gradient-to-r from-red-500 to-red-600 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center animate-pulse shadow-lg">
+                <span className="absolute -top-1 -right-1 md:-top-2 md:-right-2 bg-gradient-to-r from-red-500 to-red-600 text-white text-xs font-bold rounded-full w-5 h-5 md:w-6 md:h-6 flex items-center justify-center animate-pulse shadow-lg">
                   {totalItems > 99 ? "99+" : totalItems}
                 </span>
               )}
@@ -222,17 +224,17 @@ export function TopBar() {
             </button>
           </div>
 
-          {/* Search Bar - Mobile */}
-          <div className="md:hidden mt-4">
+          {/* Search Bar - Mobile - Smaller */}
+          <div className="md:hidden mt-2">
             <form onSubmit={handleSearch}>
               <div className="relative group">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground group-focus-within:text-primary transition-colors duration-200" />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors duration-200" />
                 <input
                   type="text"
-                  placeholder="Mahsulotlarni qidiring..."
+                  placeholder="Qidirish..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 bg-gradient-to-r from-muted/50 to-muted/30 rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 focus:bg-background transition-all duration-200"
+                  className="w-full pl-9 pr-4 py-2 text-sm bg-gradient-to-r from-muted/50 to-muted/30 rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 focus:bg-background transition-all duration-200"
                 />
               </div>
             </form>

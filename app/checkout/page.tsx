@@ -27,7 +27,7 @@ interface CompanyInfo {
 export default function CheckoutPage() {
   const { user } = useAuth()
   const router = useRouter()
-  const { items, totalPrice, clearCart } = useCart()
+  const { items, totalPrice, setDeliveryFee, grandTotal, clearCart } = useCart()
 
   const [customerName, setCustomerName] = useState("")
   const [customerPhone, setCustomerPhone] = useState("")
@@ -41,7 +41,6 @@ export default function CheckoutPage() {
   const [showAddressForm, setShowAddressForm] = useState(false)
   const [newAddressName, setNewAddressName] = useState("")
   const [newAddress, setNewAddress] = useState("")
-  const [deliveryFee, setDeliveryFee] = useState(0)
   const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(null)
 
   // Foydalanuvchi ma'lumotlarini yuklash
@@ -212,7 +211,7 @@ export default function CheckoutPage() {
 
     try {
       const orderNumber = generateOrderNumber()
-      const finalDeliveryFee = deliveryWithService ? deliveryFee : null
+      const finalDeliveryFee = deliveryWithService ? setDeliveryFee : null
 
       // Buyurtmani yaratish
       const { data: order, error: orderError } = await supabase
@@ -260,8 +259,9 @@ export default function CheckoutPage() {
       // Savatni tozalash
       await clearCart()
 
-      // Muvaffaqiyat sahifasiga o'tish
-      router.push(`/order-success?order=${orderNumber}`)
+      // Show success message and redirect
+      alert("Sizga tez orada aloqaga chiqamiz!")
+      router.push("/orders")
     } catch (error) {
       console.error("Buyurtma berishda xatolik:", error)
       alert("Buyurtma berishda xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.")
@@ -291,8 +291,6 @@ export default function CheckoutPage() {
     router.push("/cart")
     return null
   }
-
-  const grandTotal = totalPrice + (deliveryWithService ? deliveryFee : 0)
 
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-4">
@@ -382,7 +380,7 @@ export default function CheckoutPage() {
                 value={customerPhone}
                 onChange={(e) => setCustomerPhone(e.target.value)}
                 className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
-                placeholder="+998 90 123 45 67"
+                placeholder={companyInfo?.phone_number || "+998 90 123 45 67"}
               />
             </div>
           </div>
@@ -511,7 +509,7 @@ export default function CheckoutPage() {
             />
             <label htmlFor="delivery-service" className="text-sm flex items-center">
               <Truck className="w-4 h-4 mr-2" />
-              Yetkazib berish xizmati {deliveryFee > 0 ? `(${formatPrice(deliveryFee)} so'm)` : "(Bepul)"}
+              Yetkazib berish xizmati {setDeliveryFee > 0 ? `(${formatPrice(setDeliveryFee)} so'm)` : "(Bepul)"}
             </label>
           </div>
 
@@ -546,7 +544,11 @@ export default function CheckoutPage() {
             <div className="flex justify-between">
               <span className="text-body">Yetkazib berish:</span>
               <span className="text-body font-medium">
-                {deliveryWithService ? (deliveryFee > 0 ? formatPrice(deliveryFee) + " so'm" : "Bepul") : "0 so'm"}
+                {deliveryWithService
+                  ? setDeliveryFee > 0
+                    ? formatPrice(setDeliveryFee) + " so'm"
+                    : "Bepul"
+                  : "0 so'm"}
               </span>
             </div>
 

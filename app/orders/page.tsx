@@ -7,7 +7,7 @@ import { useTelegram } from "@/contexts/TelegramContext"
 import { supabase } from "@/lib/supabase"
 import { BottomNavigation } from "@/components/layout/bottom-navigation"
 import { TopBar } from "@/components/layout/top-bar"
-import { Package, Clock, CheckCircle, Truck, XCircle, Eye, Phone, MapPin, ShoppingBag } from 'lucide-react'
+import { Package, Clock, CheckCircle, Truck, XCircle, Eye, Phone, MapPin, ShoppingBag } from "lucide-react"
 import Image from "next/image"
 
 interface OrderItem {
@@ -15,6 +15,9 @@ interface OrderItem {
   quantity: number
   unit_price: number
   total_price: number
+  variations?: any
+  rental_duration?: number
+  rental_time_unit?: string
   product: {
     id: string
     name_uz: string
@@ -32,12 +35,16 @@ interface Order {
   delivery_with_service: boolean
   status: string
   subtotal: number
-  delivery_fee: number
+  delivery_fee: number | null
   total_amount: number
   notes?: string
   created_at: string
   updated_at: string
   order_items: OrderItem[]
+}
+
+interface CompanyInfo {
+  phone_number: string
 }
 
 const statusConfig = {
@@ -93,6 +100,7 @@ export default function OrdersPage() {
   const [loadingOrders, setLoadingOrders] = useState(true)
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [showOrderDetail, setShowOrderDetail] = useState(false)
+  const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(null)
 
   useEffect(() => {
     if (!loading) {
@@ -103,8 +111,20 @@ export default function OrdersPage() {
         return
       }
       fetchOrders()
+      fetchCompanyInfo()
     }
   }, [user, loading, router, isTelegramWebApp])
+
+  const fetchCompanyInfo = async () => {
+    try {
+      const { data, error } = await supabase.from("company").select("phone_number").eq("is_active", true).single()
+
+      if (error) throw error
+      setCompanyInfo(data)
+    } catch (error) {
+      console.error("Company info error:", error)
+    }
+  }
 
   const fetchOrders = async () => {
     if (!user) return
@@ -156,7 +176,8 @@ export default function OrdersPage() {
   }
 
   const handleCallSupport = () => {
-    window.open("tel:+998901234567")
+    const phoneNumber = companyInfo?.phone_number || "+998901234567"
+    window.open(`tel:${phoneNumber}`)
   }
 
   if (loading || loadingOrders) {
@@ -200,12 +221,22 @@ export default function OrdersPage() {
     <div className="min-h-screen bg-background pb-20 md:pb-4">
       <TopBar />
 
-      {/* Header */}
+      {/* Header with Badge */}
       <div className="container mx-auto px-4 py-6 border-b border-border">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">Buyurtmalarim</h1>
-            <p className="text-muted-foreground">{orders.length} ta buyurtma</p>
+          <div className="flex items-center space-x-3">
+            <div className="relative">
+              <Package className="w-8 h-8 text-primary" />
+              {orders.length > 0 && (
+                <span className="absolute -top-2 -right-2 bg-primary text-primary-foreground text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                  {orders.length > 99 ? "99+" : orders.length}
+                </span>
+              )}
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold">Buyurtmalarim</h1>
+              <p className="text-muted-foreground">{orders.length} ta buyurtma</p>
+            </div>
           </div>
           <button
             onClick={handleCallSupport}
@@ -284,6 +315,14 @@ export default function OrdersPage() {
                             <p className="text-xs text-muted-foreground">
                               {item.quantity} {item.product.unit}
                             </p>
+                            {/* Show variations if available */}
+                            {item.variations && (
+                              <p className="text-xs text-blue-600">
+                                {JSON.parse(item.variations)
+                                  .map((v: any) => v.name)
+                                  .join(", ")}
+                              </p>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -388,6 +427,21 @@ export default function OrdersPage() {
                           </span>
                           <span className="font-semibold">{formatPrice(item.total_price)} so'm</span>
                         </div>
+                        {/* Show variations if available */}
+                        {item.variations && (
+                          <div className="mt-1 text-sm text-blue-600">
+                            Turlar:{" "}
+                            {JSON.parse(item.variations)
+                              .map((v: any) => v.name)
+                              .join(", ")}
+                          </div>
+                        )}
+                        {/* Show rental info if available */}
+                        {item.rental_duration && (
+                          <div className="mt-1 text-sm text-purple-600">
+                            Ijara: {item.rental_duration} {item.rental_time_unit}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -443,7 +497,9 @@ export default function OrdersPage() {
                   <div className="flex justify-between">
                     <span>Yetkazib berish:</span>
                     <span>
-                      {selectedOrder.delivery_fee === 0 ? "Tekin" : formatPrice(selectedOrder.delivery_fee) + " so'm"}
+                      {selectedOrder.delivery_fee === null || selectedOrder.delivery_fee === 0
+                        ? "Tekin"
+                        : formatPrice(selectedOrder.delivery_fee) + " so'm"}
                     </span>
                   </div>
                   <div className="border-t border-border pt-3">
