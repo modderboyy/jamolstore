@@ -21,15 +21,26 @@ import {
   Clock,
   Calendar,
   Info,
+  Check,
+  Send,
 } from "lucide-react"
 import Image from "next/image"
+
+interface ProductSpecification {
+  name: string
+  value: string
+  price?: number
+}
+
+interface ProductVariation {
+  type: string
+  options: ProductSpecification[]
+}
 
 interface Product {
   id: string
   name_uz: string
-  name_ru: string
   description_uz: string
-  description_ru: string
   price: number
   unit: string
   product_type: "sale" | "rental"
@@ -43,13 +54,17 @@ interface Product {
   min_order_quantity: number
   delivery_limit: number
   delivery_price: number
+  has_delivery: boolean
   is_available: boolean
   is_featured: boolean
   is_popular: boolean
   view_count: number
+  specifications: Record<string, any> | null
   category: {
     name_uz: string
   }
+  average_rating?: number
+  review_count?: number
 }
 
 interface Review {
@@ -78,6 +93,14 @@ export default function ProductDetailPage() {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
   const [isAddingToCart, setIsAddingToCart] = useState(false)
   const [showCartFab, setShowCartFab] = useState(false)
+  const [variations, setVariations] = useState<ProductVariation[]>([])
+  const [selectedVariations, setSelectedVariations] = useState<Record<string, ProductSpecification>>({})
+  const [availableQuantity, setAvailableQuantity] = useState(0)
+  const [canReview, setCanReview] = useState(false)
+  const [showReviewForm, setShowReviewForm] = useState(false)
+  const [reviewRating, setReviewRating] = useState(5)
+  const [reviewComment, setReviewComment] = useState("")
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false)
 
   useEffect(() => {
     if (params.id) {
@@ -88,6 +111,12 @@ export default function ProductDetailPage() {
   useEffect(() => {
     setShowCartFab(totalItems > 0)
   }, [totalItems])
+
+  useEffect(() => {
+    if (product && user) {
+      checkIfCanReview()
+    }
+  }, [product, user])
 
   const fetchProduct = async (productId: string) => {
     try {
@@ -107,10 +136,19 @@ export default function ProductDetailPage() {
       setQuantity(data.min_order_quantity || 1)
       setRentalDuration(data.rental_min_duration || 1)
 
+      // Calculate available quantity
+      const availableQty = await calculateAvailableQuantity(data.id, data.stock_quantity)
+      setAvailableQuantity(availableQty)
+
+      // Parse specifications if available
+      if (data.specifications) {
+        parseSpecifications(data.specifications)
+      }
+
       // Fetch similar products
       fetchSimilarProducts(data.category_id, productId)
 
-      // Fetch real reviews from completed orders
+      // Fetch product reviews
       fetchProductReviews(productId)
 
       // Update view count
@@ -123,6 +161,68 @@ export default function ProductDetailPage() {
       router.push("/catalog")
     } finally {
       setLoading(false)
+    }
+  }
+
+  const parseSpecifications = (specs: Record<string, any>) => {
+    const parsedVariations: ProductVariation[] = []
+
+    // Group specifications by type
+    Object.entries(specs).forEach(([key, value]) => {
+      if (Array.isArray(value)) {
+        parsedVariations.push({
+          type: key,
+          options: value.map((option: any) => {
+            if (typeof option === "object") {
+              return {
+                name: option.name || option.value || "",
+                value: option.value || option.name || "",
+                price: option.price || null,
+              }
+            } else {
+              return {
+                name: option.toString(),
+                value: option.toString(),
+                price: null,
+              }
+            }
+          }),
+        })
+      }
+    })
+
+    setVariations(parsedVariations)
+
+    // Set default selected variations
+    const defaultSelected: Record<string, ProductSpecification> = {}
+    parsedVariations.forEach((variation) => {
+      if (variation.options.length > 0) {
+        defaultSelected[variation.type] = variation.options[0]
+      }
+    })
+
+    setSelectedVariations(defaultSelected)
+  }
+
+  const calculateAvailableQuantity = async (productId: string, stockQuantity: number) => {
+    try {
+      // Calculate sold quantity from confirmed orders
+      const { data: soldData, error: soldError } = await supabase
+        .from("order_items")
+        .select(`
+          quantity,
+          orders!inner(status)
+        `)
+        .eq("product_id", productId)
+        .in("orders.status", ["confirmed", "processing", "shipped"])
+
+      if (soldError) throw soldError
+
+      const soldQuantity = (soldData || []).reduce((sum, item) => sum + item.quantity, 0)
+      return Math.max(0, stockQuantity - soldQuantity)
+    } catch (error) {
+      console.error("Available quantity calculation error:", error)
+      return stockQuantity
     }
   }
 
@@ -141,13 +241,7 @@ export default function ProductDetailPage() {
 
       if (error) throw error
 
-      const productsWithRatings = (data || []).map((product) => ({
-        ...product,
-        rating: 4.0 + Math.random() * 1.0,
-        review_count: Math.floor(Math.random() * 100) + 1,
-      }))
-
-      setSimilarProducts(productsWithRatings)
+      setSimilarProducts(data || [])
     } catch (error) {
       console.error("O'xshash mahsulotlarni yuklashda xatolik:", error)
     }
@@ -155,58 +249,82 @@ export default function ProductDetailPage() {
 
   const fetchProductReviews = async (productId: string) => {
     try {
-      // Fetch real reviews from the reviews table
+      // Fetch reviews from the product_reviews table
       const { data, error } = await supabase
-        .from("reviews")
+        .from("product_reviews")
         .select(`
-        id,
-        rating,
-        comment,
-        created_at,
-        customer:customers(
-          first_name,
-          last_name
-        )
-      `)
+          id,
+          rating,
+          comment,
+          created_at,
+          reviewer:customer_id(
+            first_name,
+            last_name
+          )
+        `)
         .eq("product_id", productId)
-        .eq("is_verified", true)
         .order("created_at", { ascending: false })
         .limit(10)
 
       if (error) throw error
 
       // Convert to review format
-      const realReviews: Review[] = (data || []).map((review) => ({
+      const formattedReviews: Review[] = (data || []).map((review) => ({
         id: review.id,
         rating: review.rating,
         comment: review.comment || "Yaxshi mahsulot!",
         created_at: review.created_at,
         reviewer: {
-          first_name: review.customer?.first_name || "Mijoz",
-          last_name: review.customer?.last_name || "",
+          first_name: review.reviewer?.first_name || "Mijoz",
+          last_name: review.reviewer?.last_name || "",
         },
       }))
 
-      setReviews(realReviews)
+      setReviews(formattedReviews)
     } catch (error) {
       console.error("Sharhlarni yuklashda xatolik:", error)
-      // Fallback to mock reviews if no real reviews found
-      setReviews([
-        {
-          id: "1",
-          rating: 5,
-          comment: "Juda sifatli mahsulot, tavsiya qilaman!",
-          created_at: "2024-01-15",
-          reviewer: { first_name: "Aziz", last_name: "Karimov" },
-        },
-        {
-          id: "2",
-          rating: 4,
-          comment: "Yaxshi mahsulot, tez yetkazib berishdi.",
-          created_at: "2024-01-10",
-          reviewer: { first_name: "Malika", last_name: "Tosheva" },
-        },
-      ])
+      setReviews([])
+    }
+  }
+
+  const checkIfCanReview = async () => {
+    if (!user || !product) return
+
+    try {
+      // Check if user has confirmed orders with this product
+      const { data: orderItems, error: orderError } = await supabase
+        .from("order_items")
+        .select(`
+          id,
+          orders!inner(id, status, customer_id)
+        `)
+        .eq("product_id", product.id)
+        .eq("orders.customer_id", user.id)
+        .eq("orders.status", "confirmed")
+
+      if (orderError) throw orderError
+
+      if (orderItems && orderItems.length > 0) {
+        // Check if user already reviewed this product
+        const { data: existingReview, error: reviewError } = await supabase
+          .from("product_reviews")
+          .select("id")
+          .eq("product_id", product.id)
+          .eq("customer_id", user.id)
+          .single()
+
+        if (reviewError && reviewError.code !== "PGRST116") {
+          throw reviewError
+        }
+
+        // Can review if no existing review
+        setCanReview(!existingReview)
+      } else {
+        setCanReview(false)
+      }
+    } catch (error) {
+      console.error("Review check error:", error)
+      setCanReview(false)
     }
   }
 
@@ -220,13 +338,24 @@ export default function ProductDetailPage() {
 
     setIsAddingToCart(true)
     try {
+      // Prepare variation data
+      const variationData = Object.entries(selectedVariations).map(([type, spec]) => ({
+        type,
+        name: spec.name,
+        value: spec.value,
+        price: spec.price,
+      }))
+
       if (product.product_type === "rental") {
         await addToCart(product.id, quantity, {
           rental_duration: rentalDuration,
           rental_time_unit: product.rental_time_unit,
+          variations: variationData,
         })
       } else {
-        await addToCart(product.id, quantity)
+        await addToCart(product.id, quantity, {
+          variations: variationData,
+        })
       }
 
       if (window.Telegram?.WebApp) {
@@ -240,6 +369,76 @@ export default function ProductDetailPage() {
     } finally {
       setIsAddingToCart(false)
     }
+  }
+
+  const handleSelectVariation = (type: string, option: ProductSpecification) => {
+    setSelectedVariations((prev) => ({
+      ...prev,
+      [type]: option,
+    }))
+  }
+
+  const handleSubmitReview = async () => {
+    if (!user || !product || reviewRating < 1 || reviewRating > 5) return
+
+    setIsSubmittingReview(true)
+    try {
+      // Get the order ID
+      const { data: orderItems, error: orderError } = await supabase
+        .from("order_items")
+        .select(`
+          orders!inner(id, status, customer_id)
+        `)
+        .eq("product_id", product.id)
+        .eq("orders.customer_id", user.id)
+        .eq("orders.status", "confirmed")
+        .limit(1)
+
+      if (orderError) throw orderError
+      if (!orderItems || orderItems.length === 0) throw new Error("No confirmed orders found")
+
+      const orderId = orderItems[0].orders.id
+
+      // Submit review
+      const { error: reviewError } = await supabase.from("product_reviews").insert({
+        product_id: product.id,
+        customer_id: user.id,
+        order_id: orderId,
+        rating: reviewRating,
+        comment: reviewComment.trim() || null,
+      })
+
+      if (reviewError) throw reviewError
+
+      // Refresh reviews and update can review status
+      fetchProductReviews(product.id)
+      setCanReview(false)
+      setShowReviewForm(false)
+      setReviewComment("")
+      setReviewRating(5)
+
+      alert("Sharhingiz uchun rahmat!")
+    } catch (error) {
+      console.error("Review submission error:", error)
+      alert("Sharh yuborishda xatolik yuz berdi")
+    } finally {
+      setIsSubmittingReview(false)
+    }
+  }
+
+  const calculateVariationPrice = () => {
+    if (!product) return 0
+
+    let basePrice = product.price
+
+    // Add variation price adjustments
+    Object.values(selectedVariations).forEach((variation) => {
+      if (variation.price !== null && variation.price !== undefined) {
+        basePrice = variation.price
+      }
+    })
+
+    return basePrice
   }
 
   const formatPrice = (price: number) => {
@@ -278,7 +477,17 @@ export default function ProductDetailPage() {
     if (!product || product.product_type !== "rental" || !product.rental_price_per_unit) {
       return 0
     }
-    return product.rental_price_per_unit * rentalDuration * quantity
+
+    let basePrice = product.rental_price_per_unit
+
+    // Add variation price adjustments
+    Object.values(selectedVariations).forEach((variation) => {
+      if (variation.price !== null && variation.price !== undefined) {
+        basePrice = variation.price
+      }
+    })
+
+    return basePrice * rentalDuration * quantity
   }
 
   const calculateRentalDeposit = () => {
@@ -312,6 +521,18 @@ export default function ProductDetailPage() {
     return stars
   }
 
+  const renderRatingInput = () => {
+    return (
+      <div className="flex items-center space-x-1">
+        {[1, 2, 3, 4, 5].map((star) => (
+          <button key={star} type="button" onClick={() => setReviewRating(star)} className="focus:outline-none">
+            <Star className={`w-6 h-6 ${star <= reviewRating ? "fill-yellow-400 text-yellow-400" : "text-gray-300"}`} />
+          </button>
+        ))}
+      </div>
+    )
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background">
@@ -340,6 +561,8 @@ export default function ProductDetailPage() {
       </div>
     )
   }
+
+  const variationPrice = calculateVariationPrice()
 
   return (
     <div className="min-h-screen bg-background pb-32 md:pb-4">
@@ -377,7 +600,7 @@ export default function ProductDetailPage() {
                 alt={product.name_uz}
                 width={500}
                 height={500}
-                className="w-full h-full object-cover"
+                className="w-full h-full object-cover animate-fadeIn"
                 priority
               />
             ) : (
@@ -394,8 +617,10 @@ export default function ProductDetailPage() {
                 <button
                   key={index}
                   onClick={() => setSelectedImageIndex(index)}
-                  className={`w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 border-2 transition-colors ${
-                    selectedImageIndex === index ? "border-primary" : "border-transparent"
+                  className={`w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 border-2 transition-all duration-300 ${
+                    selectedImageIndex === index
+                      ? "border-primary scale-105 shadow-md"
+                      : "border-transparent hover:border-primary/50"
                   }`}
                 >
                   <Image
@@ -428,7 +653,7 @@ export default function ProductDetailPage() {
               <div className="mb-4">
                 <div className="flex items-baseline space-x-2 mb-2">
                   <span className="text-3xl font-bold text-blue-600">
-                    {formatPrice(product.rental_price_per_unit)} so'm
+                    {formatPrice(variationPrice || product.rental_price_per_unit)} so'm
                   </span>
                   <span className="text-muted-foreground">
                     /{getRentalTimeText(product.rental_time_unit)} • {product.unit}
@@ -442,7 +667,7 @@ export default function ProductDetailPage() {
               </div>
             ) : (
               <div className="flex items-baseline space-x-2 mb-4">
-                <span className="text-3xl font-bold">{formatPrice(product.price)} so'm</span>
+                <span className="text-3xl font-bold">{formatPrice(variationPrice || product.price)} so'm</span>
                 <span className="text-muted-foreground">/{product.unit}</span>
               </div>
             )}
@@ -452,12 +677,49 @@ export default function ProductDetailPage() {
             )}
           </div>
 
+          {/* Product Variations */}
+          {variations.length > 0 && (
+            <div className="bg-card rounded-xl border border-border p-6 animate-fadeIn">
+              <h3 className="text-lg font-semibold mb-4">Mahsulot turlari</h3>
+              <div className="space-y-4">
+                {variations.map((variation) => (
+                  <div key={variation.type}>
+                    <h4 className="font-medium mb-2 capitalize">{variation.type}</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {variation.options.map((option) => (
+                        <button
+                          key={option.value}
+                          onClick={() => handleSelectVariation(variation.type, option)}
+                          className={`px-3 py-2 rounded-lg border transition-all ${
+                            selectedVariations[variation.type]?.value === option.value
+                              ? "border-primary bg-primary/10 text-primary font-medium"
+                              : "border-border bg-muted hover:border-primary/50"
+                          }`}
+                        >
+                          <div className="flex items-center space-x-2">
+                            {selectedVariations[variation.type]?.value === option.value && (
+                              <Check className="w-4 h-4" />
+                            )}
+                            <span>{option.name}</span>
+                          </div>
+                          {option.price !== null && option.price !== undefined && (
+                            <div className="text-xs mt-1 font-medium">{formatPrice(option.price)} so'm</div>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Stock and Minimum Order */}
           <div className="grid grid-cols-2 gap-4">
             <div className="bg-muted/50 rounded-xl p-4">
               <h4 className="text-sm text-muted-foreground mb-1">Omborda</h4>
               <p className="font-semibold">
-                {product.stock_quantity} {product.unit}
+                {availableQuantity} {product.unit}
               </p>
             </div>
             <div className="bg-muted/50 rounded-xl p-4">
@@ -538,8 +800,8 @@ export default function ProductDetailPage() {
               </button>
               <span className="text-2xl font-semibold min-w-[4rem] text-center">{quantity}</span>
               <button
-                onClick={() => setQuantity(Math.min(product.stock_quantity, quantity + 1))}
-                disabled={quantity >= product.stock_quantity}
+                onClick={() => setQuantity(Math.min(availableQuantity, quantity + 1))}
+                disabled={quantity >= availableQuantity}
                 className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-colors disabled:opacity-50"
               >
                 <Plus className="w-5 h-5" />
@@ -551,15 +813,15 @@ export default function ProductDetailPage() {
               <span className="text-2xl font-bold text-primary">
                 {product.product_type === "rental"
                   ? formatPrice(calculateRentalTotal() + calculateRentalDeposit())
-                  : formatPrice(product.price * quantity)}{" "}
+                  : formatPrice((variationPrice || product.price) * quantity)}{" "}
                 so'm
               </span>
             </div>
 
             <button
               onClick={handleAddToCart}
-              disabled={isAddingToCart || quantity > product.stock_quantity}
-              className="w-full px-6 py-4 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2 shadow-sm"
+              disabled={isAddingToCart || quantity > availableQuantity}
+              className="w-full px-6 py-4 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all duration-300 disabled:opacity-50 flex items-center justify-center space-x-2 shadow-sm hover:shadow-lg hover:scale-[1.02]"
             >
               {isAddingToCart ? (
                 <div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
@@ -583,20 +845,28 @@ export default function ProductDetailPage() {
               {product.product_type === "rental" ? "Yetkazib berish va qaytarish" : "Yetkazib berish"}
             </h4>
             <div className="space-y-2">
-              {product.delivery_limit > 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  <span className="font-medium text-green-600">
-                    {formatPrice(product.delivery_limit)} so'mdan yuqori buyurtmalarda tekin
-                  </span>
-                </p>
+              {product.has_delivery ? (
+                <>
+                  {product.delivery_limit > 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      <span className="font-medium text-green-600">
+                        {formatPrice(product.delivery_limit)} so'mdan yuqori buyurtmalarda tekin
+                      </span>
+                    </p>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Yetkazib berish: <span className="font-medium">{formatPrice(product.delivery_price)} so'm</span>
+                    </p>
+                  )}
+                  <p className="text-sm text-muted-foreground">
+                    Taxminiy yetkazib berish vaqti: {product.product_type === "rental" ? "2-4 soat" : "1-3 ish kuni"}
+                  </p>
+                </>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  Yetkazib berish: <span className="font-medium">{formatPrice(product.delivery_price)} so'm</span>
+                  <span className="font-medium text-orange-600">Bu mahsulot uchun yetkazib berish mavjud emas</span>
                 </p>
               )}
-              <p className="text-sm text-muted-foreground">
-                Taxminiy yetkazib berish vaqti: {product.product_type === "rental" ? "2-4 soat" : "1-3 ish kuni"}
-              </p>
               {product.product_type === "rental" && (
                 <p className="text-sm text-muted-foreground">
                   Qaytarish: Ijara muddati tugagach, mahsulotni qaytarib berish kerak
@@ -618,13 +888,68 @@ export default function ProductDetailPage() {
           </div>
 
           {/* Reviews Section */}
-          {reviews.length > 0 && (
-            <div className="bg-card rounded-xl border border-border p-6">
-              <h3 className="text-lg font-semibold mb-4 flex items-center">
+          <div className="bg-card rounded-xl border border-border p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold flex items-center">
                 <MessageCircle className="w-5 h-5 mr-2" />
                 Mijozlar sharhlari ({reviews.length})
               </h3>
 
+              {canReview && !showReviewForm && (
+                <button
+                  onClick={() => setShowReviewForm(true)}
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors flex items-center space-x-2"
+                >
+                  <Star className="w-4 h-4" />
+                  <span>Sharh qoldirish</span>
+                </button>
+              )}
+            </div>
+
+            {/* Review Form */}
+            {showReviewForm && (
+              <div className="bg-muted/30 rounded-lg p-4 mb-6 animate-fadeIn">
+                <h4 className="font-medium mb-3">Mahsulot haqida fikringizni qoldiring</h4>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm mb-2">Baholash</label>
+                    {renderRatingInput()}
+                  </div>
+                  <div>
+                    <label className="block text-sm mb-2">Izoh (ixtiyoriy)</label>
+                    <textarea
+                      value={reviewComment}
+                      onChange={(e) => setReviewComment(e.target.value)}
+                      className="w-full px-3 py-2 bg-background rounded-lg border border-border focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all"
+                      rows={3}
+                      placeholder="Mahsulot haqida fikringiz..."
+                    />
+                  </div>
+                  <div className="flex space-x-3">
+                    <button
+                      onClick={() => setShowReviewForm(false)}
+                      className="px-4 py-2 bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition-colors"
+                    >
+                      Bekor qilish
+                    </button>
+                    <button
+                      onClick={handleSubmitReview}
+                      disabled={isSubmittingReview}
+                      className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors flex items-center space-x-2"
+                    >
+                      {isSubmittingReview ? (
+                        <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                      ) : (
+                        <Send className="w-4 h-4" />
+                      )}
+                      <span>Yuborish</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {reviews.length > 0 ? (
               <div className="space-y-4">
                 {reviews.map((review) => (
                   <div key={review.id} className="border-b border-border pb-4 last:border-b-0 last:pb-0">
@@ -648,8 +973,13 @@ export default function ProductDetailPage() {
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="text-center py-6 text-muted-foreground">
+                <MessageCircle className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                <p>Bu mahsulot haqida hali sharhlar yo'q</p>
+              </div>
+            )}
+          </div>
 
           {/* Similar Products */}
           {similarProducts.length > 0 && (
@@ -713,8 +1043,8 @@ export default function ProductDetailPage() {
               </button>
               <span className="text-lg font-semibold min-w-[3rem] text-center">{quantity}</span>
               <button
-                onClick={() => setQuantity(Math.min(product.stock_quantity, quantity + 1))}
-                disabled={quantity >= product.stock_quantity}
+                onClick={() => setQuantity(Math.min(availableQuantity, quantity + 1))}
+                disabled={quantity >= availableQuantity}
                 className="w-10 h-10 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-colors disabled:opacity-50"
               >
                 <Plus className="w-4 h-4" />
@@ -727,14 +1057,14 @@ export default function ProductDetailPage() {
                 <div className="text-lg font-bold">
                   {product.product_type === "rental"
                     ? formatPrice(calculateRentalTotal() + calculateRentalDeposit())
-                    : formatPrice(product.price * quantity)}{" "}
+                    : formatPrice((variationPrice || product.price) * quantity)}{" "}
                   so'm
                 </div>
               </div>
               <button
                 onClick={handleAddToCart}
-                disabled={isAddingToCart || quantity > product.stock_quantity}
-                className="w-full px-4 py-3 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2 shadow-sm"
+                disabled={isAddingToCart || quantity > availableQuantity}
+                className="w-full px-4 py-3 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all duration-300 disabled:opacity-50 flex items-center justify-center space-x-2 shadow-sm hover:shadow-md hover:scale-[1.02]"
               >
                 {isAddingToCart ? (
                   <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
@@ -758,12 +1088,12 @@ export default function ProductDetailPage() {
       {showCartFab && (
         <button
           onClick={() => router.push("/cart")}
-          className="fixed bottom-32 right-4 w-14 h-14 bg-primary text-primary-foreground rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-all z-40 md:bottom-4"
+          className="fixed bottom-32 right-4 w-14 h-14 bg-primary text-primary-foreground rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-all z-40 md:bottom-4 animate-fadeIn hover:scale-110"
         >
           <div className="relative">
             <ShoppingCart className="w-6 h-6" />
             {totalItems > 0 && (
-              <span className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
+              <span className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center animate-pulse">
                 {totalItems}
               </span>
             )}

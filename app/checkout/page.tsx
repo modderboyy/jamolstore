@@ -7,13 +7,27 @@ import { useCart } from "@/contexts/CartContext"
 import { supabase } from "@/lib/supabase"
 import { TopBar } from "@/components/layout/top-bar"
 import { BottomNavigation } from "@/components/layout/bottom-navigation"
-import { ArrowLeft, MapPin, User, Truck } from "lucide-react"
+import { ArrowLeft, MapPin, User, Truck, Plus, Check, Home } from "lucide-react"
 import Image from "next/image"
+
+interface Address {
+  id: string
+  name: string
+  address: string
+  city?: string
+  region?: string
+  postal_code?: string
+  is_default: boolean
+}
+
+interface CompanyInfo {
+  phone_number: string
+}
 
 export default function CheckoutPage() {
   const { user } = useAuth()
   const router = useRouter()
-  const { items, totalPrice, deliveryFee, grandTotal, clearCart } = useCart()
+  const { items, totalPrice, clearCart } = useCart()
 
   const [customerName, setCustomerName] = useState("")
   const [customerPhone, setCustomerPhone] = useState("")
@@ -22,15 +36,44 @@ export default function CheckoutPage() {
   const [notes, setNotes] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const [addresses, setAddresses] = useState<Address[]>([])
+  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null)
+  const [showAddressForm, setShowAddressForm] = useState(false)
+  const [newAddressName, setNewAddressName] = useState("")
+  const [newAddress, setNewAddress] = useState("")
+  const [deliveryFee, setDeliveryFee] = useState(0)
+  const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(null)
 
   // Foydalanuvchi ma'lumotlarini yuklash
   useEffect(() => {
     if (user) {
       fetchUserData()
+      fetchAddresses()
+      fetchCompanyInfo()
     } else {
       setIsLoading(false)
     }
   }, [user])
+
+  // Calculate delivery fee based on products
+  useEffect(() => {
+    if (items.length > 0 && deliveryWithService) {
+      calculateDeliveryFee()
+    } else {
+      setDeliveryFee(0)
+    }
+  }, [items, deliveryWithService])
+
+  const fetchCompanyInfo = async () => {
+    try {
+      const { data, error } = await supabase.from("company").select("phone_number").eq("is_active", true).single()
+
+      if (error) throw error
+      setCompanyInfo(data)
+    } catch (error) {
+      console.error("Company info error:", error)
+    }
+  }
 
   const fetchUserData = async () => {
     if (!user) return
@@ -53,12 +96,108 @@ export default function CheckoutPage() {
     }
   }
 
+  const fetchAddresses = async () => {
+    if (!user) return
+
+    try {
+      const { data, error } = await supabase
+        .from("addresses")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("is_default", { ascending: false })
+
+      if (error) throw error
+
+      setAddresses(data || [])
+
+      // Select default address if available
+      const defaultAddress = data?.find((addr) => addr.is_default)
+      if (defaultAddress) {
+        setSelectedAddressId(defaultAddress.id)
+        setDeliveryAddress(defaultAddress.address)
+      }
+    } catch (error) {
+      console.error("Addresses error:", error)
+    }
+  }
+
+  const calculateDeliveryFee = () => {
+    let maxDeliveryFee = 0
+    let hasDeliveryLimit = false
+    let totalWithDeliveryLimit = 0
+
+    // Find the highest delivery fee among all products
+    for (const item of items) {
+      if (item.product.has_delivery) {
+        if (item.product.delivery_price > maxDeliveryFee) {
+          maxDeliveryFee = item.product.delivery_price
+        }
+
+        // Check if any product has delivery limit
+        if (item.product.delivery_limit > 0) {
+          hasDeliveryLimit = true
+          totalWithDeliveryLimit += item.product.price * item.quantity
+        }
+      }
+    }
+
+    // If total price exceeds delivery limit, delivery is free
+    if (hasDeliveryLimit && totalWithDeliveryLimit >= items[0].product.delivery_limit) {
+      setDeliveryFee(0)
+    } else {
+      setDeliveryFee(maxDeliveryFee)
+    }
+  }
+
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat("uz-UZ").format(price)
   }
 
   const generateOrderNumber = () => {
     return `JM${Date.now().toString().slice(-8)}`
+  }
+
+  const handleAddressSelect = (addressId: string) => {
+    setSelectedAddressId(addressId)
+    const selected = addresses.find((addr) => addr.id === addressId)
+    if (selected) {
+      setDeliveryAddress(selected.address)
+    }
+  }
+
+  const handleAddNewAddress = async () => {
+    if (!user || !newAddressName.trim() || !newAddress.trim()) {
+      alert("Iltimos, barcha maydonlarni to'ldiring")
+      return
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("addresses")
+        .insert({
+          user_id: user.id,
+          name: newAddressName.trim(),
+          address: newAddress.trim(),
+          is_default: addresses.length === 0, // First address is default
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+
+      // Refresh addresses and select the new one
+      fetchAddresses()
+      setSelectedAddressId(data.id)
+      setDeliveryAddress(data.address)
+
+      // Reset form
+      setNewAddressName("")
+      setNewAddress("")
+      setShowAddressForm(false)
+    } catch (error) {
+      console.error("Address creation error:", error)
+      alert("Manzil qo'shishda xatolik yuz berdi")
+    }
   }
 
   const handleSubmitOrder = async () => {
@@ -73,7 +212,7 @@ export default function CheckoutPage() {
 
     try {
       const orderNumber = generateOrderNumber()
-      const finalDeliveryFee = deliveryWithService ? deliveryFee : 0
+      const finalDeliveryFee = deliveryWithService ? deliveryFee : null
 
       // Buyurtmani yaratish
       const { data: order, error: orderError } = await supabase
@@ -84,10 +223,11 @@ export default function CheckoutPage() {
           customer_name: customerName.trim(),
           customer_phone: customerPhone.trim(),
           delivery_address: deliveryAddress.trim(),
+          address_id: selectedAddressId,
           delivery_with_service: deliveryWithService,
           subtotal: totalPrice,
           delivery_fee: finalDeliveryFee,
-          total_amount: totalPrice + finalDeliveryFee,
+          total_amount: totalPrice + (finalDeliveryFee || 0),
           notes: notes.trim() || null,
           status: "pending",
         })
@@ -97,13 +237,21 @@ export default function CheckoutPage() {
       if (orderError) throw orderError
 
       // Buyurtma elementlarini yaratish
-      const orderItems = items.map((item) => ({
-        order_id: order.id,
-        product_id: item.product_id,
-        quantity: item.quantity,
-        unit_price: item.product.price,
-        total_price: item.product.price * item.quantity,
-      }))
+      const orderItems = items.map((item) => {
+        // Extract variation data if available
+        const variations = item.variations ? JSON.stringify(item.variations) : null
+
+        return {
+          order_id: order.id,
+          product_id: item.product_id,
+          quantity: item.quantity,
+          unit_price: item.product.price,
+          total_price: item.product.price * item.quantity,
+          variations: variations,
+          rental_duration: item.rental_duration,
+          rental_time_unit: item.rental_time_unit,
+        }
+      })
 
       const { error: itemsError } = await supabase.from("order_items").insert(orderItems)
 
@@ -127,7 +275,7 @@ export default function CheckoutPage() {
       <div className="min-h-screen bg-background pb-20 md:pb-4">
         <TopBar />
         <div className="flex items-center justify-center py-20">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
         </div>
         <BottomNavigation />
       </div>
@@ -143,6 +291,8 @@ export default function CheckoutPage() {
     router.push("/cart")
     return null
   }
+
+  const grandTotal = totalPrice + (deliveryWithService ? deliveryFee : 0)
 
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-4">
@@ -191,6 +341,17 @@ export default function CheckoutPage() {
                       {formatPrice(item.product.price * item.quantity)} so'm
                     </span>
                   </div>
+
+                  {/* Show variations if available */}
+                  {item.variations && item.variations.length > 0 && (
+                    <div className="mt-1 text-xs text-blue-600">
+                      {item.variations.map((variation, idx) => (
+                        <span key={idx} className="mr-2">
+                          {variation.type}: {variation.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -233,7 +394,101 @@ export default function CheckoutPage() {
             <MapPin className="w-5 h-5 mr-2" />
             Yetkazib berish manzili
           </h3>
-          <div className="space-y-4">
+
+          {/* Saved Addresses */}
+          {addresses.length > 0 && (
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2">Saqlangan manzillar</label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {addresses.map((address) => (
+                  <button
+                    key={address.id}
+                    onClick={() => handleAddressSelect(address.id)}
+                    className={`text-left p-3 rounded-lg border transition-all ${
+                      selectedAddressId === address.id
+                        ? "border-primary bg-primary/5"
+                        : "border-border bg-muted/50 hover:border-primary/50"
+                    }`}
+                  >
+                    <div className="flex items-start">
+                      <div className="mr-3">
+                        <Home
+                          className={`w-5 h-5 ${selectedAddressId === address.id ? "text-primary" : "text-muted-foreground"}`}
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium">{address.name}</span>
+                          {selectedAddressId === address.id && <Check className="w-4 h-4 text-primary" />}
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-1">{address.address}</p>
+                        {address.is_default && (
+                          <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded mt-1 inline-block">
+                            Asosiy
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Add New Address Button */}
+          {!showAddressForm ? (
+            <button
+              onClick={() => setShowAddressForm(true)}
+              className="flex items-center space-x-2 text-primary hover:text-primary/80 mb-4"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Yangi manzil qo'shish</span>
+            </button>
+          ) : (
+            <div className="bg-muted/30 p-4 rounded-lg mb-4 animate-fadeIn">
+              <h4 className="font-medium mb-3">Yangi manzil</h4>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm mb-1">Manzil nomi *</label>
+                  <input
+                    type="text"
+                    value={newAddressName}
+                    onChange={(e) => setNewAddressName(e.target.value)}
+                    className="w-full px-3 py-2 bg-background rounded-lg border border-border focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all"
+                    placeholder="Masalan: Uy, Ish, va h.k."
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm mb-1">To'liq manzil *</label>
+                  <textarea
+                    value={newAddress}
+                    onChange={(e) => setNewAddress(e.target.value)}
+                    rows={2}
+                    className="w-full px-3 py-2 bg-background rounded-lg border border-border focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all resize-none"
+                    placeholder="Masalan: G'uzor tumani, Mustaqillik mahallasi, 10-ko'cha, 34-uy"
+                  />
+                </div>
+                <div className="flex space-x-3">
+                  <button
+                    onClick={() => setShowAddressForm(false)}
+                    className="px-3 py-1.5 bg-muted text-muted-foreground rounded-lg text-sm hover:bg-muted/80 transition-colors"
+                  >
+                    Bekor qilish
+                  </button>
+                  <button
+                    onClick={handleAddNewAddress}
+                    disabled={!newAddressName.trim() || !newAddress.trim()}
+                    className="px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-sm hover:bg-primary/90 transition-colors disabled:opacity-50"
+                  >
+                    Saqlash
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Manual Address Input */}
+          {addresses.length === 0 && !showAddressForm && (
             <div>
               <label className="block text-sm font-medium mb-2">To'liq manzil *</label>
               <textarea
@@ -244,27 +499,27 @@ export default function CheckoutPage() {
                 placeholder="Masalan: G'uzor tumani, Mustaqillik mahallasi, 10-ko'cha, 34-uy"
               />
             </div>
+          )}
 
-            <div className="flex items-center space-x-3">
-              <input
-                type="checkbox"
-                id="delivery-service"
-                checked={deliveryWithService}
-                onChange={(e) => setDeliveryWithService(e.target.checked)}
-                className="w-4 h-4 text-primary bg-muted border-border rounded focus:ring-primary/20"
-              />
-              <label htmlFor="delivery-service" className="text-sm flex items-center">
-                <Truck className="w-4 h-4 mr-2" />
-                Yetkazib berish xizmati ({formatPrice(deliveryFee)} so'm)
-              </label>
-            </div>
-
-            {!deliveryWithService && (
-              <p className="text-xs text-muted-foreground">
-                Yetkazib berish xizmatisiz buyurtma qilsangiz, mahsulotni o'zingiz olib ketishingiz kerak.
-              </p>
-            )}
+          <div className="flex items-center space-x-3 mt-4">
+            <input
+              type="checkbox"
+              id="delivery-service"
+              checked={deliveryWithService}
+              onChange={(e) => setDeliveryWithService(e.target.checked)}
+              className="w-4 h-4 text-primary bg-muted border-border rounded focus:ring-primary/20"
+            />
+            <label htmlFor="delivery-service" className="text-sm flex items-center">
+              <Truck className="w-4 h-4 mr-2" />
+              Yetkazib berish xizmati {deliveryFee > 0 ? `(${formatPrice(deliveryFee)} so'm)` : "(Bepul)"}
+            </label>
           </div>
+
+          {!deliveryWithService && (
+            <p className="text-xs text-muted-foreground mt-2">
+              Yetkazib berish xizmatisiz buyurtma qilsangiz, mahsulotni o'zingiz olib ketishingiz kerak.
+            </p>
+          )}
         </div>
 
         {/* Notes */}
@@ -291,16 +546,14 @@ export default function CheckoutPage() {
             <div className="flex justify-between">
               <span className="text-body">Yetkazib berish:</span>
               <span className="text-body font-medium">
-                {deliveryWithService ? formatPrice(deliveryFee) + " so'm" : "0 so'm"}
+                {deliveryWithService ? (deliveryFee > 0 ? formatPrice(deliveryFee) + " so'm" : "Bepul") : "0 so'm"}
               </span>
             </div>
 
             <div className="border-t border-border pt-3">
               <div className="flex justify-between">
                 <span className="text-title-3 font-bold">Jami to'lov:</span>
-                <span className="text-title-2 font-bold">
-                  {formatPrice(totalPrice + (deliveryWithService ? deliveryFee : 0))} so'm
-                </span>
+                <span className="text-title-2 font-bold">{formatPrice(grandTotal)} so'm</span>
               </div>
             </div>
           </div>
@@ -310,7 +563,7 @@ export default function CheckoutPage() {
         <button
           onClick={handleSubmitOrder}
           disabled={isSubmitting || !customerName.trim() || !customerPhone.trim() || !deliveryAddress.trim()}
-          className="w-full bg-primary text-primary-foreground rounded-lg py-4 font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full bg-primary text-primary-foreground rounded-lg py-4 font-medium hover:bg-primary/90 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg hover:scale-[1.01]"
         >
           {isSubmitting ? "Buyurtma berilmoqda..." : "Buyurtmani tasdiqlash"}
         </button>
