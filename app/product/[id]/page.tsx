@@ -29,7 +29,7 @@ import Image from "next/image"
 interface ProductSpecification {
   name: string
   value: string
-  price?: number
+  price?: number | null
 }
 
 interface ProductVariation {
@@ -193,7 +193,7 @@ export default function ProductDetailPage() {
 
     setVariations(parsedVariations)
 
-    // Set default selected variations
+    // Set default selected variations (first option of each type)
     const defaultSelected: Record<string, ProductSpecification> = {}
     parsedVariations.forEach((variation) => {
       if (variation.options.length > 0) {
@@ -236,6 +236,7 @@ export default function ProductDetailPage() {
         `)
         .eq("category_id", categoryId)
         .eq("is_available", true)
+        .gt("stock_quantity", 0)
         .neq("id", currentProductId)
         .limit(6)
 
@@ -426,19 +427,35 @@ export default function ProductDetailPage() {
     }
   }
 
-  const calculateVariationPrice = () => {
-    if (!product) return 0
+  // Calculate variation price additions (not replacements)
+  const calculateVariationPriceAddition = () => {
+    let priceAddition = 0
 
-    let basePrice = product.price
-
-    // Add variation price adjustments
     Object.values(selectedVariations).forEach((variation) => {
-      if (variation.price !== null && variation.price !== undefined) {
-        basePrice = variation.price
+      if (variation.price !== null && variation.price !== undefined && variation.price > 0) {
+        priceAddition += variation.price
       }
     })
 
-    return basePrice
+    return priceAddition
+  }
+
+  // Calculate total price with variations
+  const calculateTotalPrice = () => {
+    if (!product) return 0
+
+    const basePrice =
+      product.product_type === "rental" && product.rental_price_per_unit ? product.rental_price_per_unit : product.price
+
+    const variationAddition = calculateVariationPriceAddition()
+
+    if (product.product_type === "rental") {
+      const rentalTotal = (basePrice + variationAddition) * rentalDuration * quantity
+      const depositTotal = (product.rental_deposit || 0) * quantity
+      return rentalTotal + depositTotal
+    }
+
+    return (basePrice + variationAddition) * quantity
   }
 
   const formatPrice = (price: number) => {
@@ -471,30 +488,6 @@ export default function ProductDetailPage() {
       default:
         return <Clock className="w-4 h-4" />
     }
-  }
-
-  const calculateRentalTotal = () => {
-    if (!product || product.product_type !== "rental" || !product.rental_price_per_unit) {
-      return 0
-    }
-
-    let basePrice = product.rental_price_per_unit
-
-    // Add variation price adjustments
-    Object.values(selectedVariations).forEach((variation) => {
-      if (variation.price !== null && variation.price !== undefined) {
-        basePrice = variation.price
-      }
-    })
-
-    return basePrice * rentalDuration * quantity
-  }
-
-  const calculateRentalDeposit = () => {
-    if (!product || product.product_type !== "rental" || !product.rental_deposit) {
-      return 0
-    }
-    return product.rental_deposit * quantity
   }
 
   const renderStars = (rating: number) => {
@@ -562,7 +555,10 @@ export default function ProductDetailPage() {
     )
   }
 
-  const variationPrice = calculateVariationPrice()
+  const basePrice =
+    product.product_type === "rental" && product.rental_price_per_unit ? product.rental_price_per_unit : product.price
+  const variationAddition = calculateVariationPriceAddition()
+  const calculatedPrice = basePrice + variationAddition
 
   return (
     <div className="min-h-screen bg-background pb-32 md:pb-4">
@@ -649,28 +645,38 @@ export default function ProductDetailPage() {
               )}
             </div>
 
-            {product.product_type === "rental" && product.rental_price_per_unit ? (
-              <div className="mb-4">
-                <div className="flex items-baseline space-x-2 mb-2">
-                  <span className="text-3xl font-bold text-blue-600 animate-countUp">
-                    {formatPrice(variationPrice || product.rental_price_per_unit)} so'm
-                  </span>
-                  <span className="text-muted-foreground">
-                    /{getRentalTimeText(product.rental_time_unit)} • {product.unit}
+            {/* Base Price */}
+            <div className="mb-2">
+              <div className="flex items-baseline space-x-2">
+                <span className="text-2xl font-bold text-gray-900 dark:text-white">{formatPrice(basePrice)} so'm</span>
+                <span className="text-muted-foreground">
+                  {product.product_type === "rental"
+                    ? `/${getRentalTimeText(product.rental_time_unit)} • ${product.unit}`
+                    : `/${product.unit}`}
+                </span>
+              </div>
+              {product.product_type === "rental" && product.rental_deposit && product.rental_deposit > 0 && (
+                <p className="text-sm text-muted-foreground">
+                  Kafolat puli: {formatPrice(product.rental_deposit)} so'm/{product.unit}
+                </p>
+              )}
+            </div>
+
+            {/* Calculated Price with Variations */}
+            {variationAddition > 0 && (
+              <div className="bg-blue-50 dark:bg-blue-950/20 rounded-lg p-3 mb-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-blue-600">Hisoblangan narx:</span>
+                  <span className="text-lg font-bold text-blue-600">
+                    {formatPrice(calculatedPrice)} so'm
+                    {product.product_type === "rental"
+                      ? ` /${getRentalTimeText(product.rental_time_unit)}`
+                      : ` /${product.unit}`}
                   </span>
                 </div>
-                {product.rental_deposit && product.rental_deposit > 0 && (
-                  <p className="text-sm text-muted-foreground">
-                    Kafolat puli: {formatPrice(product.rental_deposit)} so'm/{product.unit}
-                  </p>
-                )}
-              </div>
-            ) : (
-              <div className="flex items-baseline space-x-2 mb-4">
-                <span className="text-3xl font-bold animate-countUp">
-                  {formatPrice(variationPrice || product.price)} so'm
-                </span>
-                <span className="text-muted-foreground">/{product.unit}</span>
+                <div className="text-xs text-blue-600/80 mt-1">
+                  Asosiy narx + turlar qo'shimchasi ({formatPrice(variationAddition)} so'm)
+                </div>
               </div>
             )}
 
@@ -704,8 +710,10 @@ export default function ProductDetailPage() {
                             )}
                             <span>{option.name}</span>
                           </div>
-                          {option.price !== null && option.price !== undefined && (
-                            <div className="text-xs mt-1 font-medium">{formatPrice(option.price)} so'm</div>
+                          {option.price !== null && option.price !== undefined && option.price > 0 && (
+                            <div className="text-xs mt-1 font-medium text-green-600">
+                              +{formatPrice(option.price)} so'm
+                            </div>
                           )}
                         </button>
                       ))}
@@ -772,19 +780,19 @@ export default function ProductDetailPage() {
                 <div className="space-y-1 text-sm">
                   <div className="flex justify-between">
                     <span>Ijara narxi:</span>
-                    <span className="animate-countUp">{formatPrice(calculateRentalTotal())} so'm</span>
+                    <span className="animate-countUp">
+                      {formatPrice(calculatedPrice * rentalDuration * quantity)} so'm
+                    </span>
                   </div>
                   {product.rental_deposit && product.rental_deposit > 0 && (
                     <div className="flex justify-between">
                       <span>Kafolat puli:</span>
-                      <span className="animate-countUp">{formatPrice(calculateRentalDeposit())} so'm</span>
+                      <span className="animate-countUp">{formatPrice(product.rental_deposit * quantity)} so'm</span>
                     </div>
                   )}
                   <div className="flex justify-between font-semibold border-t pt-1">
                     <span>Jami to'lov:</span>
-                    <span className="animate-countUp">
-                      {formatPrice(calculateRentalTotal() + calculateRentalDeposit())} so'm
-                    </span>
+                    <span className="animate-countUp">{formatPrice(calculateTotalPrice())} so'm</span>
                   </div>
                 </div>
               </div>
@@ -815,10 +823,7 @@ export default function ProductDetailPage() {
             <div className="flex items-center justify-between mb-4">
               <span className="text-lg">Jami narx:</span>
               <span className="text-2xl font-bold text-primary animate-countUp">
-                {product.product_type === "rental"
-                  ? formatPrice(calculateRentalTotal() + calculateRentalDeposit())
-                  : formatPrice((variationPrice || product.price) * quantity)}{" "}
-                so'm
+                {formatPrice(calculateTotalPrice())} so'm
               </span>
             </div>
 
@@ -1009,29 +1014,29 @@ export default function ProductDetailPage() {
         </div>
       </div>
 
-      {/* Fixed Bottom Bar - Mobile Only - Responsive */}
-      <div className="fixed bottom-20 left-0 right-0 bg-background border-t border-border p-4 md:hidden z-30 safe-area-bottom animate-slideInUp">
+      {/* Fixed Bottom Bar - Mobile Only - Very Compact and Responsive */}
+      <div className="fixed bottom-16 left-0 right-0 bg-background/95 backdrop-blur-sm border-t border-border p-2 md:hidden z-30 safe-area-bottom animate-slideInUp">
         <div className="max-w-sm mx-auto">
-          {/* Rental Duration Selector for Mobile */}
+          {/* Rental Duration Selector for Mobile - Compact */}
           {product.product_type === "rental" && (
-            <div className="mb-3 p-3 bg-muted/30 rounded-lg">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium">Ijara muddati:</span>
-                <div className="flex items-center space-x-2">
+            <div className="mb-2 p-2 bg-muted/30 rounded-lg">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-medium">Muddat:</span>
+                <div className="flex items-center space-x-1">
                   <button
                     onClick={() => setRentalDuration(Math.max(product.rental_min_duration || 1, rentalDuration - 1))}
                     disabled={rentalDuration <= (product.rental_min_duration || 1)}
-                    className="w-8 h-8 bg-muted rounded-lg flex items-center justify-center disabled:opacity-50 hover:scale-110 transition-transform duration-300"
+                    className="w-6 h-6 bg-muted rounded flex items-center justify-center disabled:opacity-50 hover:scale-110 transition-transform duration-300"
                   >
                     <Minus className="w-3 h-3" />
                   </button>
-                  <span className="text-sm font-semibold min-w-[4rem] text-center animate-countUp">
+                  <span className="text-xs font-semibold min-w-[3rem] text-center animate-countUp">
                     {rentalDuration} {getRentalTimeText(product.rental_time_unit)}
                   </span>
                   <button
                     onClick={() => setRentalDuration(Math.min(product.rental_max_duration || 365, rentalDuration + 1))}
                     disabled={rentalDuration >= (product.rental_max_duration || 365)}
-                    className="w-8 h-8 bg-muted rounded-lg flex items-center justify-center disabled:opacity-50 hover:scale-110 transition-transform duration-300"
+                    className="w-6 h-6 bg-muted rounded flex items-center justify-center disabled:opacity-50 hover:scale-110 transition-transform duration-300"
                   >
                     <Plus className="w-3 h-3" />
                   </button>
@@ -1040,48 +1045,43 @@ export default function ProductDetailPage() {
             </div>
           )}
 
-          {/* Quantity and Add to Cart - Responsive */}
-          <div className="flex items-center space-x-3">
-            {/* Quantity Selector */}
-            <div className="flex items-center space-x-2">
+          {/* Quantity and Add to Cart - Very Compact */}
+          <div className="flex items-center space-x-2">
+            {/* Quantity Selector - Compact */}
+            <div className="flex items-center space-x-1">
               <button
                 onClick={() => setQuantity(Math.max(product.min_order_quantity, quantity - 1))}
                 disabled={quantity <= product.min_order_quantity}
-                className="w-10 h-10 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-all duration-300 disabled:opacity-50 hover:scale-110"
+                className="w-7 h-7 bg-muted rounded flex items-center justify-center hover:bg-muted/80 transition-all duration-300 disabled:opacity-50 hover:scale-110"
               >
-                <Minus className="w-4 h-4" />
+                <Minus className="w-3 h-3" />
               </button>
-              <span className="text-lg font-semibold min-w-[3rem] text-center animate-countUp">{quantity}</span>
+              <span className="text-sm font-semibold min-w-[2rem] text-center animate-countUp">{quantity}</span>
               <button
                 onClick={() => setQuantity(Math.min(availableQuantity, quantity + 1))}
                 disabled={quantity >= availableQuantity}
-                className="w-10 h-10 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-all duration-300 disabled:opacity-50 hover:scale-110"
+                className="w-7 h-7 bg-muted rounded flex items-center justify-center hover:bg-muted/80 transition-all duration-300 disabled:opacity-50 hover:scale-110"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-3 h-3" />
               </button>
             </div>
 
-            {/* Price and Add to Cart - Responsive */}
-            <div className="flex-1 flex flex-col space-y-2">
-              <div className="text-right">
-                <div className="text-lg font-bold animate-countUp">
-                  {product.product_type === "rental"
-                    ? formatPrice(calculateRentalTotal() + calculateRentalDeposit())
-                    : formatPrice((variationPrice || product.price) * quantity)}{" "}
-                  so'm
-                </div>
+            {/* Price and Add to Cart - Compact */}
+            <div className="flex-1 flex flex-col">
+              <div className="text-right mb-1">
+                <div className="text-sm font-bold animate-countUp">{formatPrice(calculateTotalPrice())} so'm</div>
               </div>
               <button
                 onClick={handleAddToCart}
                 disabled={isAddingToCart || quantity > availableQuantity}
-                className="w-full px-4 py-3 bg-primary text-primary-foreground rounded-xl font-medium hover:bg-primary/90 transition-all duration-300 disabled:opacity-50 flex items-center justify-center space-x-2 shadow-sm hover:shadow-md hover:scale-[1.02] transform"
+                className="w-full px-3 py-2 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-all duration-300 disabled:opacity-50 flex items-center justify-center space-x-1 shadow-sm hover:shadow-md hover:scale-[1.02] transform"
               >
                 {isAddingToCart ? (
-                  <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                  <div className="w-3 h-3 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
                 ) : (
-                  <ShoppingCart className="w-4 h-4 animate-bounce" />
+                  <ShoppingCart className="w-3 h-3 animate-bounce" />
                 )}
-                <span className="text-sm">
+                <span className="text-xs">
                   {isAddingToCart
                     ? "Qo'shilmoqda..."
                     : product.product_type === "rental"
@@ -1098,12 +1098,12 @@ export default function ProductDetailPage() {
       {showCartFab && (
         <button
           onClick={() => router.push("/cart")}
-          className="fixed bottom-32 right-4 w-14 h-14 bg-primary text-primary-foreground rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-all z-40 md:bottom-4 animate-fadeIn hover:scale-110 transform duration-300"
+          className="fixed bottom-24 right-4 w-12 h-12 bg-primary text-primary-foreground rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-all z-40 md:bottom-4 animate-fadeIn hover:scale-110 transform duration-300"
         >
           <div className="relative">
-            <ShoppingCart className="w-6 h-6" />
+            <ShoppingCart className="w-5 h-5" />
             {totalItems > 0 && (
-              <span className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center animate-pulse">
+              <span className="absolute -top-2 -right-2 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center animate-pulse">
                 {totalItems}
               </span>
             )}

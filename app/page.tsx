@@ -18,6 +18,8 @@ interface Product {
   images: string[]
   is_featured: boolean
   is_popular: boolean
+  stock_quantity: number
+  available_quantity: number
   category: {
     name_uz: string
   }
@@ -61,6 +63,28 @@ export default function HomePage() {
     }
   }
 
+  const calculateAvailableQuantity = async (productId: string, stockQuantity: number) => {
+    try {
+      // Calculate sold quantity from confirmed orders
+      const { data: soldData, error: soldError } = await supabase
+        .from("order_items")
+        .select(`
+          quantity,
+          orders!inner(status)
+        `)
+        .eq("product_id", productId)
+        .in("orders.status", ["confirmed", "processing", "shipped", "delivered"])
+
+      if (soldError) throw soldError
+
+      const soldQuantity = (soldData || []).reduce((sum, item) => sum + item.quantity, 0)
+      return Math.max(0, stockQuantity - soldQuantity)
+    } catch (error) {
+      console.error("Available quantity calculation error:", error)
+      return stockQuantity
+    }
+  }
+
   const fetchProducts = async () => {
     try {
       let query = supabase
@@ -70,16 +94,14 @@ export default function HomePage() {
           category:categories(name_uz)
         `)
         .eq("is_available", true)
+        .gt("stock_quantity", 0) // Only show products with stock
 
-      // Apply search filter with transliteration support
+      // Apply search filter - fix the OR query formatting
       if (searchQuery) {
         const transliteratedQuery = transliterate(searchQuery)
-        query = query.or(`
-          name_uz.ilike.%${searchQuery}%,
-          description_uz.ilike.%${searchQuery}%,
-          name_uz.ilike.%${transliteratedQuery}%,
-          description_uz.ilike.%${transliteratedQuery}%
-        `)
+        query = query.or(
+          `name_uz.ilike.%${searchQuery}%,description_uz.ilike.%${searchQuery}%,name_uz.ilike.%${transliteratedQuery}%,description_uz.ilike.%${transliteratedQuery}%`,
+        )
       }
 
       // Apply category filter
@@ -114,14 +136,23 @@ export default function HomePage() {
 
       if (error) throw error
 
-      // Add mock ratings for display
-      const productsWithRatings = (data || []).map((product) => ({
-        ...product,
-        average_rating: 4.0 + Math.random() * 1.0,
-        review_count: Math.floor(Math.random() * 100) + 1,
-      }))
+      // Calculate available quantities and filter out products with 0 availability
+      const productsWithAvailability = await Promise.all(
+        (data || []).map(async (product) => {
+          const availableQuantity = await calculateAvailableQuantity(product.id, product.stock_quantity)
+          return {
+            ...product,
+            available_quantity: availableQuantity,
+            average_rating: 4.0 + Math.random() * 1.0,
+            review_count: Math.floor(Math.random() * 100) + 1,
+          }
+        }),
+      )
 
-      setProducts(productsWithRatings)
+      // Filter out products with 0 available quantity
+      const availableProducts = productsWithAvailability.filter((product) => product.available_quantity > 0)
+
+      setProducts(availableProducts)
     } catch (error) {
       console.error("Products fetch error:", error)
     } finally {
@@ -144,20 +175,20 @@ export default function HomePage() {
       и: "i",
       й: "y",
       к: "k",
-      л: "л",
-      м: "м",
-      н: "н",
-      о: "о",
-      п: "п",
-      р: "р",
-      с: "с",
-      т: "т",
+      л: "l",
+      м: "m",
+      н: "n",
+      о: "o",
+      п: "p",
+      р: "r",
+      с: "s",
+      т: "t",
       у: "u",
       ф: "f",
       х: "x",
       ц: "ts",
       ч: "ch",
-      ш: "ш",
+      ш: "sh",
       щ: "shch",
       ъ: "",
       ы: "y",
@@ -200,52 +231,10 @@ export default function HomePage() {
       Я: "Ya",
     }
 
-    const latinToCyrillic: { [key: string]: string } = {
-      a: "а",
-      b: "б",
-      v: "в",
-      g: "г",
-      d: "д",
-      e: "е",
-      yo: "ё",
-      zh: "ж",
-      z: "з",
-      i: "и",
-      y: "й",
-      k: "к",
-      l: "л",
-      m: "м",
-      n: "н",
-      o: "о",
-      p: "п",
-      r: "р",
-      s: "с",
-      t: "т",
-      u: "у",
-      f: "ф",
-      x: "х",
-      ts: "ц",
-      ch: "ч",
-      sh: "ш",
-      shch: "щ",
-      yu: "ю",
-      ya: "я",
-    }
-
     let result = text
-
-    // Try Cyrillic to Latin first
     for (const [cyrillic, latin] of Object.entries(cyrillicToLatin)) {
       result = result.replace(new RegExp(cyrillic, "g"), latin)
     }
-
-    // If no change, try Latin to Cyrillic
-    if (result === text) {
-      for (const [latin, cyrillic] of Object.entries(latinToCyrillic)) {
-        result = result.replace(new RegExp(latin, "g"), cyrillic)
-      }
-    }
-
     return result
   }
 

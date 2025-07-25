@@ -10,7 +10,7 @@ import { supabase } from "@/lib/supabase"
 const navigationItems = [
   {
     id: "home",
-    label: "Bosh sahifa",
+    label: "Bosh",
     icon: Home,
     path: "/",
   },
@@ -28,7 +28,7 @@ const navigationItems = [
   },
   {
     id: "orders",
-    label: "Buyurtmalar",
+    label: "Buyurtma",
     icon: Package,
     path: "/orders",
   },
@@ -81,8 +81,8 @@ export function BottomNavigation() {
   }
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-background border-t border-border z-20 md:hidden">
-      <div className="flex items-center justify-around py-2 px-4 safe-area-bottom">
+    <div className="fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur-sm border-t border-border z-20 md:hidden safe-area-bottom">
+      <div className="flex items-center justify-around py-1.5 px-2">
         {navigationItems.map((item) => {
           const isActive = pathname === item.path
           const Icon = item.icon
@@ -92,7 +92,7 @@ export function BottomNavigation() {
             <button
               key={item.id}
               onClick={() => router.push(item.path)}
-              className={`flex flex-col items-center space-y-1 py-2 px-3 rounded-lg transition-all duration-200 ${
+              className={`flex flex-col items-center space-y-0.5 py-1.5 px-2 rounded-lg transition-all duration-200 min-w-0 flex-1 ${
                 isActive
                   ? "text-primary bg-primary/10 scale-105"
                   : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
@@ -101,12 +101,12 @@ export function BottomNavigation() {
               <div className="relative">
                 <Icon className={`w-5 h-5 ${isActive ? "scale-110" : ""} transition-transform duration-200`} />
                 {badgeCount > 0 && (
-                  <span className="absolute -top-2 -right-2 bg-primary text-primary-foreground text-xs font-bold rounded-full w-4 h-4 flex items-center justify-center animate-pulse">
+                  <span className="absolute -top-1.5 -right-1.5 bg-primary text-primary-foreground text-xs font-bold rounded-full w-4 h-4 flex items-center justify-center animate-pulse min-w-[16px]">
                     {badgeCount > 99 ? "99+" : badgeCount}
                   </span>
                 )}
               </div>
-              <span className={`text-xs font-medium ${isActive ? "font-semibold" : ""}`}>{item.label}</span>
+              <span className={`text-xs font-medium truncate ${isActive ? "font-semibold" : ""}`}>{item.label}</span>
             </button>
           )
         })}

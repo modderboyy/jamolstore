@@ -9,7 +9,7 @@ interface ProductVariation {
   type: string
   name: string
   value: string
-  price?: number
+  price?: number | null
 }
 
 interface CartProduct {
@@ -21,6 +21,9 @@ interface CartProduct {
   has_delivery: boolean
   delivery_price: number
   delivery_limit: number
+  product_type?: "sale" | "rental"
+  rental_price_per_unit?: number
+  rental_deposit?: number
 }
 
 interface CartItem {
@@ -77,7 +80,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             images,
             has_delivery,
             delivery_price,
-            delivery_limit
+            delivery_limit,
+            product_type,
+            rental_price_per_unit,
+            rental_deposit
           )
         `)
         .eq("customer_id", user.id)
@@ -125,15 +131,23 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         // Update existing item quantity
         await updateQuantity(existingItem.id, existingItem.quantity + quantity)
       } else {
-        // Add new item
-        const { error } = await supabase.from("cart_items").insert({
+        // Add new item - fix the numeric error by ensuring proper data types
+        const insertData: any = {
           customer_id: user.id,
           product_id: productId,
-          quantity,
+          quantity: Number.parseInt(quantity.toString()), // Ensure integer
           variations: options.variations ? JSON.stringify(options.variations) : null,
-          rental_duration: options.rental_duration,
-          rental_time_unit: options.rental_time_unit,
-        })
+        }
+
+        // Only add rental fields if they exist and are valid
+        if (options.rental_duration && typeof options.rental_duration === "number") {
+          insertData.rental_duration = Number.parseInt(options.rental_duration.toString())
+        }
+        if (options.rental_time_unit && typeof options.rental_time_unit === "string") {
+          insertData.rental_time_unit = options.rental_time_unit
+        }
+
+        const { error } = await supabase.from("cart_items").insert(insertData)
 
         if (error) throw error
         await fetchCartItems()
@@ -153,7 +167,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         return
       }
 
-      const { error } = await supabase.from("cart_items").update({ quantity }).eq("id", itemId)
+      const { error } = await supabase
+        .from("cart_items")
+        .update({ quantity: Number.parseInt(quantity.toString()) }) // Ensure integer
+        .eq("id", itemId)
 
       if (error) throw error
       await fetchCartItems()
@@ -196,14 +213,27 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0)
 
   const totalPrice = items.reduce((sum, item) => {
-    let itemPrice = item.product.price
+    const basePrice =
+      item.product.product_type === "rental" && item.product.rental_price_per_unit
+        ? item.product.rental_price_per_unit
+        : item.product.price
 
-    // Apply variation price if available
+    // Apply variation price additions (not replacements)
+    let variationAddition = 0
     if (item.variations) {
-      const variationWithPrice = item.variations.find((v) => v.price !== null && v.price !== undefined)
-      if (variationWithPrice && variationWithPrice.price !== null) {
-        itemPrice = variationWithPrice.price
-      }
+      item.variations.forEach((variation) => {
+        if (variation.price !== null && variation.price !== undefined && variation.price > 0) {
+          variationAddition += variation.price
+        }
+      })
+    }
+
+    const itemPrice = basePrice + variationAddition
+
+    if (item.product.product_type === "rental" && item.rental_duration) {
+      const rentalTotal = itemPrice * item.rental_duration * item.quantity
+      const depositTotal = (item.product.rental_deposit || 0) * item.quantity
+      return sum + rentalTotal + depositTotal
     }
 
     return sum + itemPrice * item.quantity
