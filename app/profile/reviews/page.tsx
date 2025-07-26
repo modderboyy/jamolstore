@@ -6,7 +6,7 @@ import { useAuth } from "@/contexts/AuthContext"
 import { supabase } from "@/lib/supabase"
 import { TopBar } from "@/components/layout/top-bar"
 import { BottomNavigation } from "@/components/layout/bottom-navigation"
-import { ArrowLeft, Star, MessageSquare, Calendar } from "lucide-react"
+import { ArrowLeft, Star, MessageSquare, Calendar, Package, Check } from "lucide-react"
 
 interface Review {
   id: string
@@ -24,12 +24,12 @@ export default function ReviewsPage() {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    if (user) {
-      fetchReviews()
-    } else {
-      setIsLoading(false)
+    if (!user) {
+      router.push("/login")
+      return
     }
-  }, [user])
+    fetchReviews()
+  }, [user, router])
 
   const fetchReviews = async () => {
     if (!user) return
@@ -75,7 +75,6 @@ export default function ReviewsPage() {
   }
 
   if (!user) {
-    router.push("/login")
     return null
   }
 
@@ -83,12 +82,18 @@ export default function ReviewsPage() {
     <div className="min-h-screen bg-background pb-20 md:pb-4">
       <TopBar />
 
-      <div className="container mx-auto px-4 py-4 border-b border-border">
-        <div className="flex items-center space-x-4">
-          <button onClick={() => router.back()} className="p-2 -ml-2 rounded-lg hover:bg-muted transition-colors">
-            <ArrowLeft className="w-6 h-6" />
-          </button>
-          <h1 className="text-xl font-bold">Sharhlarim</h1>
+      {/* Header */}
+      <div className="bg-card border-b border-border">
+        <div className="container mx-auto px-4 py-4">
+          <div className="flex items-center space-x-4">
+            <button onClick={() => router.back()} className="p-2 -ml-2 rounded-lg hover:bg-muted transition-colors">
+              <ArrowLeft className="w-6 h-6" />
+            </button>
+            <div>
+              <h1 className="text-xl font-bold">Sharhlarim</h1>
+              <p className="text-sm text-muted-foreground">{reviews.length} ta sharh</p>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -111,14 +116,19 @@ export default function ReviewsPage() {
               <div key={review.id} className="bg-card rounded-lg border border-border p-4">
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex-1">
-                    <h3 className="font-medium mb-1">{review.product_name}</h3>
                     <div className="flex items-center space-x-2 mb-2">
-                      <div className="flex items-center space-x-1">{renderStars(review.rating)}</div>
+                      <Package className="w-4 h-4 text-primary" />
+                      <h3 className="font-medium">{review.product_name}</h3>
                       {review.is_verified && (
-                        <span className="px-2 py-1 bg-green-100 dark:bg-green-900/20 text-green-600 text-xs rounded-full">
-                          Tasdiqlangan
+                        <span className="px-2 py-1 bg-green-100 dark:bg-green-900/20 text-green-600 text-xs rounded-full flex items-center space-x-1">
+                          <Check className="w-3 h-3" />
+                          <span>Tasdiqlangan</span>
                         </span>
                       )}
+                    </div>
+                    <div className="flex items-center space-x-2 mb-2">
+                      <div className="flex items-center space-x-1">{renderStars(review.rating)}</div>
+                      <span className="text-sm text-muted-foreground">({review.rating}/5)</span>
                     </div>
                   </div>
                   <div className="flex items-center text-xs text-muted-foreground">
@@ -128,12 +138,50 @@ export default function ReviewsPage() {
                 </div>
 
                 {review.comment && (
-                  <div className="bg-muted/30 rounded-lg p-3">
-                    <p className="text-sm">{review.comment}</p>
+                  <div className="bg-muted/30 rounded-lg p-3 mb-3">
+                    <p className="text-sm leading-relaxed">{review.comment}</p>
                   </div>
                 )}
+
+                <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t border-border">
+                  <span>ID: {review.id.slice(0, 8)}...</span>
+                  <span>{review.is_verified ? "Tasdiqlangan sharh" : "Kutilmoqda"}</span>
+                </div>
               </div>
             ))}
+
+            {/* Statistics */}
+            {reviews.length > 0 && (
+              <div className="bg-card rounded-lg border border-border p-4 mt-6">
+                <h3 className="text-lg font-semibold mb-4">Sharh statistikasi</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-primary">{reviews.length}</div>
+                    <div className="text-sm text-muted-foreground">Jami sharhlar</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-green-600">
+                      {reviews.filter((r) => r.is_verified).length}
+                    </div>
+                    <div className="text-sm text-muted-foreground">Tasdiqlangan</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-yellow-500">
+                      {reviews.length > 0
+                        ? (reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length).toFixed(1)
+                        : "0"}
+                    </div>
+                    <div className="text-sm text-muted-foreground">O'rtacha baho</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-blue-600">
+                      {reviews.filter((r) => r.comment && r.comment.trim()).length}
+                    </div>
+                    <div className="text-sm text-muted-foreground">Izohli sharhlar</div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

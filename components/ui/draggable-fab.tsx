@@ -1,63 +1,41 @@
 "use client"
 
 import type React from "react"
+
 import { useState, useRef, useEffect } from "react"
-import { ShoppingCart } from "lucide-react"
-import { useCart } from "@/contexts/CartContext"
+import { MessageCircle, X, Send, Phone } from "lucide-react"
+import { useTelegram } from "@/contexts/TelegramContext"
 
 interface DraggableFabProps {
-  onCartClick: () => void
+  onContactClick?: () => void
 }
 
-export function DraggableFab({ onCartClick }: DraggableFabProps) {
-  const { getTotalItems } = useCart()
-  const [position, setPosition] = useState({ x: 20, y: 100 })
+export function DraggableFab({ onContactClick }: DraggableFabProps) {
+  const { isTelegramWebApp } = useTelegram()
+  const [isOpen, setIsOpen] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
+  const [position, setPosition] = useState({ x: 20, y: 20 })
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
-  const [hasMoved, setHasMoved] = useState(false)
-  const fabRef = useRef<HTMLButtonElement>(null)
-  const totalItems = getTotalItems()
+  const fabRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    // Set initial position on mount
-    const updateInitialPosition = () => {
-      setPosition({
-        x: window.innerWidth - 80,
-        y: window.innerHeight - 200,
-      })
-    }
-
-    updateInitialPosition()
-    window.addEventListener("resize", updateInitialPosition)
-    return () => window.removeEventListener("resize", updateInitialPosition)
-  }, [])
-
-  const handleStart = (clientX: number, clientY: number, e: any) => {
-    e.preventDefault()
-    e.stopPropagation()
-
+  const handleMouseDown = (e: React.MouseEvent) => {
     setIsDragging(true)
-    setHasMoved(false)
     setDragStart({
-      x: clientX - position.x,
-      y: clientY - position.y,
+      x: e.clientX - position.x,
+      y: e.clientY - position.y,
     })
+    e.preventDefault()
   }
 
-  const handleMove = (clientX: number, clientY: number) => {
+  const handleMouseMove = (e: MouseEvent) => {
     if (!isDragging) return
 
-    const newX = clientX - dragStart.x
-    const newY = clientY - dragStart.y
+    const newX = e.clientX - dragStart.x
+    const newY = e.clientY - dragStart.y
 
-    // Check if moved significantly
-    if (Math.abs(newX - position.x) > 5 || Math.abs(newY - position.y) > 5) {
-      setHasMoved(true)
-    }
-
-    // Constrain to window bounds
-    const maxX = window.innerWidth - 56
-    const maxY = window.innerHeight - 56
+    // Keep FAB within viewport bounds
+    const maxX = window.innerWidth - 64
+    const maxY = window.innerHeight - 64
 
     setPosition({
       x: Math.max(0, Math.min(newX, maxX)),
@@ -65,96 +43,89 @@ export function DraggableFab({ onCartClick }: DraggableFabProps) {
     })
   }
 
-  const handleEnd = () => {
-    if (isDragging) {
-      setIsDragging(false)
-
-      // Snap to nearest edge
-      const centerX = position.x + 28
-      const snapToLeft = centerX < window.innerWidth / 2
-
-      setPosition((prev) => ({
-        x: snapToLeft ? 20 : window.innerWidth - 76,
-        y: Math.max(20, Math.min(window.innerHeight - 76, prev.y)),
-      }))
-    }
-  }
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    handleStart(e.clientX, e.clientY, e)
-  }
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    const touch = e.touches[0]
-    handleStart(touch.clientX, touch.clientY, e)
+  const handleMouseUp = () => {
+    setIsDragging(false)
   }
 
   const handleClick = (e: React.MouseEvent) => {
-    e.preventDefault()
     e.stopPropagation()
-
-    // Only trigger click if not dragged
-    if (!hasMoved && !isDragging) {
-      onCartClick()
+    if (!isDragging) {
+      setIsOpen(!isOpen)
     }
   }
 
+  const handleContactClick = (type: "telegram" | "phone") => {
+    if (type === "telegram") {
+      window.open("https://t.me/jamolstroy_admin", "_blank")
+    } else if (type === "phone") {
+      window.open("tel:+998901234567", "_self")
+    }
+    setIsOpen(false)
+    onContactClick?.()
+  }
+
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      handleMove(e.clientX, e.clientY)
+    document.addEventListener("mousemove", handleMouseMove)
+    document.addEventListener("mouseup", handleMouseUp)
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove)
+      document.removeEventListener("mouseup", handleMouseUp)
     }
+  }, [])
 
-    const handleTouchMove = (e: TouchEvent) => {
-      e.preventDefault()
-      const touch = e.touches[0]
-      handleMove(touch.clientX, touch.clientY)
-    }
-
-    if (isDragging) {
-      document.addEventListener("mousemove", handleMouseMove)
-      document.addEventListener("mouseup", handleEnd)
-      document.addEventListener("touchmove", handleTouchMove, { passive: false })
-      document.addEventListener("touchend", handleEnd)
-
-      return () => {
-        document.removeEventListener("mousemove", handleMouseMove)
-        document.removeEventListener("mouseup", handleEnd)
-        document.removeEventListener("touchmove", handleTouchMove)
-        document.removeEventListener("touchend", handleEnd)
-      }
-    }
-  }, [isDragging, dragStart, position])
-
-  if (totalItems === 0) return null
+  if (isTelegramWebApp) {
+    return null
+  }
 
   return (
-    <button
-      ref={fabRef}
-      className={`fixed z-50 w-14 h-14 bg-primary text-primary-foreground rounded-full shadow-lg transition-all duration-200 flex items-center justify-center select-none ${
-        isDragging ? "scale-110 shadow-xl cursor-grabbing" : "hover:scale-105 cursor-pointer"
-      } active:scale-95`}
-      style={{
-        left: `${position.x}px`,
-        top: `${position.y}px`,
-        touchAction: "none",
-        userSelect: "none",
-        WebkitUserSelect: "none",
-        MozUserSelect: "none",
-        msUserSelect: "none",
-      }}
-      onMouseDown={handleMouseDown}
-      onTouchStart={handleTouchStart}
-      onClick={handleClick}
-      aria-label={`Savatcha - ${totalItems} ta mahsulot`}
-    >
-      <div className="relative pointer-events-none">
-        <ShoppingCart className="w-6 h-6" />
-        {totalItems > 0 && (
-          <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold min-w-[20px]">
-            {totalItems > 99 ? "99+" : totalItems}
-          </span>
+    <>
+      {/* Backdrop */}
+      {isOpen && <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setIsOpen(false)} />}
+
+      {/* FAB Container */}
+      <div
+        ref={fabRef}
+        className="fixed z-50 select-none"
+        style={{
+          right: `${position.x}px`,
+          bottom: `${position.y}px`,
+          cursor: isDragging ? "grabbing" : "grab",
+        }}
+      >
+        {/* Contact Options */}
+        {isOpen && (
+          <div className="absolute bottom-16 right-0 flex flex-col space-y-3 animate-in slide-in-from-bottom-2 duration-200">
+            <button
+              onClick={() => handleContactClick("telegram")}
+              className="flex items-center space-x-3 bg-blue-500 hover:bg-blue-600 text-white px-4 py-3 rounded-full shadow-lg transition-all duration-200 hover:scale-105"
+            >
+              <Send className="w-5 h-5" />
+              <span className="text-sm font-medium">Telegram</span>
+            </button>
+            <button
+              onClick={() => handleContactClick("phone")}
+              className="flex items-center space-x-3 bg-green-500 hover:bg-green-600 text-white px-4 py-3 rounded-full shadow-lg transition-all duration-200 hover:scale-105"
+            >
+              <Phone className="w-5 h-5" />
+              <span className="text-sm font-medium">Qo'ng'iroq</span>
+            </button>
+          </div>
         )}
+
+        {/* Main FAB Button */}
+        <button
+          onMouseDown={handleMouseDown}
+          onClick={handleClick}
+          className={`
+            w-14 h-14 bg-primary hover:bg-primary/90 text-primary-foreground 
+            rounded-full shadow-lg flex items-center justify-center
+            transition-all duration-200 hover:scale-110 active:scale-95
+            ${isDragging ? "scale-110" : ""}
+          `}
+        >
+          {isOpen ? <X className="w-6 h-6" /> : <MessageCircle className="w-6 h-6" />}
+        </button>
       </div>
-    </button>
+    </>
   )
 }

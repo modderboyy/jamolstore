@@ -2,65 +2,117 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { useParams } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
 import { useCart } from "@/contexts/CartContext"
 import { supabase } from "@/lib/supabase"
 import { TopBar } from "@/components/layout/top-bar"
 import { BottomNavigation } from "@/components/layout/bottom-navigation"
-import { ReviewForm } from "@/components/ui/review-form"
-import { ArrowLeft, Star, ShoppingCart, Heart, Share2, Eye, Truck, Package, Users } from "lucide-react"
-import Image from "next/image"
+import { DraggableFab } from "@/components/ui/draggable-fab"
+import {
+  ArrowLeft,
+  Star,
+  ShoppingCart,
+  Heart,
+  Share2,
+  Eye,
+  Calendar,
+  Package,
+  MessageSquare,
+  Plus,
+  Minus,
+} from "lucide-react"
 
 interface Product {
   id: string
-  name_uz: string
-  description_uz: string
+  name: string
+  description: string
   price: number
-  images: string[]
-  category: { name_uz: string }
-  unit: string
+  rental_price: number
+  image_url: string
+  category: string
   stock_quantity: number
-  has_delivery: boolean
-  delivery_price: number
-  is_featured: boolean
-  is_popular: boolean
   view_count: number
-  product_type: string
-  rental_price_per_unit?: number
-  rental_time_unit?: string
-  variations?: any[]
+  is_rental: boolean
+  is_active: boolean
+  created_at: string
 }
 
 interface Review {
   id: string
-  customer_name: string
   rating: number
   comment: string
   is_verified: boolean
   created_at: string
+  users: {
+    first_name: string
+    last_name: string
+    avatar_url: string
+  }
 }
 
-export default function ProductPage({ params }: { params: { id: string } }) {
-  const { user } = useAuth()
+export default function ProductPage() {
+  const params = useParams()
   const router = useRouter()
+  const { user } = useAuth()
   const { addToCart } = useCart()
 
   const [product, setProduct] = useState<Product | null>(null)
   const [reviews, setReviews] = useState<Review[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [selectedImageIndex, setSelectedImageIndex] = useState(0)
   const [quantity, setQuantity] = useState(1)
-  const [selectedVariations, setSelectedVariations] = useState<any>({})
+  const [isRental, setIsRental] = useState(false)
   const [rentalDuration, setRentalDuration] = useState(1)
-  const [showReviewForm, setShowReviewForm] = useState(false)
+  const [averageRating, setAverageRating] = useState(0)
+  const [totalReviews, setTotalReviews] = useState(0)
 
   useEffect(() => {
-    fetchProduct()
-    fetchReviews()
-    incrementViewCount()
+    if (params.id) {
+      fetchProduct()
+      fetchReviews()
+      incrementView()
+    }
   }, [params.id])
 
-  const incrementViewCount = async () => {
+  const fetchProduct = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .eq("id", params.id)
+        .eq("is_active", true)
+        .single()
+
+      if (error) throw error
+      setProduct(data)
+      setIsRental(data.is_rental && data.rental_price > 0)
+    } catch (error) {
+      console.error("Product fetch error:", error)
+      router.push("/404")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const fetchReviews = async () => {
+    try {
+      const response = await fetch(`/api/reviews?productId=${params.id}`, {
+        headers: user ? { "x-user-id": user.id } : {},
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        setReviews(data.reviews || [])
+        setAverageRating(data.averageRating || 0)
+        setTotalReviews(data.totalReviews || 0)
+      }
+    } catch (error) {
+      console.error("Reviews fetch error:", error)
+    }
+  }
+
+  const incrementView = async () => {
     try {
       await fetch(`/api/products/${params.id}/view`, {
         method: "POST",
@@ -70,69 +122,22 @@ export default function ProductPage({ params }: { params: { id: string } }) {
     }
   }
 
-  const fetchProduct = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("products")
-        .select(`
-          *,
-          category:categories(name_uz),
-          variations:product_variations(*)
-        `)
-        .eq("id", params.id)
-        .single()
-
-      if (error) throw error
-      setProduct(data)
-    } catch (error) {
-      console.error("Product fetch error:", error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const fetchReviews = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("product_reviews")
-        .select(`
-          *,
-          customer:users(first_name, last_name)
-        `)
-        .eq("product_id", params.id)
-        .order("created_at", { ascending: false })
-
-      if (error) throw error
-
-      const formattedReviews = data.map((review) => ({
-        ...review,
-        customer_name: `${review.customer.first_name} ${review.customer.last_name}`,
-      }))
-
-      setReviews(formattedReviews)
-    } catch (error) {
-      console.error("Reviews fetch error:", error)
-    }
-  }
-
   const handleAddToCart = () => {
     if (!product) return
 
-    const cartItem = {
+    const price = isRental ? product.rental_price : product.price
+
+    addToCart({
       product_id: product.id,
-      product,
-      quantity,
-      variations: Object.keys(selectedVariations).length > 0 ? selectedVariations : null,
-      rental_duration: product.product_type === "rental" ? rentalDuration : null,
-      rental_time_unit: product.product_type === "rental" ? product.rental_time_unit : null,
-    }
+      product_name: product.name,
+      product_image: product.image_url,
+      price: price,
+      quantity: quantity,
+      is_rental: isRental,
+      rental_duration: isRental ? rentalDuration : undefined,
+    })
 
-    addToCart(cartItem)
-    alert("Mahsulot savatga qo'shildi!")
-  }
-
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat("uz-UZ").format(price)
+    alert(`${product.name} savatga qo'shildi!`)
   }
 
   const renderStars = (rating: number) => {
@@ -141,8 +146,13 @@ export default function ProductPage({ params }: { params: { id: string } }) {
     ))
   }
 
-  const averageRating =
-    reviews.length > 0 ? reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length : 0
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString("uz-UZ", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    })
+  }
 
   if (isLoading) {
     return (
@@ -160,14 +170,16 @@ export default function ProductPage({ params }: { params: { id: string } }) {
     return (
       <div className="min-h-screen bg-background pb-20 md:pb-4">
         <TopBar />
-        <div className="container mx-auto px-4 py-20 text-center">
-          <h1 className="text-2xl font-bold mb-4">Mahsulot topilmadi</h1>
-          <button
-            onClick={() => router.back()}
-            className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-          >
-            Orqaga qaytish
-          </button>
+        <div className="flex items-center justify-center py-20">
+          <div className="text-center">
+            <h2 className="text-xl font-bold mb-2">Mahsulot topilmadi</h2>
+            <button
+              onClick={() => router.push("/")}
+              className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+            >
+              Bosh sahifaga qaytish
+            </button>
+          </div>
         </div>
         <BottomNavigation />
       </div>
@@ -178,268 +190,210 @@ export default function ProductPage({ params }: { params: { id: string } }) {
     <div className="min-h-screen bg-background pb-20 md:pb-4">
       <TopBar />
 
-      <div className="container mx-auto px-4 py-4 border-b border-border">
-        <div className="flex items-center justify-between">
-          <button onClick={() => router.back()} className="p-2 -ml-2 rounded-lg hover:bg-muted transition-colors">
-            <ArrowLeft className="w-6 h-6" />
-          </button>
-          <div className="flex items-center space-x-2">
-            <button className="p-2 rounded-lg hover:bg-muted transition-colors">
-              <Heart className="w-5 h-5" />
+      {/* Header */}
+      <div className="bg-card border-b border-border">
+        <div className="container mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <button onClick={() => router.back()} className="p-2 -ml-2 rounded-lg hover:bg-muted transition-colors">
+              <ArrowLeft className="w-6 h-6" />
             </button>
-            <button className="p-2 rounded-lg hover:bg-muted transition-colors">
-              <Share2 className="w-5 h-5" />
-            </button>
+
+            <div className="flex items-center space-x-2">
+              <button className="p-2 rounded-lg hover:bg-muted transition-colors">
+                <Heart className="w-5 h-5" />
+              </button>
+              <button className="p-2 rounded-lg hover:bg-muted transition-colors">
+                <Share2 className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
       <div className="container mx-auto px-4 py-6 space-y-6">
-        {/* Product Images */}
+        {/* Product Image */}
         <div className="bg-card rounded-lg border border-border overflow-hidden">
-          <div className="aspect-square bg-muted">
-            {product.images && product.images.length > 0 ? (
-              <Image
-                src={product.images[selectedImageIndex] || "/placeholder.svg"}
-                alt={product.name_uz}
-                width={400}
-                height={400}
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div className="w-full h-full bg-muted-foreground/20 flex items-center justify-center">
-                <Package className="w-16 h-16 text-muted-foreground" />
-              </div>
-            )}
-          </div>
-
-          {product.images && product.images.length > 1 && (
-            <div className="p-4 flex space-x-2 overflow-x-auto">
-              {product.images.map((image, index) => (
-                <button
-                  key={index}
-                  onClick={() => setSelectedImageIndex(index)}
-                  className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 ${
-                    selectedImageIndex === index ? "border-primary" : "border-border"
-                  }`}
-                >
-                  <Image
-                    src={image || "/placeholder.svg"}
-                    alt={`${product.name_uz} ${index + 1}`}
-                    width={64}
-                    height={64}
-                    className="w-full h-full object-cover"
-                  />
-                </button>
-              ))}
-            </div>
-          )}
+          <img src={product.image_url || "/placeholder.jpg"} alt={product.name} className="w-full h-80 object-cover" />
         </div>
 
         {/* Product Info */}
-        <div className="bg-card rounded-lg border border-border p-4 space-y-4">
-          <div>
-            <h1 className="text-2xl font-bold mb-2">{product.name_uz}</h1>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-muted-foreground">{product.category.name_uz}</span>
-              <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-                <Eye className="w-4 h-4" />
-                <span>{product.view_count || 0}</span>
-              </div>
-            </div>
-
-            {reviews.length > 0 && (
-              <div className="flex items-center space-x-2 mb-4">
-                <div className="flex items-center space-x-1">{renderStars(Math.round(averageRating))}</div>
-                <span className="text-sm text-muted-foreground">
-                  {averageRating.toFixed(1)} ({reviews.length} ta sharh)
-                </span>
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-3xl font-bold text-primary">{formatPrice(product.price)} so'm</span>
-              <span className="text-sm text-muted-foreground">/{product.unit}</span>
-            </div>
-
-            {product.product_type === "rental" && product.rental_price_per_unit && (
-              <div className="text-sm text-muted-foreground">
-                Ijara narxi: {formatPrice(product.rental_price_per_unit)} so'm/{product.rental_time_unit}
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center space-x-4 text-sm">
-            <div className="flex items-center space-x-1">
-              <Package className="w-4 h-4 text-muted-foreground" />
-              <span>Omborda: {product.stock_quantity} ta</span>
-            </div>
-
-            {product.has_delivery && (
-              <div className="flex items-center space-x-1 text-green-600">
-                <Truck className="w-4 h-4" />
-                <span>Yetkazib berish: {formatPrice(product.delivery_price)} so'm</span>
-              </div>
-            )}
-          </div>
-
-          {product.description_uz && (
-            <div>
-              <h3 className="font-semibold mb-2">Tavsif</h3>
-              <p className="text-muted-foreground">{product.description_uz}</p>
-            </div>
-          )}
-        </div>
-
-        {/* Variations */}
-        {product.variations && product.variations.length > 0 && (
-          <div className="bg-card rounded-lg border border-border p-4">
-            <h3 className="font-semibold mb-4">Variantlar</h3>
-            <div className="space-y-4">
-              {product.variations.map((variation) => (
-                <div key={variation.id}>
-                  <label className="block text-sm font-medium mb-2">{variation.name}</label>
-                  <select
-                    value={selectedVariations[variation.name] || ""}
-                    onChange={(e) =>
-                      setSelectedVariations((prev) => ({
-                        ...prev,
-                        [variation.name]: e.target.value,
-                      }))
-                    }
-                    className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
-                  >
-                    <option value="">Tanlang...</option>
-                    {variation.options.map((option: string) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Quantity and Rental Duration */}
         <div className="bg-card rounded-lg border border-border p-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">Miqdor</label>
-              <div className="flex items-center space-x-3">
-                <button
-                  onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                  className="w-10 h-10 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-colors"
-                >
-                  -
-                </button>
-                <span className="text-lg font-medium w-12 text-center">{quantity}</span>
-                <button
-                  onClick={() => setQuantity(Math.min(product.stock_quantity, quantity + 1))}
-                  className="w-10 h-10 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-colors"
-                >
-                  +
-                </button>
+          <div className="flex items-start justify-between mb-3">
+            <div className="flex-1">
+              <h1 className="text-xl font-bold mb-2">{product.name}</h1>
+              <div className="flex items-center space-x-4 mb-3">
+                {totalReviews > 0 && (
+                  <div className="flex items-center space-x-1">
+                    <div className="flex items-center">{renderStars(Math.round(averageRating))}</div>
+                    <span className="text-sm text-muted-foreground">
+                      ({averageRating.toFixed(1)}) • {totalReviews} sharh
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-center space-x-1 text-sm text-muted-foreground">
+                  <Eye className="w-4 h-4" />
+                  <span>{product.view_count || 0} ko'rildi</span>
+                </div>
               </div>
             </div>
+          </div>
 
-            {product.product_type === "rental" && (
-              <div>
-                <label className="block text-sm font-medium mb-2">Ijara muddati ({product.rental_time_unit})</label>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-2xl font-bold text-primary">
+                {isRental ? product.rental_price?.toLocaleString() : product.price.toLocaleString()} so'm
+              </span>
+              {product.is_rental && product.rental_price > 0 && (
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setIsRental(false)}
+                    className={`px-3 py-1 rounded-lg text-sm transition-colors ${
+                      !isRental ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    Sotib olish
+                  </button>
+                  <button
+                    onClick={() => setIsRental(true)}
+                    className={`px-3 py-1 rounded-lg text-sm transition-colors ${
+                      isRental ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    Ijaraga olish
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {isRental && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+                <div className="flex items-center space-x-2 mb-2">
+                  <Calendar className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm font-medium text-blue-800 dark:text-blue-200">Ijara muddati</span>
+                </div>
                 <div className="flex items-center space-x-3">
                   <button
                     onClick={() => setRentalDuration(Math.max(1, rentalDuration - 1))}
-                    className="w-10 h-10 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-colors"
+                    className="p-1 rounded-lg bg-blue-100 dark:bg-blue-800 text-blue-600 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-blue-700 transition-colors"
                   >
-                    -
+                    <Minus className="w-4 h-4" />
                   </button>
-                  <span className="text-lg font-medium w-12 text-center">{rentalDuration}</span>
+                  <span className="text-sm font-medium min-w-[60px] text-center">{rentalDuration} kun</span>
                   <button
                     onClick={() => setRentalDuration(rentalDuration + 1)}
-                    className="w-10 h-10 bg-muted rounded-lg flex items-center justify-center hover:bg-muted/80 transition-colors"
+                    className="p-1 rounded-lg bg-blue-100 dark:bg-blue-800 text-blue-600 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-blue-700 transition-colors"
                   >
-                    +
+                    <Plus className="w-4 h-4" />
                   </button>
                 </div>
               </div>
             )}
+
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                  className="p-2 rounded-lg bg-muted hover:bg-muted/80 transition-colors"
+                >
+                  <Minus className="w-4 h-4" />
+                </button>
+                <span className="text-lg font-medium min-w-[40px] text-center">{quantity}</span>
+                <button
+                  onClick={() => setQuantity(Math.min(product.stock_quantity, quantity + 1))}
+                  className="p-2 rounded-lg bg-muted hover:bg-muted/80 transition-colors"
+                  disabled={quantity >= product.stock_quantity}
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+                <Package className="w-4 h-4" />
+                <span>{product.stock_quantity} ta mavjud</span>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Add to Cart Button */}
-        <button
-          onClick={handleAddToCart}
-          disabled={product.stock_quantity === 0}
-          className="w-full bg-primary text-primary-foreground rounded-lg py-4 font-medium hover:bg-primary/90 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg hover:scale-[1.01] flex items-center justify-center space-x-2"
-        >
-          <ShoppingCart className="w-5 h-5" />
-          <span>{product.stock_quantity === 0 ? "Omborda yo'q" : "Savatga qo'shish"}</span>
-        </button>
+        {/* Description */}
+        <div className="bg-card rounded-lg border border-border p-4">
+          <h2 className="text-lg font-semibold mb-3">Mahsulot haqida</h2>
+          <p className="text-muted-foreground leading-relaxed">
+            {product.description || "Mahsulot haqida ma'lumot kiritilmagan."}
+          </p>
+        </div>
 
-        {/* Reviews Section */}
+        {/* Reviews */}
         <div className="bg-card rounded-lg border border-border p-4">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold">Sharhlar ({reviews.length})</h3>
-            {user && (
-              <button
-                onClick={() => setShowReviewForm(true)}
-                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm hover:bg-primary/90 transition-colors"
-              >
-                Sharh qoldirish
-              </button>
-            )}
-          </div>
-
-          {showReviewForm && (
-            <div className="mb-6">
-              <ReviewForm
-                productId={product.id}
-                onSuccess={() => {
-                  setShowReviewForm(false)
-                  fetchReviews()
-                }}
-                onCancel={() => setShowReviewForm(false)}
-              />
+            <div className="flex items-center space-x-2">
+              <MessageSquare className="w-5 h-5 text-primary" />
+              <h2 className="text-lg font-semibold">Sharhlar</h2>
+              {totalReviews > 0 && <span className="text-sm text-muted-foreground">({totalReviews})</span>}
             </div>
-          )}
+          </div>
 
           {reviews.length === 0 ? (
             <div className="text-center py-8">
-              <Users className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+              <MessageSquare className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
               <p className="text-muted-foreground">Hali sharhlar yo'q</p>
-              {user && <p className="text-sm text-muted-foreground mt-2">Birinchi bo'lib sharh qoldiring!</p>}
             </div>
           ) : (
             <div className="space-y-4">
-              {reviews.map((review) => (
+              {reviews.slice(0, 3).map((review) => (
                 <div key={review.id} className="border-b border-border pb-4 last:border-b-0">
                   <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <div className="flex items-center space-x-2 mb-1">
-                        <span className="font-medium">{review.customer_name}</span>
-                        {review.is_verified && (
-                          <span className="px-2 py-1 bg-green-100 dark:bg-green-900/20 text-green-600 text-xs rounded-full">
-                            Tasdiqlangan
-                          </span>
-                        )}
+                    <div className="flex items-center space-x-3">
+                      <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center">
+                        <span className="text-sm font-medium text-primary">{review.users.first_name.charAt(0)}</span>
                       </div>
-                      <div className="flex items-center space-x-1">{renderStars(review.rating)}</div>
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <span className="font-medium text-sm">
+                            {review.users.first_name} {review.users.last_name}
+                          </span>
+                          {review.is_verified && (
+                            <span className="px-2 py-1 bg-green-100 dark:bg-green-900/20 text-green-600 text-xs rounded-full">
+                              Tasdiqlangan
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center space-x-1 mt-1">{renderStars(review.rating)}</div>
+                      </div>
                     </div>
-                    <span className="text-xs text-muted-foreground">
-                      {new Date(review.created_at).toLocaleDateString("uz-UZ")}
-                    </span>
+                    <span className="text-xs text-muted-foreground">{formatDate(review.created_at)}</span>
                   </div>
-                  {review.comment && <p className="text-sm text-muted-foreground">{review.comment}</p>}
+                  {review.comment && <p className="text-sm text-muted-foreground ml-11">{review.comment}</p>}
                 </div>
               ))}
+
+              {reviews.length > 3 && (
+                <button className="w-full py-2 text-primary hover:text-primary/80 transition-colors text-sm">
+                  Barcha sharhlarni ko'rish ({reviews.length})
+                </button>
+              )}
             </div>
           )}
         </div>
+
+        {/* Add to Cart Button */}
+        <div className="sticky bottom-20 md:bottom-4 bg-background/80 backdrop-blur-sm border-t border-border p-4 -mx-4">
+          <button
+            onClick={handleAddToCart}
+            disabled={product.stock_quantity === 0}
+            className="w-full py-4 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+          >
+            <ShoppingCart className="w-5 h-5" />
+            <span>
+              {product.stock_quantity === 0
+                ? "Mavjud emas"
+                : `Savatga qo'shish - ${((isRental ? product.rental_price : product.price) * quantity).toLocaleString()} so'm`}
+            </span>
+          </button>
+        </div>
       </div>
 
+      <DraggableFab />
       <BottomNavigation />
     </div>
   )
