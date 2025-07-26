@@ -57,6 +57,7 @@ export default function ProfilePage() {
     phone_number: "",
     email: "",
   })
+  const [isUpdating, setIsUpdating] = useState(false)
 
   useEffect(() => {
     if (!user) {
@@ -112,29 +113,70 @@ export default function ProfilePage() {
     }
   }
 
+  const formatPhoneInput = (value: string) => {
+    // Remove all non-digit characters
+    const digits = value.replace(/\D/g, "")
+
+    // Format as +998 XX XXX XX XX
+    if (digits.length <= 3) {
+      return `+${digits}`
+    } else if (digits.length <= 5) {
+      return `+${digits.slice(0, 3)} ${digits.slice(3)}`
+    } else if (digits.length <= 8) {
+      return `+${digits.slice(0, 3)} ${digits.slice(3, 5)} ${digits.slice(5)}`
+    } else if (digits.length <= 10) {
+      return `+${digits.slice(0, 3)} ${digits.slice(3, 5)} ${digits.slice(5, 8)} ${digits.slice(8)}`
+    } else {
+      return `+${digits.slice(0, 3)} ${digits.slice(3, 5)} ${digits.slice(5, 8)} ${digits.slice(8, 10)} ${digits.slice(10, 12)}`
+    }
+  }
+
+  const formatEmailInput = (value: string) => {
+    // If user types without @ and domain, suggest common domains
+    if (value && !value.includes("@") && value.length > 3) {
+      return value
+    }
+    if (value && value.includes("@") && !value.includes(".")) {
+      const parts = value.split("@")
+      if (parts[1] && parts[1].length > 0) {
+        return value
+      }
+    }
+    return value
+  }
+
   const handleEditProfile = async () => {
     if (!user) return
 
+    setIsUpdating(true)
     try {
-      const { error } = await supabase
-        .from("users")
-        .update({
-          first_name: editForm.first_name,
-          last_name: editForm.last_name,
-          phone_number: editForm.phone_number,
-          email: editForm.email,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", user.id)
+      const { data, error } = await supabase.rpc("update_user_profile", {
+        user_id_param: user.id,
+        first_name_param: editForm.first_name.trim(),
+        last_name_param: editForm.last_name.trim(),
+        phone_number_param: editForm.phone_number.trim(),
+        email_param: editForm.email.trim(),
+      })
 
       if (error) throw error
 
-      alert("Profil muvaffaqiyatli yangilandi!")
-      setShowEditForm(false)
-      // Refresh user data would require updating the auth context
+      if (data.success) {
+        alert(data.message)
+        setShowEditForm(false)
+        // Update local form with formatted phone
+        if (data.formatted_phone) {
+          setEditForm((prev) => ({ ...prev, phone_number: data.formatted_phone }))
+        }
+        // Refresh user data would require updating the auth context
+        window.location.reload()
+      } else {
+        alert(data.message)
+      }
     } catch (error) {
       console.error("Profile update error:", error)
       alert("Profilni yangilashda xatolik yuz berdi")
+    } finally {
+      setIsUpdating(false)
     }
   }
 
@@ -342,17 +384,6 @@ export default function ProfilePage() {
                 <span className="text-muted-foreground">→</span>
               </button>
 
-              <button
-                onClick={() => router.push("/cart")}
-                className="w-full flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
-              >
-                <div className="flex items-center space-x-3">
-                  <ShoppingBag className="w-5 h-5 text-primary" />
-                  <span className="font-medium">Savatcha</span>
-                </div>
-                <span className="text-muted-foreground">→</span>
-              </button>
-
               <button className="w-full flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors">
                 <div className="flex items-center space-x-3">
                   <MapPin className="w-5 h-5 text-primary" />
@@ -461,30 +492,33 @@ export default function ProfilePage() {
             <h3 className="text-lg font-semibold mb-4">Profilni tahrirlash</h3>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium mb-2">Ism</label>
+                <label className="block text-sm font-medium mb-2">Ism *</label>
                 <input
                   type="text"
                   value={editForm.first_name}
                   onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })}
                   className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
+                  placeholder="Ismingizni kiriting"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">Familiya</label>
+                <label className="block text-sm font-medium mb-2">Familiya *</label>
                 <input
                   type="text"
                   value={editForm.last_name}
                   onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })}
                   className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
+                  placeholder="Familiyangizni kiriting"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">Telefon</label>
+                <label className="block text-sm font-medium mb-2">Telefon raqam</label>
                 <input
                   type="tel"
                   value={editForm.phone_number}
-                  onChange={(e) => setEditForm({ ...editForm, phone_number: e.target.value })}
+                  onChange={(e) => setEditForm({ ...editForm, phone_number: formatPhoneInput(e.target.value) })}
                   className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
+                  placeholder="+998 90 123 45 67"
                 />
               </div>
               <div>
@@ -492,23 +526,30 @@ export default function ProfilePage() {
                 <input
                   type="email"
                   value={editForm.email}
-                  onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                  onChange={(e) => setEditForm({ ...editForm, email: formatEmailInput(e.target.value) })}
                   className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
+                  placeholder="email@domen.uz"
                 />
               </div>
             </div>
             <div className="flex space-x-3 mt-6">
               <button
                 onClick={() => setShowEditForm(false)}
-                className="flex-1 py-2 px-4 bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition-colors"
+                disabled={isUpdating}
+                className="flex-1 py-2 px-4 bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition-colors disabled:opacity-50"
               >
                 Bekor qilish
               </button>
               <button
                 onClick={handleEditProfile}
-                className="flex-1 py-2 px-4 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+                disabled={isUpdating || !editForm.first_name.trim() || !editForm.last_name.trim()}
+                className="flex-1 py-2 px-4 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
               >
-                Saqlash
+                {isUpdating ? (
+                  <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                ) : (
+                  <span>Saqlash</span>
+                )}
               </button>
             </div>
           </div>

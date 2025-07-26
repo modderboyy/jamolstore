@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useRef, useEffect } from "react"
 import { ShoppingCart } from "lucide-react"
 import { useCart } from "@/contexts/CartContext"
@@ -35,6 +34,7 @@ export function DraggableFab({ onCartClick }: DraggableFabProps) {
   }, [])
 
   const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault()
     setIsDragging(true)
     setHasMoved(false)
     setDragStart({
@@ -69,6 +69,7 @@ export function DraggableFab({ onCartClick }: DraggableFabProps) {
   }
 
   const handleTouchStart = (e: React.TouchEvent) => {
+    e.preventDefault()
     const touch = e.touches[0]
     setIsDragging(true)
     setHasMoved(false)
@@ -121,9 +122,11 @@ export function DraggableFab({ onCartClick }: DraggableFabProps) {
     }
   }, [isDragging, dragStart])
 
-  const handleClick = () => {
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
     // Only trigger click if not dragged
-    if (!hasMoved) {
+    if (!hasMoved && onCartClick) {
       onCartClick()
     }
   }

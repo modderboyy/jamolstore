@@ -11,7 +11,7 @@ import { ProductCard } from "@/components/ui/product-card"
 import { DraggableFab } from "@/components/ui/draggable-fab"
 import { QuantityModal } from "@/components/ui/quantity-modal"
 import { CartSidebar } from "@/components/layout/cart-sidebar"
-import { Search, Package, TrendingUp, Star, Filter } from "lucide-react"
+import { Search, Package, TrendingUp, Star, Filter, User } from "lucide-react"
 
 interface Product {
   id: string
@@ -35,6 +35,29 @@ interface Product {
   review_count?: number
 }
 
+interface Worker {
+  id: string
+  first_name: string
+  last_name: string
+  profession_uz: string
+  hourly_rate: number
+  rating: number
+  avatar_url?: string
+  experience_years: number
+}
+
+interface SearchResult {
+  id: string
+  title: string
+  subtitle: string
+  type: "product" | "worker"
+  image_url?: string
+  price: number
+  category: string
+  rating: number
+  has_delivery: boolean
+}
+
 interface Category {
   id: string
   name_uz: string
@@ -45,6 +68,8 @@ export default function HomePage() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const [products, setProducts] = useState<Product[]>([])
+  const [workers, setWorkers] = useState<Worker[]>([])
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [popularSearches, setPopularSearches] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -58,7 +83,11 @@ export default function HomePage() {
 
   useEffect(() => {
     fetchCategories()
-    fetchProducts()
+    if (searchQuery) {
+      fetchSearchResults()
+    } else {
+      fetchProducts()
+    }
     fetchPopularSearches()
   }, [searchQuery, selectedCategory, sortBy, deliveryFilter])
 
@@ -85,6 +114,22 @@ export default function HomePage() {
       setPopularSearches(data || [])
     } catch (error) {
       console.error("Popular searches error:", error)
+    }
+  }
+
+  const fetchSearchResults = async () => {
+    try {
+      const { data, error } = await supabase.rpc("search_all_content", {
+        search_term: searchQuery,
+        limit_count: 20,
+      })
+
+      if (error) throw error
+      setSearchResults(data || [])
+    } catch (error) {
+      console.error("Search results error:", error)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -119,14 +164,6 @@ export default function HomePage() {
         `)
         .eq("is_available", true)
         .gt("stock_quantity", 0)
-
-      // Apply search filter
-      if (searchQuery) {
-        const transliteratedQuery = transliterate(searchQuery)
-        query = query.or(
-          `name_uz.ilike.%${searchQuery}%,description_uz.ilike.%${searchQuery}%,name_uz.ilike.%${transliteratedQuery}%,description_uz.ilike.%${transliteratedQuery}%`,
-        )
-      }
 
       // Apply category filter
       if (selectedCategory) {
@@ -191,83 +228,6 @@ export default function HomePage() {
     }
   }
 
-  const transliterate = (text: string) => {
-    const cyrillicToLatin: { [key: string]: string } = {
-      а: "a",
-      б: "b",
-      в: "v",
-      г: "g",
-      д: "d",
-      е: "e",
-      ё: "yo",
-      ж: "zh",
-      з: "z",
-      и: "i",
-      й: "y",
-      к: "k",
-      л: "l",
-      м: "m",
-      н: "n",
-      о: "o",
-      п: "p",
-      р: "r",
-      с: "s",
-      т: "t",
-      у: "u",
-      ф: "f",
-      х: "x",
-      ц: "ts",
-      ч: "ch",
-      ш: "sh",
-      щ: "shch",
-      ъ: "",
-      ы: "y",
-      ь: "",
-      э: "e",
-      ю: "yu",
-      я: "ya",
-      А: "A",
-      Б: "B",
-      В: "V",
-      Г: "G",
-      Д: "D",
-      Е: "E",
-      Ё: "Yo",
-      Ж: "Zh",
-      З: "Z",
-      И: "I",
-      Й: "Y",
-      К: "K",
-      Л: "L",
-      М: "M",
-      Н: "N",
-      О: "O",
-      П: "P",
-      Р: "R",
-      С: "S",
-      Т: "T",
-      У: "U",
-      Ф: "F",
-      Х: "X",
-      Ц: "Ts",
-      Ч: "Ch",
-      Ш: "Sh",
-      Щ: "Shch",
-      Ъ: "",
-      Ы: "Y",
-      Ь: "",
-      Э: "E",
-      Ю: "Yu",
-      Я: "Ya",
-    }
-
-    let result = text
-    for (const [cyrillic, latin] of Object.entries(cyrillicToLatin)) {
-      result = result.replace(new RegExp(cyrillic, "g"), latin)
-    }
-    return result
-  }
-
   const handleCategorySelect = (categoryId: string | null) => {
     setSelectedCategory(categoryId)
     const params = new URLSearchParams()
@@ -282,6 +242,10 @@ export default function HomePage() {
     // Increment view count
     supabase.rpc("increment_product_view", { product_id_param: productId })
     router.push(`/product/${productId}`)
+  }
+
+  const handleWorkerView = (workerId: string) => {
+    router.push(`/workers/${workerId}`)
   }
 
   const handleAddToCart = (product: Product) => {
@@ -340,24 +304,6 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* Category Quick Access */}
-        {!searchQuery && !selectedCategory && (
-          <div className="mb-6">
-            <h3 className="text-lg font-semibold mb-3">Kategoriyalar</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {categories.slice(0, 8).map((category) => (
-                <button
-                  key={category.id}
-                  onClick={() => handleCategorySelect(category.id)}
-                  className="p-3 bg-card rounded-lg border border-border hover:border-primary/20 transition-colors text-left"
-                >
-                  <span className="font-medium text-sm">{category.name_uz}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Section Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center space-x-3">
@@ -368,138 +314,252 @@ export default function HomePage() {
             <div>
               <h2 className="text-xl font-bold">{getSectionTitle()}</h2>
               <p className="text-sm text-muted-foreground">
-                {loading ? "Yuklanmoqda..." : `${products.length} ta mahsulot topildi`}
+                {loading
+                  ? "Yuklanmoqda..."
+                  : searchQuery
+                    ? `${searchResults.length} ta natija topildi`
+                    : `${products.length} ta mahsulot topildi`}
               </p>
             </div>
           </div>
 
-          {/* Filters */}
-          <div className="flex items-center space-x-2">
-            {/* Delivery Filter */}
-            <select
-              value={deliveryFilter}
-              onChange={(e) => setDeliveryFilter(e.target.value)}
-              className="px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 text-sm"
-            >
-              <option value="all">Barchasi</option>
-              <option value="available">Yetkazib berish mavjud</option>
-              <option value="free">Tekin yetkazib berish</option>
-              <option value="none">Yetkazib berish yo'q</option>
-            </select>
+          {/* Filters - Only show for products */}
+          {!searchQuery && (
+            <div className="flex items-center space-x-2">
+              {/* Delivery Filter */}
+              <select
+                value={deliveryFilter}
+                onChange={(e) => setDeliveryFilter(e.target.value)}
+                className="px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 text-sm"
+              >
+                <option value="all">Barchasi</option>
+                <option value="available">Yetkazib berish mavjud</option>
+                <option value="free">Tekin yetkazib berish</option>
+                <option value="none">Yetkazib berish yo'q</option>
+              </select>
 
-            {/* Sort Dropdown */}
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 text-sm"
-            >
-              <option value="featured">Tavsiya etilgan</option>
-              <option value="popular">Mashhur</option>
-              <option value="newest">Yangi</option>
-              <option value="price_low">Arzon narx</option>
-              <option value="price_high">Qimmat narx</option>
-            </select>
-          </div>
+              {/* Sort Dropdown */}
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 text-sm"
+              >
+                <option value="featured">Tavsiya etilgan</option>
+                <option value="popular">Mashhur</option>
+                <option value="newest">Yangi</option>
+                <option value="price_low">Arzon narx</option>
+                <option value="price_high">Qimmat narx</option>
+              </select>
+            </div>
+          )}
         </div>
 
-        {/* Products Grid */}
-        {loading ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {Array.from({ length: 10 }).map((_, index) => (
-              <div key={index} className="bg-card rounded-lg border border-border p-4 animate-pulse">
-                <div className="aspect-square bg-muted rounded-lg mb-3"></div>
-                <div className="h-4 bg-muted rounded mb-2"></div>
-                <div className="h-3 bg-muted rounded w-2/3"></div>
+        {/* Search Results */}
+        {searchQuery && (
+          <div className="space-y-6">
+            {loading ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {Array.from({ length: 10 }).map((_, index) => (
+                  <div key={index} className="bg-card rounded-lg border border-border p-4 animate-pulse">
+                    <div className="aspect-square bg-muted rounded-lg mb-3"></div>
+                    <div className="h-4 bg-muted rounded mb-2"></div>
+                    <div className="h-3 bg-muted rounded w-2/3"></div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        ) : products.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center mx-auto mb-6">
-              <Search className="w-10 h-10 text-muted-foreground" />
-            </div>
-            <h3 className="text-xl font-bold mb-2">Hech narsa topilmadi</h3>
-            <p className="text-muted-foreground mb-6">
-              {searchQuery
-                ? `"${searchQuery}" bo'yicha hech qanday mahsulot topilmadi`
-                : "Bu kategoriyada mahsulotlar yo'q"}
-            </p>
-            <button
-              onClick={() => {
-                setSearchQuery("")
-                setSelectedCategory(null)
-                setDeliveryFilter("all")
-                router.push("/")
-              }}
-              className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-            >
-              Barcha mahsulotlarni ko'rish
-            </button>
-          </div>
-        ) : (
-          <div className="product-grid">
-            {products.map((product, index) => (
-              <div key={product.id} className="product-card" style={{ animationDelay: `${index * 50}ms` }}>
-                <ProductCard product={product} onQuickView={handleProductView} onAddToCart={handleAddToCart} />
+            ) : searchResults.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center mx-auto mb-6">
+                  <Search className="w-10 h-10 text-muted-foreground" />
+                </div>
+                <h3 className="text-xl font-bold mb-2">Hech narsa topilmadi</h3>
+                <p className="text-muted-foreground mb-6">`"${searchQuery}" bo'yicha hech qanday natija topilmadi`</p>
+                <button
+                  onClick={() => {
+                    setSearchQuery("")
+                    router.push("/")
+                  }}
+                  className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+                >
+                  Barcha mahsulotlarni ko'rish
+                </button>
               </div>
-            ))}
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {searchResults.map((result, index) => (
+                  <div
+                    key={`${result.type}-${result.id}`}
+                    className="animate-slideInUp"
+                    style={{ animationDelay: `${index * 50}ms` }}
+                  >
+                    {result.type === "product" ? (
+                      <div
+                        onClick={() => handleProductView(result.id)}
+                        className="bg-card rounded-lg border border-border p-4 hover:shadow-md transition-all cursor-pointer"
+                      >
+                        <div className="aspect-square bg-muted rounded-lg mb-3 overflow-hidden">
+                          {result.image_url && (
+                            <img
+                              src={result.image_url || "/placeholder.svg"}
+                              alt={result.title}
+                              className="w-full h-full object-cover"
+                            />
+                          )}
+                        </div>
+                        <h3 className="font-medium text-sm line-clamp-2 mb-1">{result.title}</h3>
+                        <p className="text-xs text-muted-foreground mb-2">{result.category}</p>
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-sm">
+                            {new Intl.NumberFormat("uz-UZ").format(result.price)} so'm
+                          </span>
+                          <div className="flex items-center space-x-1">
+                            <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
+                            <span className="text-xs">{result.rating.toFixed(1)}</span>
+                          </div>
+                        </div>
+                        {result.has_delivery && (
+                          <div className="mt-2">
+                            <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
+                              Yetkazib berish
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div
+                        onClick={() => handleWorkerView(result.id)}
+                        className="bg-card rounded-lg border border-border p-4 hover:shadow-md transition-all cursor-pointer"
+                      >
+                        <div className="aspect-square bg-muted rounded-lg mb-3 overflow-hidden">
+                          {result.image_url ? (
+                            <img
+                              src={result.image_url || "/placeholder.svg"}
+                              alt={result.title}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center">
+                              <User className="w-8 h-8 text-primary/50" />
+                            </div>
+                          )}
+                        </div>
+                        <h3 className="font-medium text-sm line-clamp-2 mb-1">{result.title}</h3>
+                        <p className="text-xs text-muted-foreground mb-2">{result.subtitle}</p>
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-sm">
+                            {new Intl.NumberFormat("uz-UZ").format(result.price)} so'm/soat
+                          </span>
+                          <div className="flex items-center space-x-1">
+                            <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
+                            <span className="text-xs">{result.rating.toFixed(1)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
-        {/* Featured Products Section */}
-        {!searchQuery && !selectedCategory && (
-          <div className="mt-12">
-            <div className="flex items-center space-x-3 mb-6">
-              <Star className="w-6 h-6 text-yellow-500" />
-              <div>
-                <h2 className="text-xl font-bold">Tavsiya etilgan mahsulotlar</h2>
-                <p className="text-sm text-muted-foreground">Eng yaxshi takliflar</p>
+        {/* Products Grid - Only show when not searching */}
+        {!searchQuery && (
+          <>
+            {loading ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {Array.from({ length: 10 }).map((_, index) => (
+                  <div key={index} className="bg-card rounded-lg border border-border p-4 animate-pulse">
+                    <div className="aspect-square bg-muted rounded-lg mb-3"></div>
+                    <div className="h-4 bg-muted rounded mb-2"></div>
+                    <div className="h-3 bg-muted rounded w-2/3"></div>
+                  </div>
+                ))}
               </div>
-            </div>
-
-            <div className="product-grid">
-              {products
-                .filter((product) => product.is_featured)
-                .slice(0, 10)
-                .map((product, index) => (
-                  <div
-                    key={`featured-${product.id}`}
-                    className="product-card"
-                    style={{ animationDelay: `${index * 50}ms` }}
-                  >
+            ) : products.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center mx-auto mb-6">
+                  <Search className="w-10 h-10 text-muted-foreground" />
+                </div>
+                <h3 className="text-xl font-bold mb-2">Hech narsa topilmadi</h3>
+                <p className="text-muted-foreground mb-6">Bu kategoriyada mahsulotlar yo'q</p>
+                <button
+                  onClick={() => {
+                    setSelectedCategory(null)
+                    setDeliveryFilter("all")
+                    router.push("/")
+                  }}
+                  className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+                >
+                  Barcha mahsulotlarni ko'rish
+                </button>
+              </div>
+            ) : (
+              <div className="product-grid">
+                {products.map((product, index) => (
+                  <div key={product.id} className="product-card" style={{ animationDelay: `${index * 50}ms` }}>
                     <ProductCard product={product} onQuickView={handleProductView} onAddToCart={handleAddToCart} />
                   </div>
                 ))}
-            </div>
-          </div>
-        )}
-
-        {/* Popular Products Section */}
-        {!searchQuery && !selectedCategory && (
-          <div className="mt-12">
-            <div className="flex items-center space-x-3 mb-6">
-              <TrendingUp className="w-6 h-6 text-green-500" />
-              <div>
-                <h2 className="text-xl font-bold">Mashhur mahsulotlar</h2>
-                <p className="text-sm text-muted-foreground">Ko'p sotilayotgan mahsulotlar</p>
               </div>
-            </div>
+            )}
 
-            <div className="product-grid">
-              {products
-                .filter((product) => product.is_popular)
-                .slice(0, 10)
-                .map((product, index) => (
-                  <div
-                    key={`popular-${product.id}`}
-                    className="product-card"
-                    style={{ animationDelay: `${index * 50}ms` }}
-                  >
-                    <ProductCard product={product} onQuickView={handleProductView} onAddToCart={handleAddToCart} />
+            {/* Featured Products Section */}
+            {!selectedCategory && (
+              <div className="mt-12">
+                <div className="flex items-center space-x-3 mb-6">
+                  <Star className="w-6 h-6 text-yellow-500" />
+                  <div>
+                    <h2 className="text-xl font-bold">Tavsiya etilgan mahsulotlar</h2>
+                    <p className="text-sm text-muted-foreground">Eng yaxshi takliflar</p>
                   </div>
-                ))}
-            </div>
-          </div>
+                </div>
+
+                <div className="product-grid">
+                  {products
+                    .filter((product) => product.is_featured)
+                    .slice(0, 10)
+                    .map((product, index) => (
+                      <div
+                        key={`featured-${product.id}`}
+                        className="product-card"
+                        style={{ animationDelay: `${index * 50}ms` }}
+                      >
+                        <ProductCard product={product} onQuickView={handleProductView} onAddToCart={handleAddToCart} />
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* Popular Products Section */}
+            {!selectedCategory && (
+              <div className="mt-12">
+                <div className="flex items-center space-x-3 mb-6">
+                  <TrendingUp className="w-6 h-6 text-green-500" />
+                  <div>
+                    <h2 className="text-xl font-bold">Mashhur mahsulotlar</h2>
+                    <p className="text-sm text-muted-foreground">Ko'p sotilayotgan mahsulotlar</p>
+                  </div>
+                </div>
+
+                <div className="product-grid">
+                  {products
+                    .filter((product) => product.is_popular)
+                    .slice(0, 10)
+                    .map((product, index) => (
+                      <div
+                        key={`popular-${product.id}`}
+                        className="product-card"
+                        style={{ animationDelay: `${index * 50}ms` }}
+                      >
+                        <ProductCard product={product} onQuickView={handleProductView} onAddToCart={handleAddToCart} />
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -513,15 +573,6 @@ export default function HomePage() {
       <QuantityModal isOpen={showQuantityModal} onClose={() => setShowQuantityModal(false)} product={selectedProduct} />
 
       <style jsx>{`
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-          }
-          to {
-            opacity: 1;
-          }
-        }
-
         @keyframes slideInUp {
           from {
             opacity: 0;
@@ -558,6 +609,10 @@ export default function HomePage() {
         }
 
         .product-card {
+          animation: slideInUp 0.6s ease-out;
+        }
+
+        .animate-slideInUp {
           animation: slideInUp 0.6s ease-out;
         }
       `}</style>

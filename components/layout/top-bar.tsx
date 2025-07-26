@@ -45,7 +45,7 @@ export function TopBar() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const { user } = useAuth()
-  const { totalItems, uniqueItemsCount } = useCart()
+  const { uniqueItemsCount } = useCart()
   const [searchQuery, setSearchQuery] = useState(searchParams.get("search") || "")
   const [showCartSidebar, setShowCartSidebar] = useState(false)
   const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(null)
@@ -114,7 +114,7 @@ export function TopBar() {
     try {
       const { data, error } = await supabase.rpc("get_search_suggestions", {
         search_term: query,
-        limit_count: 5,
+        limit_count: 8,
       })
 
       if (error) throw error
@@ -199,7 +199,7 @@ export function TopBar() {
           </div>
         )}
 
-        {/* Main Header - Responsive */}
+        {/* Main Header - Mobile: Search only, Desktop: Logo + Search + Cart */}
         <div className="container mx-auto px-3 md:px-4 py-2 md:py-3">
           <div className="flex items-center justify-between">
             {/* Logo - Desktop Only */}
@@ -227,7 +227,7 @@ export function TopBar() {
               </div>
             </button>
 
-            {/* Search Bar - Mobile First, Desktop Second */}
+            {/* Search Bar - Full width on mobile, constrained on desktop */}
             <div className="flex-1 md:max-w-xl md:mx-6">
               <form onSubmit={handleSearch} className="relative">
                 <div className="relative group">
@@ -257,7 +257,11 @@ export function TopBar() {
                         <Search className="w-3 h-3 text-gray-400" />
                         <span>{suggestion.suggestion}</span>
                         <span className="text-xs text-gray-400 ml-auto">
-                          {suggestion.type === "product" ? "Mahsulot" : "Kategoriya"}
+                          {suggestion.type === "product"
+                            ? "Mahsulot"
+                            : suggestion.type === "worker"
+                              ? "Usta"
+                              : "Kategoriya"}
                         </span>
                       </button>
                     ))}
