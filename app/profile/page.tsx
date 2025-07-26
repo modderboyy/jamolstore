@@ -76,11 +76,12 @@ export default function ProfilePage() {
     if (!user) return
 
     try {
-      // Fetch user orders
+      // Fetch only confirmed orders
       const { data: orders, error: ordersError } = await supabase
         .from("orders")
         .select("total_amount, created_at")
         .eq("customer_id", user.id)
+        .eq("status", "confirmed") // Only confirmed orders
 
       if (ordersError) throw ordersError
 
@@ -342,7 +343,7 @@ export default function ProfilePage() {
                 <div className="bg-card rounded-xl border border-border p-4 text-center">
                   <ShoppingBag className="w-8 h-8 text-primary mx-auto mb-2" />
                   <div className="text-2xl font-bold">{stats.totalOrders}</div>
-                  <div className="text-sm text-muted-foreground">Buyurtmalar</div>
+                  <div className="text-sm text-muted-foreground">Tasdiqlangan buyurtmalar</div>
                 </div>
                 <div className="bg-card rounded-xl border border-border p-4 text-center">
                   <div className="text-2xl font-bold text-green-600">{formatPrice(stats.totalSpent)}</div>
@@ -473,7 +474,7 @@ export default function ProfilePage() {
                     <Phone className="w-5 h-5 text-primary" />
                     <span>{companyInfo.phone_number}</span>
                   </div>
-                  <div className="flex items-center space-x-3">
+                  <div className="flex items-center space-x-2">
                     <MapPin className="w-5 h-5 text-primary" />
                     <span>Qashqadaryo viloyati, G'uzor tumani</span>
                   </div>
