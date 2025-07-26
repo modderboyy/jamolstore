@@ -1,19 +1,21 @@
 "use client"
 
+import type React from "react"
+
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
 import { supabase } from "@/lib/supabase"
 import { TopBar } from "@/components/layout/top-bar"
 import { BottomNavigation } from "@/components/layout/bottom-navigation"
-import { ArrowLeft, Plus, Home, Edit, Trash2, MapPin } from "lucide-react"
+import { ArrowLeft, MapPin, Plus, Edit, Trash2, Check } from "lucide-react"
 
 interface Address {
   id: string
   name: string
   address: string
-  city?: string
-  region?: string
+  city: string
+  region: string
   is_default: boolean
   created_at: string
 }
@@ -25,6 +27,7 @@ export default function AddressesPage() {
   const [loading, setLoading] = useState(true)
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingAddress, setEditingAddress] = useState<Address | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [formData, setFormData] = useState({
     name: "",
     address: "",
@@ -58,39 +61,78 @@ export default function AddressesPage() {
     }
   }
 
-  const handleAddAddress = async () => {
-    if (!user || !formData.name.trim() || !formData.address.trim()) {
-      alert("Iltimos, majburiy maydonlarni to'ldiring")
-      return
-    }
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!user) return
 
+    setIsSubmitting(true)
     try {
-      const { data, error } = await supabase.rpc("add_user_address", {
-        user_id_param: user.id,
-        name_param: formData.name.trim(),
-        address_param: formData.address.trim(),
-        city_param: formData.city.trim() || null,
-        region_param: formData.region.trim() || null,
-        is_default_param: formData.is_default,
-      })
+      if (editingAddress) {
+        // Update existing address
+        const { error } = await supabase
+          .from("addresses")
+          .update({
+            name: formData.name,
+            address: formData.address,
+            city: formData.city,
+            region: formData.region,
+            is_default: formData.is_default,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", editingAddress.id)
 
-      if (error) throw error
-
-      if (data.success) {
-        alert(data.message)
-        setFormData({ name: "", address: "", city: "", region: "", is_default: false })
-        setShowAddForm(false)
-        fetchAddresses()
+        if (error) throw error
       } else {
-        alert(data.message)
+        // Add new address
+        const { data, error } = await supabase.rpc("add_user_address", {
+          user_id_param: user.id,
+          name_param: formData.name,
+          address_param: formData.address,
+          city_param: formData.city,
+          region_param: formData.region,
+          is_default_param: formData.is_default,
+        })
+
+        if (error) throw error
+        if (!data.success) {
+          alert(data.message)
+          return
+        }
       }
+
+      // Reset form and refresh addresses
+      setFormData({
+        name: "",
+        address: "",
+        city: "",
+        region: "",
+        is_default: false,
+      })
+      setShowAddForm(false)
+      setEditingAddress(null)
+      fetchAddresses()
+      alert(editingAddress ? "Manzil yangilandi!" : "Manzil qo'shildi!")
     } catch (error) {
-      console.error("Add address error:", error)
-      alert("Manzil qo'shishda xatolik yuz berdi")
+      console.error("Address submit error:", error)
+      alert("Xatolik yuz berdi")
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
-  const handleDeleteAddress = async (addressId: string) => {
+  const handleEdit = (address: Address) => {
+    setEditingAddress(address)
+    setFormData({
+      name: address.name,
+      address: address.address,
+      city: address.city || "",
+      region: address.region || "",
+      is_default: address.is_default,
+    })
+    setShowAddForm(true)
+  }
+
+  const handleDelete = async (addressId: string) => {
     if (!confirm("Bu manzilni o'chirishni xohlaysizmi?")) return
 
     try {
@@ -98,34 +140,42 @@ export default function AddressesPage() {
 
       if (error) throw error
       fetchAddresses()
+      alert("Manzil o'chirildi!")
     } catch (error) {
       console.error("Delete address error:", error)
-      alert("Manzilni o'chirishda xatolik yuz berdi")
+      alert("Xatolik yuz berdi")
     }
   }
 
   const handleSetDefault = async (addressId: string) => {
+    if (!user) return
+
     try {
       // First, unset all defaults
-      await supabase.from("addresses").update({ is_default: false }).eq("user_id", user?.id)
+      await supabase.from("addresses").update({ is_default: false }).eq("user_id", user.id)
 
       // Then set the selected one as default
       const { error } = await supabase.from("addresses").update({ is_default: true }).eq("id", addressId)
 
       if (error) throw error
       fetchAddresses()
+      alert("Asosiy manzil o'zgartirildi!")
     } catch (error) {
       console.error("Set default error:", error)
-      alert("Asosiy manzilni o'rnatishda xatolik yuz berdi")
+      alert("Xatolik yuz berdi")
     }
   }
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("uz-UZ", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
+  const resetForm = () => {
+    setFormData({
+      name: "",
+      address: "",
+      city: "",
+      region: "",
+      is_default: false,
     })
+    setShowAddForm(false)
+    setEditingAddress(null)
   }
 
   if (loading) {
@@ -140,106 +190,94 @@ export default function AddressesPage() {
     )
   }
 
-  if (!user) {
-    return null
-  }
-
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-4">
       <TopBar />
 
+      {/* Header */}
       <div className="container mx-auto px-4 py-4 border-b border-border">
         <div className="flex items-center space-x-4">
-          <button onClick={() => router.back()} className="p-2 -ml-2 rounded-lg hover:bg-muted transition-colors">
+          <button onClick={() => router.back()} className="p-2 -ml-2 rounded-xl hover:bg-muted transition-colors">
             <ArrowLeft className="w-6 h-6" />
           </button>
           <div className="flex-1">
-            <h1 className="text-xl font-bold">Manzillarim</h1>
+            <h1 className="text-lg font-bold">Manzillarim</h1>
             <p className="text-sm text-muted-foreground">{addresses.length} ta manzil</p>
           </div>
           <button
             onClick={() => setShowAddForm(true)}
-            className="flex items-center space-x-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+            className="p-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
           >
-            <Plus className="w-4 h-4" />
-            <span>Qo'shish</span>
+            <Plus className="w-5 h-5" />
           </button>
         </div>
       </div>
 
       <div className="container mx-auto px-4 py-6">
+        {/* Addresses List */}
         {addresses.length === 0 ? (
           <div className="text-center py-12">
             <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center mx-auto mb-6">
               <MapPin className="w-10 h-10 text-muted-foreground" />
             </div>
             <h3 className="text-xl font-bold mb-2">Manzillar yo'q</h3>
-            <p className="text-muted-foreground mb-6">Yetkazib berish uchun manzil qo'shing</p>
+            <p className="text-muted-foreground mb-6">Birinchi manzilni qo'shing</p>
             <button
               onClick={() => setShowAddForm(true)}
               className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
             >
-              Birinchi manzilni qo'shish
+              Manzil qo'shish
             </button>
           </div>
         ) : (
           <div className="space-y-4">
             {addresses.map((address) => (
               <div key={address.id} className="bg-card rounded-xl border border-border p-4">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-start space-x-3 flex-1">
-                    <div className="p-2 bg-primary/10 rounded-lg">
-                      <Home className="w-5 h-5 text-primary" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center space-x-2 mb-1">
-                        <h3 className="font-semibold">{address.name}</h3>
-                        {address.is_default && (
-                          <span className="px-2 py-1 bg-primary/10 text-primary text-xs rounded-full">Asosiy</span>
-                        )}
-                      </div>
-                      <p className="text-muted-foreground mb-2">{address.address}</p>
-                      {(address.city || address.region) && (
-                        <p className="text-sm text-muted-foreground mb-2">
-                          {[address.city, address.region].filter(Boolean).join(", ")}
-                        </p>
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-2 mb-1">
+                      <h3 className="font-semibold">{address.name}</h3>
+                      {address.is_default && (
+                        <span className="px-2 py-1 bg-primary text-primary-foreground text-xs rounded">Asosiy</span>
                       )}
-                      <p className="text-xs text-muted-foreground">Qo'shilgan: {formatDate(address.created_at)}</p>
                     </div>
+                    <p className="text-muted-foreground text-sm">{address.address}</p>
+                    {(address.city || address.region) && (
+                      <p className="text-muted-foreground text-sm">
+                        {address.city}
+                        {address.city && address.region && ", "}
+                        {address.region}
+                      </p>
+                    )}
                   </div>
-
                   <div className="flex items-center space-x-2">
                     {!address.is_default && (
                       <button
                         onClick={() => handleSetDefault(address.id)}
-                        className="px-3 py-1 text-xs bg-muted hover:bg-muted/80 rounded-lg transition-colors"
+                        className="p-2 hover:bg-muted rounded-lg transition-colors"
+                        title="Asosiy qilish"
                       >
-                        Asosiy qilish
+                        <Check className="w-4 h-4" />
                       </button>
                     )}
                     <button
-                      onClick={() => {
-                        setEditingAddress(address)
-                        setFormData({
-                          name: address.name,
-                          address: address.address,
-                          city: address.city || "",
-                          region: address.region || "",
-                          is_default: address.is_default,
-                        })
-                        setShowAddForm(true)
-                      }}
+                      onClick={() => handleEdit(address)}
                       className="p-2 hover:bg-muted rounded-lg transition-colors"
+                      title="Tahrirlash"
                     >
                       <Edit className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => handleDeleteAddress(address.id)}
-                      className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+                      onClick={() => handleDelete(address.id)}
+                      className="p-2 hover:bg-muted rounded-lg transition-colors text-red-500"
+                      title="O'chirish"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Qo'shilgan: {new Date(address.created_at).toLocaleDateString("uz-UZ")}
                 </div>
               </div>
             ))}
@@ -254,48 +292,48 @@ export default function AddressesPage() {
             <h3 className="text-lg font-semibold mb-4">
               {editingAddress ? "Manzilni tahrirlash" : "Yangi manzil qo'shish"}
             </h3>
-            <div className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium mb-2">Manzil nomi *</label>
+                <label className="block text-sm font-medium mb-2">Nomi *</label>
                 <input
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
-                  placeholder="Masalan: Uy, Ish, Do'stim uyi"
+                  placeholder="Uy, Ish, va hokazo"
+                  required
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">To'liq manzil *</label>
+                <label className="block text-sm font-medium mb-2">Manzil *</label>
                 <textarea
                   value={formData.address}
                   onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                  className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
                   rows={3}
-                  className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all resize-none"
-                  placeholder="Ko'cha, uy raqami va boshqa ma'lumotlar"
+                  placeholder="To'liq manzil"
+                  required
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium mb-2">Shahar</label>
-                  <input
-                    type="text"
-                    value={formData.city}
-                    onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                    className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
-                    placeholder="Shahar nomi"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-2">Viloyat</label>
-                  <input
-                    type="text"
-                    value={formData.region}
-                    onChange={(e) => setFormData({ ...formData, region: e.target.value })}
-                    className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
-                    placeholder="Viloyat nomi"
-                  />
-                </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Shahar</label>
+                <input
+                  type="text"
+                  value={formData.city}
+                  onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                  className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
+                  placeholder="Shahar nomi"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Viloyat</label>
+                <input
+                  type="text"
+                  value={formData.region}
+                  onChange={(e) => setFormData({ ...formData, region: e.target.value })}
+                  className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
+                  placeholder="Viloyat nomi"
+                />
               </div>
               <div className="flex items-center space-x-2">
                 <input
@@ -309,26 +347,28 @@ export default function AddressesPage() {
                   Asosiy manzil sifatida belgilash
                 </label>
               </div>
-            </div>
-            <div className="flex space-x-3 mt-6">
-              <button
-                onClick={() => {
-                  setShowAddForm(false)
-                  setEditingAddress(null)
-                  setFormData({ name: "", address: "", city: "", region: "", is_default: false })
-                }}
-                className="flex-1 py-2 px-4 bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition-colors"
-              >
-                Bekor qilish
-              </button>
-              <button
-                onClick={handleAddAddress}
-                disabled={!formData.name.trim() || !formData.address.trim()}
-                className="flex-1 py-2 px-4 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
-              >
-                {editingAddress ? "Saqlash" : "Qo'shish"}
-              </button>
-            </div>
+              <div className="flex space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  disabled={isSubmitting}
+                  className="flex-1 py-2 px-4 bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition-colors disabled:opacity-50"
+                >
+                  Bekor qilish
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting || !formData.name.trim() || !formData.address.trim()}
+                  className="flex-1 py-2 px-4 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
+                >
+                  {isSubmitting ? (
+                    <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                  ) : (
+                    <span>{editingAddress ? "Yangilash" : "Qo'shish"}</span>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

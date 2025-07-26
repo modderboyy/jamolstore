@@ -9,7 +9,6 @@ import { BottomNavigation } from "@/components/layout/bottom-navigation"
 import {
   User,
   Phone,
-  Mail,
   MapPin,
   Calendar,
   ShoppingBag,
@@ -18,6 +17,7 @@ import {
   LogOut,
   AlertTriangle,
   Building2,
+  MessageCircle,
 } from "lucide-react"
 
 interface UserStats {
@@ -55,7 +55,6 @@ export default function ProfilePage() {
     first_name: "",
     last_name: "",
     phone_number: "",
-    email: "",
   })
   const [isUpdating, setIsUpdating] = useState(false)
 
@@ -70,7 +69,6 @@ export default function ProfilePage() {
       first_name: user.first_name || "",
       last_name: user.last_name || "",
       phone_number: user.phone_number || "",
-      email: user.email || "",
     })
   }, [user, router])
 
@@ -131,20 +129,6 @@ export default function ProfilePage() {
     }
   }
 
-  const formatEmailInput = (value: string) => {
-    // If user types without @ and domain, suggest common domains
-    if (value && !value.includes("@") && value.length > 3) {
-      return value
-    }
-    if (value && value.includes("@") && !value.includes(".")) {
-      const parts = value.split("@")
-      if (parts[1] && parts[1].length > 0) {
-        return value
-      }
-    }
-    return value
-  }
-
   const handleEditProfile = async () => {
     if (!user) return
 
@@ -155,7 +139,7 @@ export default function ProfilePage() {
         first_name_param: editForm.first_name.trim(),
         last_name_param: editForm.last_name.trim(),
         phone_number_param: editForm.phone_number.trim(),
-        email_param: editForm.email.trim(),
+        email_param: "", // Email not needed
       })
 
       if (error) throw error
@@ -325,12 +309,6 @@ export default function ProfilePage() {
                         <span>{user.phone_number}</span>
                       </div>
                     )}
-                    {user.email && (
-                      <div className="flex items-center space-x-2">
-                        <Mail className="w-4 h-4" />
-                        <span>{user.email}</span>
-                      </div>
-                    )}
                     <div className="flex items-center space-x-2">
                       <Calendar className="w-4 h-4" />
                       <span>A'zo bo'lgan: {formatDate(user.created_at)}</span>
@@ -384,7 +362,10 @@ export default function ProfilePage() {
                 <span className="text-muted-foreground">→</span>
               </button>
 
-              <button className="w-full flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors">
+              <button
+                onClick={() => router.push("/profile/addresses")}
+                className="w-full flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
+              >
                 <div className="flex items-center space-x-3">
                   <MapPin className="w-5 h-5 text-primary" />
                   <span className="font-medium">Manzillarim</span>
@@ -392,9 +373,12 @@ export default function ProfilePage() {
                 <span className="text-muted-foreground">→</span>
               </button>
 
-              <button className="w-full flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors">
+              <button
+                onClick={() => router.push("/profile/reviews")}
+                className="w-full flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
+              >
                 <div className="flex items-center space-x-3">
-                  <Star className="w-5 h-5 text-primary" />
+                  <MessageCircle className="w-5 h-5 text-primary" />
                   <span className="font-medium">Sharhlarim</span>
                 </div>
                 <span className="text-muted-foreground">→</span>
@@ -440,7 +424,7 @@ export default function ProfilePage() {
                   <div className="text-sm text-muted-foreground">Tashkil etilgan</div>
                 </div>
                 <div className="bg-card rounded-xl border border-border p-4 text-center">
-                  <div className="text-2xl font-bold text-green-600">{companyInfo.employee_count}+</div>
+                  <div className="text-2xl font-bold text-green-600">100+</div>
                   <div className="text-sm text-muted-foreground">Xodimlar</div>
                 </div>
                 <div className="bg-card rounded-xl border border-border p-4 text-center">
@@ -459,7 +443,7 @@ export default function ProfilePage() {
                   </div>
                   <div className="flex items-center space-x-3">
                     <MapPin className="w-5 h-5 text-primary" />
-                    <span>{companyInfo.location}</span>
+                    <span>Qashqadaryo viloyati, G'uzor tumani</span>
                   </div>
                   <div className="flex items-center space-x-3">
                     <Calendar className="w-5 h-5 text-primary" />
@@ -519,16 +503,6 @@ export default function ProfilePage() {
                   onChange={(e) => setEditForm({ ...editForm, phone_number: formatPhoneInput(e.target.value) })}
                   className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
                   placeholder="+998 90 123 45 67"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">Email</label>
-                <input
-                  type="email"
-                  value={editForm.email}
-                  onChange={(e) => setEditForm({ ...editForm, email: formatEmailInput(e.target.value) })}
-                  className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
-                  placeholder="email@domen.uz"
                 />
               </div>
             </div>

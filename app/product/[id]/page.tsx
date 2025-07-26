@@ -82,7 +82,7 @@ export default function ProductDetailPage() {
   const params = useParams()
   const router = useRouter()
   const { user } = useAuth()
-  const { addToCart, totalItems } = useCart()
+  const { addToCart } = useCart()
 
   const [product, setProduct] = useState<Product | null>(null)
   const [similarProducts, setSimilarProducts] = useState<Product[]>([])
@@ -92,7 +92,6 @@ export default function ProductDetailPage() {
   const [rentalDuration, setRentalDuration] = useState(1)
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
   const [isAddingToCart, setIsAddingToCart] = useState(false)
-  const [showCartFab, setShowCartFab] = useState(false)
   const [variations, setVariations] = useState<ProductVariation[]>([])
   const [selectedVariations, setSelectedVariations] = useState<Record<string, ProductSpecification>>({})
   const [availableQuantity, setAvailableQuantity] = useState(0)
@@ -107,10 +106,6 @@ export default function ProductDetailPage() {
       fetchProduct(params.id as string)
     }
   }, [params.id])
-
-  useEffect(() => {
-    setShowCartFab(totalItems > 0)
-  }, [totalItems])
 
   useEffect(() => {
     if (product && user) {
@@ -173,7 +168,7 @@ export default function ProductDetailPage() {
         parsedVariations.push({
           type: key,
           options: value.map((option: any) => {
-            if (typeof option === "object") {
+            if (typeof option === "object" && option !== null) {
               return {
                 name: option.name || option.value || "",
                 value: option.value || option.name || "",
@@ -181,8 +176,8 @@ export default function ProductDetailPage() {
               }
             } else {
               return {
-                name: option.toString(),
-                value: option.toString(),
+                name: option?.toString() || "",
+                value: option?.toString() || "",
                 price: null,
               }
             }
@@ -1093,23 +1088,6 @@ export default function ProductDetailPage() {
           </div>
         </div>
       </div>
-
-      {/* Cart FAB */}
-      {showCartFab && (
-        <button
-          onClick={() => router.push("/cart")}
-          className="fixed bottom-24 right-4 w-12 h-12 bg-primary text-primary-foreground rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-all z-40 md:bottom-4 animate-fadeIn hover:scale-110 transform duration-300"
-        >
-          <div className="relative">
-            <ShoppingCart className="w-5 h-5" />
-            {totalItems > 0 && (
-              <span className="absolute -top-2 -right-2 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center animate-pulse">
-                {totalItems}
-              </span>
-            )}
-          </div>
-        </button>
-      )}
 
       <BottomNavigation />
 

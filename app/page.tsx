@@ -305,7 +305,7 @@ export default function HomePage() {
         )}
 
         {/* Section Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
           <div className="flex items-center space-x-3">
             {(() => {
               const Icon = getSectionIcon()
@@ -323,14 +323,14 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Filters - Only show for products */}
+          {/* Filters - Only show for products - Responsive */}
           {!searchQuery && (
-            <div className="flex items-center space-x-2">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center space-y-2 sm:space-y-0 sm:space-x-2">
               {/* Delivery Filter */}
               <select
                 value={deliveryFilter}
                 onChange={(e) => setDeliveryFilter(e.target.value)}
-                className="px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 text-sm"
+                className="w-full sm:w-auto px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 text-sm"
               >
                 <option value="all">Barchasi</option>
                 <option value="available">Yetkazib berish mavjud</option>
@@ -342,7 +342,7 @@ export default function HomePage() {
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
-                className="px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 text-sm"
+                className="w-full sm:w-auto px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 text-sm"
               >
                 <option value="featured">Tavsiya etilgan</option>
                 <option value="popular">Mashhur</option>
@@ -373,7 +373,7 @@ export default function HomePage() {
                   <Search className="w-10 h-10 text-muted-foreground" />
                 </div>
                 <h3 className="text-xl font-bold mb-2">Hech narsa topilmadi</h3>
-                <p className="text-muted-foreground mb-6">`"${searchQuery}" bo'yicha hech qanday natija topilmadi`</p>
+                <p className="text-muted-foreground mb-6">"{searchQuery}" bo'yicha hech qanday natija topilmadi</p>
                 <button
                   onClick={() => {
                     setSearchQuery("")
@@ -414,7 +414,7 @@ export default function HomePage() {
                           </span>
                           <div className="flex items-center space-x-1">
                             <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-                            <span className="text-xs">{result.rating.toFixed(1)}</span>
+                            <span className="text-xs">{(result.rating || 0).toFixed(1)}</span>
                           </div>
                         </div>
                         {result.has_delivery && (
@@ -451,7 +451,7 @@ export default function HomePage() {
                           </span>
                           <div className="flex items-center space-x-1">
                             <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-                            <span className="text-xs">{result.rating.toFixed(1)}</span>
+                            <span className="text-xs">{(result.rating || 0).toFixed(1)}</span>
                           </div>
                         </div>
                       </div>
