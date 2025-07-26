@@ -4,6 +4,7 @@ import type React from "react"
 
 import { useState } from "react"
 import { Star, Send } from "lucide-react"
+import { supabase } from "@/lib/supabase"
 import { useAuth } from "@/contexts/AuthContext"
 
 interface ReviewFormProps {
@@ -26,32 +27,21 @@ export function ReviewForm({ productId, orderId, onReviewSubmitted, onClose }: R
 
     setIsSubmitting(true)
     try {
-      const response = await fetch("/api/reviews", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          productId,
-          orderId,
-          rating,
-          comment: comment.trim() || null,
-          userId: user.id,
-        }),
+      const { error } = await supabase.from("product_reviews").insert({
+        product_id: productId,
+        customer_id: user.id,
+        order_id: orderId,
+        rating,
+        comment: comment.trim() || null,
       })
 
-      const result = await response.json()
-
-      if (!response.ok) {
-        throw new Error(result.error || "Failed to submit review")
-      }
+      if (error) throw error
 
       onReviewSubmitted()
       onClose()
-      alert("Sharh muvaffaqiyatli qo'shildi!")
     } catch (error) {
       console.error("Sharh qo'shishda xatolik:", error)
-      alert("Sharh qo'shishda xatolik yuz berdi: " + (error as Error).message)
+      alert("Sharh qo'shishda xatolik yuz berdi")
     } finally {
       setIsSubmitting(false)
     }

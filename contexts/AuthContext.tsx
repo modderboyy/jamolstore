@@ -2,7 +2,6 @@
 
 import type React from "react"
 import { createContext, useContext, useEffect, useState } from "react"
-import { getAuthenticatedSupabase } from "@/lib/auth-supabase"
 import { supabase } from "@/lib/supabase"
 import { useTelegram } from "./TelegramContext"
 
@@ -27,7 +26,6 @@ interface AuthContextType {
   loading: boolean
   signOut: () => void
   checkWebsiteLoginStatus: (token: string) => Promise<UserProfile | null>
-  getAuthenticatedClient: () => any
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -40,21 +38,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (isReady) {
       if (isTelegramWebApp && tgUser) {
+        // Telegram Web App automatic login - no login required
         console.log("Starting Telegram Web App auto login...")
         handleTelegramWebAppLogin()
       } else {
+        // Regular web - check for login token or local session
         console.log("Checking web session...")
         checkWebSession()
       }
     }
   }, [isReady, isTelegramWebApp, tgUser])
-
-  const getAuthenticatedClient = () => {
-    if (!user) {
-      throw new Error("User not authenticated")
-    }
-    return getAuthenticatedSupabase(user)
-  }
 
   const handleTelegramWebAppLogin = async () => {
     if (!tgUser) {
@@ -110,9 +103,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         console.log("Existing user found, updating info...")
 
-        // Use authenticated client to update user info
-        const authClient = getAuthenticatedSupabase(existingUser)
-        const { data: updatedUser, error: updateError } = await authClient
+        // Update existing user info
+        const { data: updatedUser, error: updateError } = await supabase
           .from("users")
           .update({
             first_name: tgUser.first_name,
@@ -126,7 +118,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (updateError) {
           console.log("Update error handled:", updateError.message)
-          userData = existingUser
+          userData = existingUser // Use existing data if update fails
         } else {
           userData = updatedUser
         }
@@ -231,11 +223,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const value = {
     user,
-    profile: user,
+    profile: user, // For backward compatibility
     loading,
     signOut,
     checkWebsiteLoginStatus,
-    getAuthenticatedClient,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

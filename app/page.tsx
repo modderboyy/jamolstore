@@ -1,8 +1,6 @@
 "use client"
 
-import type React from "react"
-
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { TopBar } from "@/components/layout/top-bar"
@@ -14,7 +12,6 @@ import { DraggableFab } from "@/components/ui/draggable-fab"
 import { QuantityModal } from "@/components/ui/quantity-modal"
 import { CartSidebar } from "@/components/layout/cart-sidebar"
 import { Search, Package, TrendingUp, Star, Filter, User } from "lucide-react"
-import { useDebounce } from "@/hooks/use-debounce"
 
 interface Product {
   id: string
@@ -36,6 +33,17 @@ interface Product {
   }
   average_rating?: number
   review_count?: number
+}
+
+interface Worker {
+  id: string
+  first_name: string
+  last_name: string
+  profession_uz: string
+  hourly_rate: number
+  rating: number
+  avatar_url?: string
+  experience_years: number
 }
 
 interface SearchResult {
@@ -60,11 +68,11 @@ export default function HomePage() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const [products, setProducts] = useState<Product[]>([])
+  const [workers, setWorkers] = useState<Worker[]>([])
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [popularSearches, setPopularSearches] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [searchLoading, setSearchLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState(searchParams.get("search") || "")
   const [selectedCategory, setSelectedCategory] = useState<string | null>(searchParams.get("category"))
   const [sortBy, setSortBy] = useState<string>("featured")
@@ -73,21 +81,15 @@ export default function HomePage() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [showCartSidebar, setShowCartSidebar] = useState(false)
 
-  // Debounce search query for real-time search
-  const debouncedSearchQuery = useDebounce(searchQuery, 300)
-
   useEffect(() => {
     fetchCategories()
-    fetchPopularSearches()
-  }, [])
-
-  useEffect(() => {
-    if (debouncedSearchQuery) {
+    if (searchQuery) {
       fetchSearchResults()
     } else {
       fetchProducts()
     }
-  }, [debouncedSearchQuery, selectedCategory, sortBy, deliveryFilter])
+    fetchPopularSearches()
+  }, [searchQuery, selectedCategory, sortBy, deliveryFilter])
 
   const fetchCategories = async () => {
     try {
@@ -115,17 +117,10 @@ export default function HomePage() {
     }
   }
 
-  const fetchSearchResults = useCallback(async () => {
-    if (!debouncedSearchQuery.trim()) {
-      setSearchResults([])
-      setSearchLoading(false)
-      return
-    }
-
-    setSearchLoading(true)
+  const fetchSearchResults = async () => {
     try {
       const { data, error } = await supabase.rpc("search_all_content", {
-        search_term: debouncedSearchQuery,
+        search_term: searchQuery,
         limit_count: 20,
       })
 
@@ -133,12 +128,10 @@ export default function HomePage() {
       setSearchResults(data || [])
     } catch (error) {
       console.error("Search results error:", error)
-      setSearchResults([])
     } finally {
-      setSearchLoading(false)
       setLoading(false)
     }
-  }, [debouncedSearchQuery])
+  }
 
   const calculateAvailableQuantity = async (productId: string, stockQuantity: number) => {
     try {
@@ -265,19 +258,6 @@ export default function HomePage() {
     router.push(`/?search=${encodeURIComponent(query)}`)
   }
 
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value
-    setSearchQuery(value)
-
-    // Update URL without triggering navigation
-    const params = new URLSearchParams()
-    if (value) params.set("search", value)
-    if (selectedCategory) params.set("category", selectedCategory)
-
-    const queryString = params.toString()
-    window.history.replaceState({}, "", queryString ? `/?${queryString}` : "/")
-  }
-
   const getSectionTitle = () => {
     if (searchQuery) {
       return `"${searchQuery}" bo'yicha qidiruv natijalari`
@@ -297,7 +277,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-4">
-      <TopBar searchQuery={searchQuery} onSearchChange={handleSearchChange} />
+      <TopBar />
       <CategoryBar
         categories={categories}
         selectedCategory={selectedCategory}
@@ -334,7 +314,7 @@ export default function HomePage() {
             <div>
               <h2 className="text-xl font-bold">{getSectionTitle()}</h2>
               <p className="text-sm text-muted-foreground">
-                {loading || searchLoading
+                {loading
                   ? "Yuklanmoqda..."
                   : searchQuery
                     ? `${searchResults.length} ta natija topildi`
@@ -377,7 +357,7 @@ export default function HomePage() {
         {/* Search Results */}
         {searchQuery && (
           <div className="space-y-6">
-            {searchLoading ? (
+            {loading ? (
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                 {Array.from({ length: 10 }).map((_, index) => (
                   <div key={index} className="bg-card rounded-lg border border-border p-4 animate-pulse">
