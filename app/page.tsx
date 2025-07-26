@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useEffect, useState, useCallback } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
@@ -72,9 +71,23 @@ export default function HomePage() {
   const [showQuantityModal, setShowQuantityModal] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [showCartSidebar, setShowCartSidebar] = useState(false)
+  const [autoRefresh, setAutoRefresh] = useState(true)
 
   // Debounce search query for real-time search
   const debouncedSearchQuery = useDebounce(searchQuery, 300)
+
+  // Auto-refresh every 30 seconds
+  useEffect(() => {
+    if (!autoRefresh) return
+
+    const interval = setInterval(() => {
+      if (!searchQuery) {
+        fetchProducts()
+      }
+    }, 30000)
+
+    return () => clearInterval(interval)
+  }, [autoRefresh, searchQuery])
 
   useEffect(() => {
     fetchCategories()
@@ -247,7 +260,7 @@ export default function HomePage() {
 
   const handleProductView = (productId: string) => {
     // Increment view count
-    supabase.rpc("increment_product_view", { product_id_param: productId })
+    fetch(`/api/products/${productId}/view`, { method: "POST" })
     router.push(`/product/${productId}`)
   }
 
@@ -306,6 +319,19 @@ export default function HomePage() {
       <AdBanner />
 
       <div className="container mx-auto px-4 py-6">
+        {/* Auto-refresh toggle */}
+        <div className="flex justify-end mb-4">
+          <label className="flex items-center space-x-2 text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={autoRefresh}
+              onChange={(e) => setAutoRefresh(e.target.checked)}
+              className="rounded"
+            />
+            <span>Avtomatik yangilash</span>
+          </label>
+        </div>
+
         {/* Search Examples - Show when no search query */}
         {!searchQuery && !selectedCategory && popularSearches.length > 0 && (
           <div className="mb-6">
