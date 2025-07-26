@@ -1,5 +1,4 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { supabase } from "@/lib/supabase"
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -9,18 +8,24 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       return NextResponse.json({ error: "Product ID is required" }, { status: 400 })
     }
 
-    // Increment view count
-    const { error } = await supabase
-      .from("products")
-      .update({
-        view_count: supabase.raw("view_count + 1"),
-        last_viewed_at: new Date().toISOString(),
-      })
-      .eq("id", productId)
+    // Skip database operations during build time
+    if (process.env.NODE_ENV === "production" && !process.env.NEXT_PUBLIC_SUPABASE_URL) {
+      return NextResponse.json({ success: true })
+    }
 
-    if (error) {
-      console.error("Error updating view count:", error)
-      return NextResponse.json({ error: "Failed to update view count" }, { status: 500 })
+    // Only import and use Supabase if environment variables are available
+    if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      const { createSupabaseClient } = await import("@/lib/supabase")
+      const supabase = createSupabaseClient()
+
+      const { error } = await supabase.rpc("increment_product_view", {
+        product_id_param: productId,
+      })
+
+      if (error) {
+        console.error("Error incrementing view count:", error)
+        return NextResponse.json({ error: "Failed to increment view count" }, { status: 500 })
+      }
     }
 
     return NextResponse.json({ success: true })

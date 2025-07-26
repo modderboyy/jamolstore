@@ -1,30 +1,33 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { supabase } from "@/lib/supabase"
+import { createSupabaseClient } from "@/lib/supabase"
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const query = searchParams.get("q")
+    const limit = Number.parseInt(searchParams.get("limit") || "10")
 
     if (!query || query.trim().length === 0) {
       return NextResponse.json({ products: [], suggestions: [] })
     }
 
-    const searchTerm = query.trim()
+    const supabase = createSupabaseClient()
 
-    // Get products using fuzzy search
-    const { data: products, error: productsError } = await supabase.rpc("search_products_fuzzy", {
-      search_term: searchTerm,
+    // Get search results
+    const { data: products, error: searchError } = await supabase.rpc("search_products_fuzzy", {
+      search_term: query.trim(),
+      limit_count: limit,
     })
 
-    if (productsError) {
-      console.error("Products search error:", productsError)
+    if (searchError) {
+      console.error("Search error:", searchError)
       return NextResponse.json({ error: "Search failed" }, { status: 500 })
     }
 
     // Get search suggestions
-    const { data: suggestions, error: suggestionsError } = await supabase.rpc("get_product_suggestions", {
-      search_term: searchTerm,
+    const { data: suggestions, error: suggestionsError } = await supabase.rpc("get_search_suggestions", {
+      search_term: query.trim(),
+      limit_count: 5,
     })
 
     if (suggestionsError) {
@@ -34,10 +37,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       products: products || [],
       suggestions: suggestions || [],
-      query: searchTerm,
+      query: query.trim(),
     })
   } catch (error) {
-    console.error("Search API error:", error)
+    console.error("Instant search API error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

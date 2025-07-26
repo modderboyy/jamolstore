@@ -3,203 +3,151 @@
 import type React from "react"
 
 import { useState, useRef, useEffect } from "react"
-import { MessageCircle, Phone, ShoppingCart, X } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
 import { useCart } from "@/contexts/CartContext"
-import { supabase } from "@/lib/supabase"
-
-interface CompanyInfo {
-  phone_number: string
-  telegram_username: string
-}
+import { ShoppingCart, Phone, MessageCircle, X, Grip } from "lucide-react"
+import Link from "next/link"
 
 export function DraggableFab() {
   const { items } = useCart()
+  const [isDragging, setIsDragging] = useState(false)
   const [isExpanded, setIsExpanded] = useState(false)
   const [position, setPosition] = useState({ x: 20, y: 100 })
-  const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
-  const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(null)
   const fabRef = useRef<HTMLDivElement>(null)
 
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0)
 
   useEffect(() => {
-    fetchCompanyInfo()
-  }, [])
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging) return
 
-  const fetchCompanyInfo = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("company")
-        .select("phone_number, telegram_username")
-        .eq("is_active", true)
-        .single()
+      const newX = e.clientX - dragStart.x
+      const newY = e.clientY - dragStart.y
 
-      if (error) throw error
-      setCompanyInfo(data)
-    } catch (error) {
-      console.error("Company info error:", error)
+      // Keep within screen bounds
+      const maxX = window.innerWidth - 80
+      const maxY = window.innerHeight - 80
+
+      setPosition({
+        x: Math.max(20, Math.min(newX, maxX)),
+        y: Math.max(20, Math.min(newY, maxY)),
+      })
     }
-  }
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    setIsDragging(true)
-    setDragStart({
-      x: e.clientX - position.x,
-      y: e.clientY - position.y,
-    })
-  }
+    const handleMouseUp = () => {
+      setIsDragging(false)
+    }
 
-  const handleMouseMove = (e: MouseEvent) => {
-    if (!isDragging) return
-
-    const newX = e.clientX - dragStart.x
-    const newY = e.clientY - dragStart.y
-
-    // Keep FAB within viewport bounds
-    const maxX = window.innerWidth - 60
-    const maxY = window.innerHeight - 60
-
-    setPosition({
-      x: Math.max(20, Math.min(newX, maxX)),
-      y: Math.max(20, Math.min(newY, maxY)),
-    })
-  }
-
-  const handleMouseUp = () => {
-    setIsDragging(false)
-  }
-
-  useEffect(() => {
     if (isDragging) {
       document.addEventListener("mousemove", handleMouseMove)
       document.addEventListener("mouseup", handleMouseUp)
-      return () => {
-        document.removeEventListener("mousemove", handleMouseMove)
-        document.removeEventListener("mouseup", handleMouseUp)
-      }
+    }
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove)
+      document.removeEventListener("mouseup", handleMouseUp)
     }
   }, [isDragging, dragStart])
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    const touch = e.touches[0]
-    setIsDragging(true)
-    setDragStart({
-      x: touch.clientX - position.x,
-      y: touch.clientY - position.y,
-    })
-  }
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isDragging) return
-
-    const touch = e.touches[0]
-    const newX = touch.clientX - dragStart.x
-    const newY = touch.clientY - dragStart.y
-
-    const maxX = window.innerWidth - 60
-    const maxY = window.innerHeight - 60
-
-    setPosition({
-      x: Math.max(20, Math.min(newX, maxX)),
-      y: Math.max(20, Math.min(newY, maxY)),
-    })
-  }
-
-  const handleTouchEnd = () => {
-    setIsDragging(false)
-  }
-
-  const handleCall = () => {
-    if (companyInfo?.phone_number) {
-      window.open(`tel:${companyInfo.phone_number}`, "_self")
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.target === fabRef.current || (e.target as Element).closest(".drag-handle")) {
+      setIsDragging(true)
+      setDragStart({
+        x: e.clientX - position.x,
+        y: e.clientY - position.y,
+      })
     }
-    setIsExpanded(false)
   }
 
-  const handleTelegram = () => {
-    if (companyInfo?.telegram_username) {
-      window.open(`https://t.me/${companyInfo.telegram_username}`, "_blank")
-    }
-    setIsExpanded(false)
-  }
-
-  const handleCart = () => {
-    window.location.href = "/cart"
-    setIsExpanded(false)
-  }
-
-  const toggleExpanded = (e: React.MouseEvent) => {
-    e.preventDefault()
+  const handleClick = (e: React.MouseEvent) => {
     if (!isDragging) {
       setIsExpanded(!isExpanded)
     }
   }
 
   return (
-    <div
-      ref={fabRef}
-      className="fixed z-50 select-none"
-      style={{
-        left: `${position.x}px`,
-        top: `${position.y}px`,
-        cursor: isDragging ? "grabbing" : "grab",
-      }}
-      onMouseDown={handleMouseDown}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-    >
-      {/* Expanded Menu */}
-      {isExpanded && (
-        <div className="absolute bottom-16 left-0 flex flex-col space-y-2 animate-in slide-in-from-bottom-2">
-          {/* Cart Button */}
-          <button
-            onClick={handleCart}
-            className="relative w-12 h-12 bg-green-500 hover:bg-green-600 text-white rounded-full shadow-lg flex items-center justify-center transition-all duration-200 hover:scale-110"
-          >
-            <ShoppingCart className="w-5 h-5" />
-            {totalItems > 0 && (
-              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                {totalItems > 99 ? "99+" : totalItems}
-              </span>
-            )}
-          </button>
+    <>
+      {/* Backdrop */}
+      {isExpanded && <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setIsExpanded(false)} />}
 
-          {/* Phone Button */}
-          <button
-            onClick={handleCall}
-            className="w-12 h-12 bg-blue-500 hover:bg-blue-600 text-white rounded-full shadow-lg flex items-center justify-center transition-all duration-200 hover:scale-110"
-          >
-            <Phone className="w-5 h-5" />
-          </button>
-
-          {/* Telegram Button */}
-          <button
-            onClick={handleTelegram}
-            className="w-12 h-12 bg-sky-500 hover:bg-sky-600 text-white rounded-full shadow-lg flex items-center justify-center transition-all duration-200 hover:scale-110"
-          >
-            <MessageCircle className="w-5 h-5" />
-          </button>
-        </div>
-      )}
-
-      {/* Main FAB Button */}
-      <button
-        onClick={toggleExpanded}
-        className={`w-14 h-14 bg-primary hover:bg-primary/90 text-primary-foreground rounded-full shadow-lg flex items-center justify-center transition-all duration-200 ${
-          isExpanded ? "rotate-45" : "hover:scale-110"
-        }`}
+      {/* FAB */}
+      <div
+        ref={fabRef}
+        className="fixed z-50 transition-all duration-200"
+        style={{
+          left: `${position.x}px`,
+          top: `${position.y}px`,
+          cursor: isDragging ? "grabbing" : "grab",
+        }}
+        onMouseDown={handleMouseDown}
+        onClick={handleClick}
       >
-        {isExpanded ? <X className="w-6 h-6" /> : <MessageCircle className="w-6 h-6" />}
-      </button>
+        {isExpanded ? (
+          <Card className="w-64 shadow-2xl">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold">Tezkor harakatlar</h3>
+                <div className="flex items-center gap-2">
+                  <div className="drag-handle cursor-grab hover:bg-gray-100 p-1 rounded">
+                    <Grip className="w-4 h-4 text-gray-400" />
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setIsExpanded(false)
+                    }}
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
 
-      {/* Cart Badge */}
-      {!isExpanded && totalItems > 0 && (
-        <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-          {totalItems > 99 ? "99+" : totalItems}
-        </span>
-      )}
-    </div>
+              <div className="space-y-2">
+                <Button asChild className="w-full justify-start bg-transparent" variant="outline">
+                  <Link href="/cart">
+                    <ShoppingCart className="w-4 h-4 mr-2" />
+                    Savatcha
+                    {totalItems > 0 && <Badge className="ml-auto">{totalItems}</Badge>}
+                  </Link>
+                </Button>
+
+                <Button asChild className="w-full justify-start bg-transparent" variant="outline">
+                  <a href="tel:+998901234567">
+                    <Phone className="w-4 h-4 mr-2" />
+                    Qo'ng'iroq qilish
+                  </a>
+                </Button>
+
+                <Button asChild className="w-full justify-start bg-transparent" variant="outline">
+                  <a href="https://t.me/jamolstroy" target="_blank" rel="noopener noreferrer">
+                    <MessageCircle className="w-4 h-4 mr-2" />
+                    Telegram
+                  </a>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="relative">
+            <Button
+              size="lg"
+              className="w-14 h-14 rounded-full shadow-2xl bg-blue-600 hover:bg-blue-700 transition-all duration-200 hover:scale-110"
+            >
+              <ShoppingCart className="w-6 h-6" />
+            </Button>
+            {totalItems > 0 && (
+              <Badge className="absolute -top-2 -right-2 w-6 h-6 rounded-full p-0 flex items-center justify-center bg-red-500 text-white text-xs">
+                {totalItems > 99 ? "99+" : totalItems}
+              </Badge>
+            )}
+          </div>
+        )}
+      </div>
+    </>
   )
 }

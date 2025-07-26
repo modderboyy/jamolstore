@@ -1,16 +1,18 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
-import { TopBar } from "@/components/layout/top-bar"
-import { BottomNavigation } from "@/components/layout/bottom-navigation"
-import { CategoryBar } from "@/components/layout/category-bar"
-import { AdBanner } from "@/components/layout/ad-banner"
+import { useDebounce } from "@/hooks/use-debounce"
+import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { ProductCard } from "@/components/ui/product-card"
 import { DraggableFab } from "@/components/ui/draggable-fab"
-import { supabase } from "@/lib/supabase"
-import { useDebounce } from "@/hooks/use-debounce"
-import { Search, Loader2 } from "lucide-react"
+import { AdBanner } from "@/components/layout/ad-banner"
+import { CategoryBar } from "@/components/layout/category-bar"
+import { Search, TrendingUp, Star, Eye } from "lucide-react"
+import Link from "next/link"
+import { createSupabaseClient } from "@/lib/supabase"
 
 interface Product {
   id: string
@@ -18,45 +20,35 @@ interface Product {
   description: string
   price: number
   image_url: string
-  category_id: string
-  category_name: string
-  is_available: boolean
-  stock_quantity: number
-  similarity_score?: number
-}
-
-interface Category {
-  id: string
-  name: string
-  icon: string
-  is_active: boolean
+  category: string
+  view_count: number
+  rating: number
+  similarity?: number
 }
 
 interface SearchSuggestion {
   suggestion: string
   category: string
-  match_type: string
+  count: number
 }
 
 export default function HomePage() {
-  const router = useRouter()
-  const [products, setProducts] = useState<Product[]>([])
-  const [categories, setCategories] = useState<Category[]>([])
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
   const [searchResults, setSearchResults] = useState<Product[]>([])
   const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([])
+  const [featuredProducts, setFeaturedProducts] = useState<Product[]>([])
+  const [trendingProducts, setTrendingProducts] = useState<Product[]>([])
   const [isSearching, setIsSearching] = useState(false)
   const [showSuggestions, setShowSuggestions] = useState(false)
 
-  // Debounce search query for real-time search
   const debouncedSearchQuery = useDebounce(searchQuery, 200)
 
+  // Load initial data
   useEffect(() => {
-    fetchInitialData()
+    loadInitialData()
   }, [])
 
+  // Handle real-time search
   useEffect(() => {
     if (debouncedSearchQuery.trim()) {
       performSearch(debouncedSearchQuery)
@@ -67,89 +59,30 @@ export default function HomePage() {
     }
   }, [debouncedSearchQuery])
 
-  useEffect(() => {
-    if (selectedCategory) {
-      fetchProductsByCategory(selectedCategory)
-    } else {
-      fetchProducts()
-    }
-  }, [selectedCategory])
-
-  const fetchInitialData = async () => {
-    setLoading(true)
+  const loadInitialData = async () => {
     try {
-      await Promise.all([fetchCategories(), fetchProducts()])
-    } catch (error) {
-      console.error("Error fetching initial data:", error)
-    } finally {
-      setLoading(false)
-    }
-  }
+      const supabase = createSupabaseClient()
 
-  const fetchCategories = async () => {
-    try {
-      const { data, error } = await supabase.from("categories").select("*").eq("is_active", true).order("name")
-
-      if (error) throw error
-      setCategories(data || [])
-    } catch (error) {
-      console.error("Error fetching categories:", error)
-    }
-  }
-
-  const fetchProducts = async () => {
-    try {
-      const { data, error } = await supabase
+      // Load featured products
+      const { data: featured } = await supabase
         .from("products")
-        .select(`
-          *,
-          categories (
-            name
-          )
-        `)
-        .eq("is_available", true)
+        .select("*")
+        .eq("is_active", true)
         .order("created_at", { ascending: false })
-        .limit(20)
+        .limit(8)
 
-      if (error) throw error
-
-      const formattedProducts =
-        data?.map((product) => ({
-          ...product,
-          category_name: product.categories?.name || "Kategoriya yo'q",
-        })) || []
-
-      setProducts(formattedProducts)
-    } catch (error) {
-      console.error("Error fetching products:", error)
-    }
-  }
-
-  const fetchProductsByCategory = async (categoryId: string) => {
-    try {
-      const { data, error } = await supabase
+      // Load trending products (most viewed)
+      const { data: trending } = await supabase
         .from("products")
-        .select(`
-          *,
-          categories (
-            name
-          )
-        `)
-        .eq("category_id", categoryId)
-        .eq("is_available", true)
-        .order("name")
+        .select("*")
+        .eq("is_active", true)
+        .order("view_count", { ascending: false })
+        .limit(6)
 
-      if (error) throw error
-
-      const formattedProducts =
-        data?.map((product) => ({
-          ...product,
-          category_name: product.categories?.name || "Kategoriya yo'q",
-        })) || []
-
-      setProducts(formattedProducts)
+      setFeaturedProducts(featured || [])
+      setTrendingProducts(trending || [])
     } catch (error) {
-      console.error("Error fetching products by category:", error)
+      console.error("Error loading initial data:", error)
     }
   }
 
@@ -158,148 +91,181 @@ export default function HomePage() {
 
     setIsSearching(true)
     try {
-      const response = await fetch(`/api/search/instant?q=${encodeURIComponent(query)}`)
+      const response = await fetch(`/api/search/instant?q=${encodeURIComponent(query)}&limit=10`)
       const data = await response.json()
 
       if (response.ok) {
         setSearchResults(data.products || [])
         setSuggestions(data.suggestions || [])
         setShowSuggestions(true)
-      } else {
-        console.error("Search error:", data.error)
       }
     } catch (error) {
-      console.error("Search request error:", error)
+      console.error("Search error:", error)
     } finally {
       setIsSearching(false)
-    }
-  }
-
-  const handleSearchChange = (value: string) => {
-    setSearchQuery(value)
-    if (!value.trim()) {
-      setShowSuggestions(false)
     }
   }
 
   const handleSuggestionClick = (suggestion: string) => {
     setSearchQuery(suggestion)
     setShowSuggestions(false)
-    performSearch(suggestion)
   }
 
-  const handleCategorySelect = (categoryId: string | null) => {
-    setSelectedCategory(categoryId)
+  const clearSearch = () => {
     setSearchQuery("")
     setSearchResults([])
+    setSuggestions([])
     setShowSuggestions(false)
   }
 
-  const displayProducts = searchQuery.trim() ? searchResults : products
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-background pb-20 md:pb-4">
-        <TopBar />
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="w-8 h-8 animate-spin" />
-        </div>
-        <BottomNavigation />
-      </div>
-    )
-  }
-
   return (
-    <div className="min-h-screen bg-background pb-20 md:pb-4">
-      <TopBar />
+    <div className="min-h-screen bg-gray-50">
+      {/* Ad Banner */}
+      <AdBanner />
 
-      {/* Search Section */}
-      <div className="sticky top-16 z-40 bg-background border-b border-border">
-        <div className="container mx-auto px-4 py-3">
-          <div className="relative">
+      {/* Category Bar */}
+      <CategoryBar />
+
+      <div className="container mx-auto px-4 py-6 space-y-8">
+        {/* Search Section */}
+        <Card>
+          <CardContent className="p-6">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-              <input
-                type="text"
-                placeholder="Mahsulotlarni qidiring..."
-                value={searchQuery}
-                onChange={(e) => handleSearchChange(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-              />
-              {isSearching && (
-                <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 animate-spin text-muted-foreground" />
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                <Input
+                  type="text"
+                  placeholder="Mahsulotlarni qidiring..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10 pr-12 h-12 text-lg"
+                />
+                {searchQuery && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearSearch}
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2"
+                  >
+                    ✕
+                  </Button>
+                )}
+              </div>
+
+              {/* Search Suggestions */}
+              {showSuggestions && suggestions.length > 0 && (
+                <Card className="absolute top-full left-0 right-0 mt-2 z-50 shadow-lg">
+                  <CardContent className="p-2">
+                    <div className="space-y-1">
+                      {suggestions.map((suggestion, index) => (
+                        <button
+                          key={index}
+                          onClick={() => handleSuggestionClick(suggestion.suggestion)}
+                          className="w-full text-left px-3 py-2 hover:bg-gray-100 rounded-md flex items-center justify-between"
+                        >
+                          <span>{suggestion.suggestion}</span>
+                          <Badge variant="secondary" className="text-xs">
+                            {suggestion.category}
+                          </Badge>
+                        </button>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
               )}
             </div>
 
-            {/* Search Suggestions */}
-            {showSuggestions && suggestions.length > 0 && (
-              <div className="absolute top-full left-0 right-0 bg-background border border-border rounded-lg mt-1 shadow-lg z-50">
-                {suggestions.map((suggestion, index) => (
-                  <button
-                    key={index}
-                    onClick={() => handleSuggestionClick(suggestion.suggestion)}
-                    className="w-full px-4 py-2 text-left hover:bg-muted transition-colors border-b border-border last:border-b-0"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm">{suggestion.suggestion}</span>
-                      <span className="text-xs text-muted-foreground capitalize">{suggestion.match_type}</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+            {isSearching && <div className="mt-4 text-center text-gray-500">Qidirilmoqda...</div>}
+          </CardContent>
+        </Card>
 
-      <CategoryBar
-        categories={categories}
-        selectedCategory={selectedCategory}
-        onCategorySelect={handleCategorySelect}
-      />
-
-      <AdBanner />
-
-      {/* Products Grid */}
-      <div className="container mx-auto px-4 py-6">
-        {searchQuery.trim() && (
-          <div className="mb-4">
-            <p className="text-sm text-muted-foreground">
-              "{searchQuery}" uchun {displayProducts.length} ta natija topildi
-            </p>
+        {/* Search Results */}
+        {searchResults.length > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold">Qidiruv natijalari ({searchResults.length})</h2>
+              <Button variant="outline" onClick={clearSearch}>
+                Tozalash
+              </Button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {searchResults.map((product) => (
+                <ProductCard key={product.id} product={product} />
+              ))}
+            </div>
           </div>
         )}
 
-        {displayProducts.length > 0 ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {displayProducts.map((product) => (
-              <ProductCard
-                key={product.id}
-                id={product.id}
-                name={product.name}
-                price={product.price}
-                image={product.image_url}
-                category={product.category_name}
-                inStock={product.stock_quantity > 0}
-                onClick={() => router.push(`/product/${product.id}`)}
-              />
-            ))}
+        {/* Trending Products */}
+        {!searchQuery && trendingProducts.length > 0 && (
+          <div>
+            <div className="flex items-center gap-2 mb-6">
+              <TrendingUp className="w-6 h-6 text-orange-500" />
+              <h2 className="text-2xl font-bold">Mashhur mahsulotlar</h2>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {trendingProducts.map((product) => (
+                <Card key={product.id} className="hover:shadow-lg transition-shadow">
+                  <CardContent className="p-4">
+                    <Link href={`/product/${product.id}`}>
+                      <div className="aspect-square bg-gray-100 rounded-lg mb-4 overflow-hidden">
+                        <img
+                          src={product.image_url || "/placeholder.svg?height=200&width=200"}
+                          alt={product.name}
+                          className="w-full h-full object-cover hover:scale-105 transition-transform"
+                        />
+                      </div>
+                      <h3 className="font-semibold text-lg mb-2 line-clamp-2">{product.name}</h3>
+                      <p className="text-gray-600 text-sm mb-3 line-clamp-2">{product.description}</p>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-2xl font-bold text-blue-600">{product.price.toLocaleString()} so'm</span>
+                        <Badge variant="secondary">{product.category}</Badge>
+                      </div>
+                      <div className="flex items-center gap-4 text-sm text-gray-500">
+                        <div className="flex items-center gap-1">
+                          <Eye className="w-4 h-4" />
+                          {product.view_count || 0}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+                          {product.rating || 0}
+                        </div>
+                      </div>
+                    </Link>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           </div>
-        ) : (
-          <div className="text-center py-12">
-            <div className="text-6xl mb-4">🔍</div>
-            <h3 className="text-lg font-medium mb-2">
-              {searchQuery.trim() ? "Hech narsa topilmadi" : "Mahsulotlar yuklanmoqda..."}
-            </h3>
-            <p className="text-muted-foreground">
-              {searchQuery.trim() ? "Boshqa kalit so'zlar bilan qidirib ko'ring" : "Iltimos, biroz kuting"}
-            </p>
+        )}
+
+        {/* Featured Products */}
+        {!searchQuery && featuredProducts.length > 0 && (
+          <div>
+            <h2 className="text-2xl font-bold mb-6">Yangi mahsulotlar</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {featuredProducts.map((product) => (
+                <ProductCard key={product.id} product={product} />
+              ))}
+            </div>
           </div>
+        )}
+
+        {/* No Results */}
+        {searchQuery && searchResults.length === 0 && !isSearching && (
+          <Card>
+            <CardContent className="p-8 text-center">
+              <Search className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-xl font-semibold mb-2">Hech narsa topilmadi</h3>
+              <p className="text-gray-600 mb-4">"{searchQuery}" bo'yicha hech qanday mahsulot topilmadi</p>
+              <Button onClick={clearSearch}>Qidiruvni tozalash</Button>
+            </CardContent>
+          </Card>
         )}
       </div>
 
+      {/* Draggable FAB */}
       <DraggableFab />
-      <BottomNavigation />
     </div>
   )
 }

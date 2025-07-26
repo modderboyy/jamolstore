@@ -1,104 +1,43 @@
 "use client"
 
-import { useRouter } from "next/navigation"
-import { useEffect, useState } from "react"
-import { TopBar } from "@/components/layout/top-bar"
-import { BottomNavigation } from "@/components/layout/bottom-navigation"
-import { Home, ArrowLeft, Phone } from "lucide-react"
-import { supabase } from "@/lib/supabase"
-
-interface CompanyInfo {
-  phone_number: string
-}
+import Link from "next/link"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Home, Search, ArrowLeft } from "lucide-react"
 
 export default function NotFound() {
-  const router = useRouter()
-  const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(null)
-
-  useEffect(() => {
-    fetchCompanyInfo()
-  }, [])
-
-  const fetchCompanyInfo = async () => {
-    try {
-      const { data, error } = await supabase.from("company").select("phone_number").eq("is_active", true).single()
-
-      if (error) throw error
-      setCompanyInfo(data)
-    } catch (error) {
-      console.error("Company info error:", error)
-    }
-  }
-
-  const handleGoHome = () => {
-    router.push("/")
-  }
-
-  const handleGoBack = () => {
-    router.back()
-  }
-
   return (
-    <div className="min-h-screen bg-background pb-20 md:pb-4">
-      <TopBar />
-
-      <div className="container mx-auto px-4 py-12">
-        <div className="text-center max-w-md mx-auto">
-          {/* Sad emoji sticker */}
-          <div className="text-8xl mb-6">😢</div>
-
-          {/* JamolStroy logo and branding */}
-          <div className="flex items-center justify-center mb-4">
-            <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center mr-2">
-              <span className="text-primary-foreground font-bold text-sm">J</span>
-            </div>
-            <span className="text-xl font-bold">JamolStroy</span>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+      <Card className="w-full max-w-md">
+        <CardContent className="p-8 text-center">
+          <div className="mb-6">
+            <div className="text-6xl font-bold text-gray-300 mb-2">404</div>
+            <h1 className="text-2xl font-bold text-gray-800 mb-2">Sahifa topilmadi</h1>
+            <p className="text-gray-600">Kechirasiz, siz qidirayotgan sahifa mavjud emas yoki o'chirilgan.</p>
           </div>
 
-          <p className="text-muted-foreground text-sm mb-6">dan yomon xabar</p>
+          <div className="space-y-3">
+            <Button asChild className="w-full">
+              <Link href="/">
+                <Home className="w-4 h-4 mr-2" />
+                Bosh sahifaga qaytish
+              </Link>
+            </Button>
 
-          {/* Main message */}
-          <h1 className="text-2xl font-bold mb-4">Bu sahifa mavjud emas</h1>
+            <Button variant="outline" asChild className="w-full bg-transparent">
+              <Link href="/catalog">
+                <Search className="w-4 h-4 mr-2" />
+                Mahsulotlarni ko'rish
+              </Link>
+            </Button>
 
-          <p className="text-muted-foreground mb-8 leading-relaxed">
-            Kechirasiz, siz qidirayotgan sahifa topilmadi yoki o'chirilgan bo'lishi mumkin.
-          </p>
-
-          {/* Action buttons */}
-          <div className="space-y-3 mb-8">
-            <button
-              onClick={handleGoHome}
-              className="w-full flex items-center justify-center space-x-2 bg-primary text-primary-foreground py-3 px-6 rounded-lg hover:bg-primary/90 transition-colors"
-            >
-              <Home className="w-5 h-5" />
-              <span>Bosh sahifaga o'tish</span>
-            </button>
-
-            <button
-              onClick={handleGoBack}
-              className="w-full flex items-center justify-center space-x-2 bg-muted text-muted-foreground py-3 px-6 rounded-lg hover:bg-muted/80 transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5" />
-              <span>Orqaga qaytish</span>
-            </button>
+            <Button variant="ghost" onClick={() => window.history.back()} className="w-full">
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Orqaga qaytish
+            </Button>
           </div>
-
-          {/* Help section */}
-          <div className="bg-card rounded-lg border border-border p-4">
-            <p className="text-sm text-muted-foreground mb-3">
-              Agar muammo davom etsa, bizning <strong>katalog</strong> bo'limiga tashrif buyuring yoki qo'ng'iroq
-              qiling.
-            </p>
-
-            <div className="flex items-center justify-center space-x-2 text-sm">
-              <Phone className="w-4 h-4" />
-              <span className="font-medium">{companyInfo?.phone_number || "+998 90 123 45 67"}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <BottomNavigation />
+        </CardContent>
+      </Card>
     </div>
   )
 }
