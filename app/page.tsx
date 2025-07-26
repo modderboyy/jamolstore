@@ -1,271 +1,641 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useDebounce } from "@/hooks/use-debounce"
-import { Card, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import type React from "react"
+
+import { useEffect, useState, useCallback } from "react"
+import { useSearchParams, useRouter } from "next/navigation"
+import { supabase } from "@/lib/supabase"
+import { TopBar } from "@/components/layout/top-bar"
+import { BottomNavigation } from "@/components/layout/bottom-navigation"
+import { CategoryBar } from "@/components/layout/category-bar"
+import { AdBanner } from "@/components/layout/ad-banner"
 import { ProductCard } from "@/components/ui/product-card"
 import { DraggableFab } from "@/components/ui/draggable-fab"
-import { AdBanner } from "@/components/layout/ad-banner"
-import { CategoryBar } from "@/components/layout/category-bar"
-import { Search, TrendingUp, Star, Eye } from "lucide-react"
-import Link from "next/link"
-import { createSupabaseClient } from "@/lib/supabase"
+import { QuantityModal } from "@/components/ui/quantity-modal"
+import { CartSidebar } from "@/components/layout/cart-sidebar"
+import { Search, Package, TrendingUp, Star, Filter, User } from "lucide-react"
+import { useDebounce } from "@/hooks/use-debounce"
 
 interface Product {
   id: string
-  name: string
-  description: string
+  name_uz: string
   price: number
-  image_url: string
-  category: string
-  view_count: number
-  rating: number
-  similarity?: number
+  unit: string
+  images: string[]
+  is_featured: boolean
+  is_popular: boolean
+  stock_quantity: number
+  available_quantity: number
+  has_delivery: boolean
+  delivery_price: number
+  delivery_limit: number
+  product_type: "sale" | "rental"
+  rental_price_per_unit?: number
+  category: {
+    name_uz: string
+  }
+  average_rating?: number
+  review_count?: number
 }
 
-interface SearchSuggestion {
-  suggestion: string
+interface SearchResult {
+  id: string
+  title: string
+  subtitle: string
+  type: "product" | "worker"
+  image_url?: string
+  price: number
   category: string
-  count: number
+  rating: number
+  has_delivery: boolean
+}
+
+interface Category {
+  id: string
+  name_uz: string
+  icon_name: string
 }
 
 export default function HomePage() {
-  const [searchQuery, setSearchQuery] = useState("")
-  const [searchResults, setSearchResults] = useState<Product[]>([])
-  const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([])
-  const [featuredProducts, setFeaturedProducts] = useState<Product[]>([])
-  const [trendingProducts, setTrendingProducts] = useState<Product[]>([])
-  const [isSearching, setIsSearching] = useState(false)
-  const [showSuggestions, setShowSuggestions] = useState(false)
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const [products, setProducts] = useState<Product[]>([])
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
+  const [popularSearches, setPopularSearches] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [searchQuery, setSearchQuery] = useState(searchParams.get("search") || "")
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(searchParams.get("category"))
+  const [sortBy, setSortBy] = useState<string>("featured")
+  const [deliveryFilter, setDeliveryFilter] = useState<string>("all")
+  const [showQuantityModal, setShowQuantityModal] = useState(false)
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+  const [showCartSidebar, setShowCartSidebar] = useState(false)
 
-  const debouncedSearchQuery = useDebounce(searchQuery, 200)
+  // Debounce search query for real-time search
+  const debouncedSearchQuery = useDebounce(searchQuery, 300)
 
-  // Load initial data
   useEffect(() => {
-    loadInitialData()
+    fetchCategories()
+    fetchPopularSearches()
   }, [])
 
-  // Handle real-time search
   useEffect(() => {
-    if (debouncedSearchQuery.trim()) {
-      performSearch(debouncedSearchQuery)
+    if (debouncedSearchQuery) {
+      fetchSearchResults()
     } else {
+      fetchProducts()
+    }
+  }, [debouncedSearchQuery, selectedCategory, sortBy, deliveryFilter])
+
+  const fetchCategories = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("categories")
+        .select("id, name_uz, icon_name")
+        .eq("is_active", true)
+        .order("name_uz")
+
+      if (error) throw error
+      setCategories(data || [])
+    } catch (error) {
+      console.error("Categories fetch error:", error)
+    }
+  }
+
+  const fetchPopularSearches = async () => {
+    try {
+      const { data, error } = await supabase.rpc("get_popular_searches", { limit_count: 8 })
+
+      if (error) throw error
+      setPopularSearches(data || [])
+    } catch (error) {
+      console.error("Popular searches error:", error)
+    }
+  }
+
+  const fetchSearchResults = useCallback(async () => {
+    if (!debouncedSearchQuery.trim()) {
       setSearchResults([])
-      setSuggestions([])
-      setShowSuggestions(false)
+      setSearchLoading(false)
+      return
+    }
+
+    setSearchLoading(true)
+    try {
+      const { data, error } = await supabase.rpc("search_all_content", {
+        search_term: debouncedSearchQuery,
+        limit_count: 20,
+      })
+
+      if (error) throw error
+      setSearchResults(data || [])
+    } catch (error) {
+      console.error("Search results error:", error)
+      setSearchResults([])
+    } finally {
+      setSearchLoading(false)
+      setLoading(false)
     }
   }, [debouncedSearchQuery])
 
-  const loadInitialData = async () => {
+  const calculateAvailableQuantity = async (productId: string, stockQuantity: number) => {
     try {
-      const supabase = createSupabaseClient()
+      const { data: soldData, error: soldError } = await supabase
+        .from("order_items")
+        .select(`
+          quantity,
+          orders!inner(status)
+        `)
+        .eq("product_id", productId)
+        .in("orders.status", ["confirmed", "processing", "shipped", "delivered"])
 
-      // Load featured products
-      const { data: featured } = await supabase
-        .from("products")
-        .select("*")
-        .eq("is_active", true)
-        .order("created_at", { ascending: false })
-        .limit(8)
+      if (soldError) throw soldError
 
-      // Load trending products (most viewed)
-      const { data: trending } = await supabase
-        .from("products")
-        .select("*")
-        .eq("is_active", true)
-        .order("view_count", { ascending: false })
-        .limit(6)
-
-      setFeaturedProducts(featured || [])
-      setTrendingProducts(trending || [])
+      const soldQuantity = (soldData || []).reduce((sum, item) => sum + item.quantity, 0)
+      return Math.max(0, stockQuantity - soldQuantity)
     } catch (error) {
-      console.error("Error loading initial data:", error)
+      console.error("Available quantity calculation error:", error)
+      return stockQuantity
     }
   }
 
-  const performSearch = async (query: string) => {
-    if (!query.trim()) return
-
-    setIsSearching(true)
+  const fetchProducts = async () => {
     try {
-      const response = await fetch(`/api/search/instant?q=${encodeURIComponent(query)}&limit=10`)
-      const data = await response.json()
+      let query = supabase
+        .from("products")
+        .select(`
+          *,
+          category:categories(name_uz)
+        `)
+        .eq("is_available", true)
+        .gt("stock_quantity", 0)
 
-      if (response.ok) {
-        setSearchResults(data.products || [])
-        setSuggestions(data.suggestions || [])
-        setShowSuggestions(true)
+      // Apply category filter
+      if (selectedCategory) {
+        query = query.eq("category_id", selectedCategory)
       }
+
+      // Apply delivery filter
+      if (deliveryFilter === "available") {
+        query = query.eq("has_delivery", true)
+      } else if (deliveryFilter === "free") {
+        query = query.eq("has_delivery", true).eq("delivery_price", 0)
+      } else if (deliveryFilter === "none") {
+        query = query.eq("has_delivery", false)
+      }
+
+      // Apply sorting
+      switch (sortBy) {
+        case "featured":
+          query = query.order("is_featured", { ascending: false }).order("is_popular", { ascending: false })
+          break
+        case "popular":
+          query = query.order("is_popular", { ascending: false }).order("view_count", { ascending: false })
+          break
+        case "price_low":
+          query = query.order("price", { ascending: true })
+          break
+        case "price_high":
+          query = query.order("price", { ascending: false })
+          break
+        case "newest":
+          query = query.order("created_at", { ascending: false })
+          break
+        default:
+          query = query.order("is_featured", { ascending: false })
+      }
+
+      query = query.limit(50)
+
+      const { data, error } = await query
+
+      if (error) throw error
+
+      const productsWithAvailability = await Promise.all(
+        (data || []).map(async (product) => {
+          const availableQuantity = await calculateAvailableQuantity(product.id, product.stock_quantity)
+          return {
+            ...product,
+            available_quantity: availableQuantity,
+            average_rating: 4.0 + Math.random() * 1.0,
+            review_count: Math.floor(Math.random() * 100) + 1,
+          }
+        }),
+      )
+
+      const availableProducts = productsWithAvailability.filter((product) => product.available_quantity > 0)
+
+      setProducts(availableProducts)
     } catch (error) {
-      console.error("Search error:", error)
+      console.error("Products fetch error:", error)
     } finally {
-      setIsSearching(false)
+      setLoading(false)
     }
   }
 
-  const handleSuggestionClick = (suggestion: string) => {
-    setSearchQuery(suggestion)
-    setShowSuggestions(false)
+  const handleCategorySelect = (categoryId: string | null) => {
+    setSelectedCategory(categoryId)
+    const params = new URLSearchParams()
+    if (searchQuery) params.set("search", searchQuery)
+    if (categoryId) params.set("category", categoryId)
+
+    const queryString = params.toString()
+    router.push(queryString ? `/?${queryString}` : "/")
   }
 
-  const clearSearch = () => {
-    setSearchQuery("")
-    setSearchResults([])
-    setSuggestions([])
-    setShowSuggestions(false)
+  const handleProductView = (productId: string) => {
+    // Increment view count
+    supabase.rpc("increment_product_view", { product_id_param: productId })
+    router.push(`/product/${productId}`)
+  }
+
+  const handleWorkerView = (workerId: string) => {
+    router.push(`/workers/${workerId}`)
+  }
+
+  const handleAddToCart = (product: Product) => {
+    setSelectedProduct(product)
+    setShowQuantityModal(true)
+  }
+
+  const handleSearchExample = (query: string) => {
+    setSearchQuery(query)
+    router.push(`/?search=${encodeURIComponent(query)}`)
+  }
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value
+    setSearchQuery(value)
+
+    // Update URL without triggering navigation
+    const params = new URLSearchParams()
+    if (value) params.set("search", value)
+    if (selectedCategory) params.set("category", selectedCategory)
+
+    const queryString = params.toString()
+    window.history.replaceState({}, "", queryString ? `/?${queryString}` : "/")
+  }
+
+  const getSectionTitle = () => {
+    if (searchQuery) {
+      return `"${searchQuery}" bo'yicha qidiruv natijalari`
+    }
+    if (selectedCategory) {
+      const category = categories.find((c) => c.id === selectedCategory)
+      return category ? `${category.name_uz} kategoriyasi` : "Mahsulotlar"
+    }
+    return "Barcha mahsulotlar"
+  }
+
+  const getSectionIcon = () => {
+    if (searchQuery) return Search
+    if (selectedCategory) return Filter
+    return Package
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Ad Banner */}
+    <div className="min-h-screen bg-background pb-20 md:pb-4">
+      <TopBar searchQuery={searchQuery} onSearchChange={handleSearchChange} />
+      <CategoryBar
+        categories={categories}
+        selectedCategory={selectedCategory}
+        onCategorySelect={handleCategorySelect}
+      />
       <AdBanner />
 
-      {/* Category Bar */}
-      <CategoryBar />
-
-      <div className="container mx-auto px-4 py-6 space-y-8">
-        {/* Search Section */}
-        <Card>
-          <CardContent className="p-6">
-            <div className="relative">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <Input
-                  type="text"
-                  placeholder="Mahsulotlarni qidiring..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 pr-12 h-12 text-lg"
-                />
-                {searchQuery && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={clearSearch}
-                    className="absolute right-2 top-1/2 transform -translate-y-1/2"
-                  >
-                    ✕
-                  </Button>
-                )}
-              </div>
-
-              {/* Search Suggestions */}
-              {showSuggestions && suggestions.length > 0 && (
-                <Card className="absolute top-full left-0 right-0 mt-2 z-50 shadow-lg">
-                  <CardContent className="p-2">
-                    <div className="space-y-1">
-                      {suggestions.map((suggestion, index) => (
-                        <button
-                          key={index}
-                          onClick={() => handleSuggestionClick(suggestion.suggestion)}
-                          className="w-full text-left px-3 py-2 hover:bg-gray-100 rounded-md flex items-center justify-between"
-                        >
-                          <span>{suggestion.suggestion}</span>
-                          <Badge variant="secondary" className="text-xs">
-                            {suggestion.category}
-                          </Badge>
-                        </button>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
+      <div className="container mx-auto px-4 py-6">
+        {/* Search Examples - Show when no search query */}
+        {!searchQuery && !selectedCategory && popularSearches.length > 0 && (
+          <div className="mb-6">
+            <h3 className="text-lg font-semibold mb-3">Mashhur qidiruvlar</h3>
+            <div className="flex flex-wrap gap-2">
+              {popularSearches.map((search, index) => (
+                <button
+                  key={index}
+                  onClick={() => handleSearchExample(search.query)}
+                  className="px-3 py-1.5 bg-muted hover:bg-muted/80 rounded-full text-sm transition-colors"
+                >
+                  {search.query}
+                </button>
+              ))}
             </div>
+          </div>
+        )}
 
-            {isSearching && <div className="mt-4 text-center text-gray-500">Qidirilmoqda...</div>}
-          </CardContent>
-        </Card>
+        {/* Section Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
+          <div className="flex items-center space-x-3">
+            {(() => {
+              const Icon = getSectionIcon()
+              return <Icon className="w-6 h-6 text-primary" />
+            })()}
+            <div>
+              <h2 className="text-xl font-bold">{getSectionTitle()}</h2>
+              <p className="text-sm text-muted-foreground">
+                {loading || searchLoading
+                  ? "Yuklanmoqda..."
+                  : searchQuery
+                    ? `${searchResults.length} ta natija topildi`
+                    : `${products.length} ta mahsulot topildi`}
+              </p>
+            </div>
+          </div>
+
+          {/* Filters - Only show for products - Responsive */}
+          {!searchQuery && (
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center space-y-2 sm:space-y-0 sm:space-x-2">
+              {/* Delivery Filter */}
+              <select
+                value={deliveryFilter}
+                onChange={(e) => setDeliveryFilter(e.target.value)}
+                className="w-full sm:w-auto px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 text-sm"
+              >
+                <option value="all">Barchasi</option>
+                <option value="available">Yetkazib berish mavjud</option>
+                <option value="free">Tekin yetkazib berish</option>
+                <option value="none">Yetkazib berish yo'q</option>
+              </select>
+
+              {/* Sort Dropdown */}
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="w-full sm:w-auto px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 text-sm"
+              >
+                <option value="featured">Tavsiya etilgan</option>
+                <option value="popular">Mashhur</option>
+                <option value="newest">Yangi</option>
+                <option value="price_low">Arzon narx</option>
+                <option value="price_high">Qimmat narx</option>
+              </select>
+            </div>
+          )}
+        </div>
 
         {/* Search Results */}
-        {searchResults.length > 0 && (
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-bold">Qidiruv natijalari ({searchResults.length})</h2>
-              <Button variant="outline" onClick={clearSearch}>
-                Tozalash
-              </Button>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {searchResults.map((product) => (
-                <ProductCard key={product.id} product={product} />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Trending Products */}
-        {!searchQuery && trendingProducts.length > 0 && (
-          <div>
-            <div className="flex items-center gap-2 mb-6">
-              <TrendingUp className="w-6 h-6 text-orange-500" />
-              <h2 className="text-2xl font-bold">Mashhur mahsulotlar</h2>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {trendingProducts.map((product) => (
-                <Card key={product.id} className="hover:shadow-lg transition-shadow">
-                  <CardContent className="p-4">
-                    <Link href={`/product/${product.id}`}>
-                      <div className="aspect-square bg-gray-100 rounded-lg mb-4 overflow-hidden">
-                        <img
-                          src={product.image_url || "/placeholder.svg?height=200&width=200"}
-                          alt={product.name}
-                          className="w-full h-full object-cover hover:scale-105 transition-transform"
-                        />
-                      </div>
-                      <h3 className="font-semibold text-lg mb-2 line-clamp-2">{product.name}</h3>
-                      <p className="text-gray-600 text-sm mb-3 line-clamp-2">{product.description}</p>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-2xl font-bold text-blue-600">{product.price.toLocaleString()} so'm</span>
-                        <Badge variant="secondary">{product.category}</Badge>
-                      </div>
-                      <div className="flex items-center gap-4 text-sm text-gray-500">
-                        <div className="flex items-center gap-1">
-                          <Eye className="w-4 h-4" />
-                          {product.view_count || 0}
+        {searchQuery && (
+          <div className="space-y-6">
+            {searchLoading ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {Array.from({ length: 10 }).map((_, index) => (
+                  <div key={index} className="bg-card rounded-lg border border-border p-4 animate-pulse">
+                    <div className="aspect-square bg-muted rounded-lg mb-3"></div>
+                    <div className="h-4 bg-muted rounded mb-2"></div>
+                    <div className="h-3 bg-muted rounded w-2/3"></div>
+                  </div>
+                ))}
+              </div>
+            ) : searchResults.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center mx-auto mb-6">
+                  <Search className="w-10 h-10 text-muted-foreground" />
+                </div>
+                <h3 className="text-xl font-bold mb-2">Hech narsa topilmadi</h3>
+                <p className="text-muted-foreground mb-6">"{searchQuery}" bo'yicha hech qanday natija topilmadi</p>
+                <button
+                  onClick={() => {
+                    setSearchQuery("")
+                    router.push("/")
+                  }}
+                  className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+                >
+                  Barcha mahsulotlarni ko'rish
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {searchResults.map((result, index) => (
+                  <div
+                    key={`${result.type}-${result.id}`}
+                    className="animate-slideInUp"
+                    style={{ animationDelay: `${index * 50}ms` }}
+                  >
+                    {result.type === "product" ? (
+                      <div
+                        onClick={() => handleProductView(result.id)}
+                        className="bg-card rounded-lg border border-border p-4 hover:shadow-md transition-all cursor-pointer"
+                      >
+                        <div className="aspect-square bg-muted rounded-lg mb-3 overflow-hidden">
+                          {result.image_url && (
+                            <img
+                              src={result.image_url || "/placeholder.svg"}
+                              alt={result.title}
+                              className="w-full h-full object-cover"
+                            />
+                          )}
                         </div>
-                        <div className="flex items-center gap-1">
-                          <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                          {product.rating || 0}
+                        <h3 className="font-medium text-sm line-clamp-2 mb-1">{result.title}</h3>
+                        <p className="text-xs text-muted-foreground mb-2">{result.category}</p>
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-sm">
+                            {new Intl.NumberFormat("uz-UZ").format(result.price)} so'm
+                          </span>
+                          <div className="flex items-center space-x-1">
+                            <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
+                            <span className="text-xs">{(result.rating || 0).toFixed(1)}</span>
+                          </div>
+                        </div>
+                        {result.has_delivery && (
+                          <div className="mt-2">
+                            <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
+                              Yetkazib berish
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div
+                        onClick={() => handleWorkerView(result.id)}
+                        className="bg-card rounded-lg border border-border p-4 hover:shadow-md transition-all cursor-pointer"
+                      >
+                        <div className="aspect-square bg-muted rounded-lg mb-3 overflow-hidden">
+                          {result.image_url ? (
+                            <img
+                              src={result.image_url || "/placeholder.svg"}
+                              alt={result.title}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center">
+                              <User className="w-8 h-8 text-primary/50" />
+                            </div>
+                          )}
+                        </div>
+                        <h3 className="font-medium text-sm line-clamp-2 mb-1">{result.title}</h3>
+                        <p className="text-xs text-muted-foreground mb-2">{result.subtitle}</p>
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-sm">
+                            {new Intl.NumberFormat("uz-UZ").format(result.price)} so'm/soat
+                          </span>
+                          <div className="flex items-center space-x-1">
+                            <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
+                            <span className="text-xs">{(result.rating || 0).toFixed(1)}</span>
+                          </div>
                         </div>
                       </div>
-                    </Link>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
-        {/* Featured Products */}
-        {!searchQuery && featuredProducts.length > 0 && (
-          <div>
-            <h2 className="text-2xl font-bold mb-6">Yangi mahsulotlar</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {featuredProducts.map((product) => (
-                <ProductCard key={product.id} product={product} />
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Products Grid - Only show when not searching */}
+        {!searchQuery && (
+          <>
+            {loading ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {Array.from({ length: 10 }).map((_, index) => (
+                  <div key={index} className="bg-card rounded-lg border border-border p-4 animate-pulse">
+                    <div className="aspect-square bg-muted rounded-lg mb-3"></div>
+                    <div className="h-4 bg-muted rounded mb-2"></div>
+                    <div className="h-3 bg-muted rounded w-2/3"></div>
+                  </div>
+                ))}
+              </div>
+            ) : products.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center mx-auto mb-6">
+                  <Search className="w-10 h-10 text-muted-foreground" />
+                </div>
+                <h3 className="text-xl font-bold mb-2">Hech narsa topilmadi</h3>
+                <p className="text-muted-foreground mb-6">Bu kategoriyada mahsulotlar yo'q</p>
+                <button
+                  onClick={() => {
+                    setSelectedCategory(null)
+                    setDeliveryFilter("all")
+                    router.push("/")
+                  }}
+                  className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+                >
+                  Barcha mahsulotlarni ko'rish
+                </button>
+              </div>
+            ) : (
+              <div className="product-grid">
+                {products.map((product, index) => (
+                  <div key={product.id} className="product-card" style={{ animationDelay: `${index * 50}ms` }}>
+                    <ProductCard product={product} onQuickView={handleProductView} onAddToCart={handleAddToCart} />
+                  </div>
+                ))}
+              </div>
+            )}
 
-        {/* No Results */}
-        {searchQuery && searchResults.length === 0 && !isSearching && (
-          <Card>
-            <CardContent className="p-8 text-center">
-              <Search className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold mb-2">Hech narsa topilmadi</h3>
-              <p className="text-gray-600 mb-4">"{searchQuery}" bo'yicha hech qanday mahsulot topilmadi</p>
-              <Button onClick={clearSearch}>Qidiruvni tozalash</Button>
-            </CardContent>
-          </Card>
+            {/* Featured Products Section */}
+            {!selectedCategory && (
+              <div className="mt-12">
+                <div className="flex items-center space-x-3 mb-6">
+                  <Star className="w-6 h-6 text-yellow-500" />
+                  <div>
+                    <h2 className="text-xl font-bold">Tavsiya etilgan mahsulotlar</h2>
+                    <p className="text-sm text-muted-foreground">Eng yaxshi takliflar</p>
+                  </div>
+                </div>
+
+                <div className="product-grid">
+                  {products
+                    .filter((product) => product.is_featured)
+                    .slice(0, 10)
+                    .map((product, index) => (
+                      <div
+                        key={`featured-${product.id}`}
+                        className="product-card"
+                        style={{ animationDelay: `${index * 50}ms` }}
+                      >
+                        <ProductCard product={product} onQuickView={handleProductView} onAddToCart={handleAddToCart} />
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* Popular Products Section */}
+            {!selectedCategory && (
+              <div className="mt-12">
+                <div className="flex items-center space-x-3 mb-6">
+                  <TrendingUp className="w-6 h-6 text-green-500" />
+                  <div>
+                    <h2 className="text-xl font-bold">Mashhur mahsulotlar</h2>
+                    <p className="text-sm text-muted-foreground">Ko'p sotilayotgan mahsulotlar</p>
+                  </div>
+                </div>
+
+                <div className="product-grid">
+                  {products
+                    .filter((product) => product.is_popular)
+                    .slice(0, 10)
+                    .map((product, index) => (
+                      <div
+                        key={`popular-${product.id}`}
+                        className="product-card"
+                        style={{ animationDelay: `${index * 50}ms` }}
+                      >
+                        <ProductCard product={product} onQuickView={handleProductView} onAddToCart={handleAddToCart} />
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
-      {/* Draggable FAB */}
-      <DraggableFab />
+      <BottomNavigation />
+      <DraggableFab onCartClick={() => setShowCartSidebar(true)} />
+
+      {/* Cart Sidebar */}
+      <CartSidebar isOpen={showCartSidebar} onClose={() => setShowCartSidebar(false)} />
+
+      {/* Quantity Modal */}
+      <QuantityModal isOpen={showQuantityModal} onClose={() => setShowQuantityModal(false)} product={selectedProduct} />
+
+      <style jsx>{`
+        @keyframes slideInUp {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .product-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 1rem;
+        }
+
+        @media (min-width: 768px) {
+          .product-grid {
+            grid-template-columns: repeat(3, 1fr);
+          }
+        }
+
+        @media (min-width: 1024px) {
+          .product-grid {
+            grid-template-columns: repeat(4, 1fr);
+          }
+        }
+
+        @media (min-width: 1280px) {
+          .product-grid {
+            grid-template-columns: repeat(5, 1fr);
+          }
+        }
+
+        .product-card {
+          animation: slideInUp 0.6s ease-out;
+        }
+
+        .animate-slideInUp {
+          animation: slideInUp 0.6s ease-out;
+        }
+      `}</style>
     </div>
   )
 }
