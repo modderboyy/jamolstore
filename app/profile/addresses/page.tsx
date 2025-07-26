@@ -80,10 +80,11 @@ export default function AddressesPage() {
             updated_at: new Date().toISOString(),
           })
           .eq("id", editingAddress.id)
+          .eq("user_id", user.id) // Security check
 
         if (error) throw error
       } else {
-        // Add new address
+        // Add new address using function
         const { data, error } = await supabase.rpc("add_user_address", {
           user_id_param: user.id,
           name_param: formData.name,
@@ -94,8 +95,8 @@ export default function AddressesPage() {
         })
 
         if (error) throw error
-        if (!data.success) {
-          alert(data.message)
+        if (!data[0]?.success) {
+          alert(data[0]?.message || "Xatolik yuz berdi")
           return
         }
       }
@@ -134,9 +135,10 @@ export default function AddressesPage() {
 
   const handleDelete = async (addressId: string) => {
     if (!confirm("Bu manzilni o'chirishni xohlaysizmi?")) return
+    if (!user) return
 
     try {
-      const { error } = await supabase.from("addresses").delete().eq("id", addressId)
+      const { error } = await supabase.from("addresses").delete().eq("id", addressId).eq("user_id", user.id) // Security check
 
       if (error) throw error
       fetchAddresses()
@@ -151,11 +153,15 @@ export default function AddressesPage() {
     if (!user) return
 
     try {
-      // First, unset all defaults
+      // First, unset all defaults for this user
       await supabase.from("addresses").update({ is_default: false }).eq("user_id", user.id)
 
       // Then set the selected one as default
-      const { error } = await supabase.from("addresses").update({ is_default: true }).eq("id", addressId)
+      const { error } = await supabase
+        .from("addresses")
+        .update({ is_default: true })
+        .eq("id", addressId)
+        .eq("user_id", user.id) // Security check
 
       if (error) throw error
       fetchAddresses()
