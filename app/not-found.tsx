@@ -30,6 +30,14 @@ export default function NotFound() {
     }
   }
 
+  const handleGoHome = () => {
+    router.push("/")
+  }
+
+  const handleGoBack = () => {
+    router.back()
+  }
+
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-4">
       <TopBar />
@@ -59,7 +67,7 @@ export default function NotFound() {
           {/* Action buttons */}
           <div className="space-y-3 mb-8">
             <button
-              onClick={() => router.push("/")}
+              onClick={handleGoHome}
               className="w-full flex items-center justify-center space-x-2 bg-primary text-primary-foreground py-3 px-6 rounded-lg hover:bg-primary/90 transition-colors"
             >
               <Home className="w-5 h-5" />
@@ -67,7 +75,7 @@ export default function NotFound() {
             </button>
 
             <button
-              onClick={() => router.back()}
+              onClick={handleGoBack}
               className="w-full flex items-center justify-center space-x-2 bg-muted text-muted-foreground py-3 px-6 rounded-lg hover:bg-muted/80 transition-colors"
             >
               <ArrowLeft className="w-5 h-5" />

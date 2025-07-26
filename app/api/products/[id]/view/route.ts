@@ -9,19 +9,23 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       return NextResponse.json({ error: "Product ID is required" }, { status: 400 })
     }
 
-    // Increment product view count
-    const { error } = await supabase.rpc("increment_product_view", {
-      product_id_param: productId,
-    })
+    // Increment view count
+    const { error } = await supabase
+      .from("products")
+      .update({
+        view_count: supabase.raw("view_count + 1"),
+        last_viewed_at: new Date().toISOString(),
+      })
+      .eq("id", productId)
 
     if (error) {
-      console.error("Error incrementing view count:", error)
-      return NextResponse.json({ error: "Failed to increment view count" }, { status: 500 })
+      console.error("Error updating view count:", error)
+      return NextResponse.json({ error: "Failed to update view count" }, { status: 500 })
     }
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error("View increment API error:", error)
+    console.error("View tracking error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

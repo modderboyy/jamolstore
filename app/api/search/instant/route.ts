@@ -7,42 +7,37 @@ export async function GET(request: NextRequest) {
     const query = searchParams.get("q")
 
     if (!query || query.trim().length === 0) {
-      return NextResponse.json({ results: [] })
+      return NextResponse.json({ products: [], suggestions: [] })
     }
 
-    // Search using the fixed database function
-    const { data, error } = await supabase.rpc("search_all_content", {
-      search_term: query.trim(),
-      limit_count: 20,
+    const searchTerm = query.trim()
+
+    // Get products using fuzzy search
+    const { data: products, error: productsError } = await supabase.rpc("search_products_fuzzy", {
+      search_term: searchTerm,
     })
 
-    if (error) {
-      console.error("Search error:", error)
-      return NextResponse.json({ results: [] })
+    if (productsError) {
+      console.error("Products search error:", productsError)
+      return NextResponse.json({ error: "Search failed" }, { status: 500 })
     }
 
-    // Update search suggestions
-    try {
-      await supabase
-        .from("search_suggestions")
-        .upsert(
-          { query: query.trim().toLowerCase() },
-          {
-            onConflict: "query",
-            ignoreDuplicates: false,
-          },
-        )
-        .then(() => {
-          // Increment search count
-          supabase.rpc("increment_search_count", { search_query: query.trim().toLowerCase() })
-        })
-    } catch (suggestionError) {
-      console.error("Search suggestion error:", suggestionError)
+    // Get search suggestions
+    const { data: suggestions, error: suggestionsError } = await supabase.rpc("get_product_suggestions", {
+      search_term: searchTerm,
+    })
+
+    if (suggestionsError) {
+      console.error("Suggestions error:", suggestionsError)
     }
 
-    return NextResponse.json({ results: data || [] })
+    return NextResponse.json({
+      products: products || [],
+      suggestions: suggestions || [],
+      query: searchTerm,
+    })
   } catch (error) {
-    console.error("Instant search API error:", error)
-    return NextResponse.json({ results: [] })
+    console.error("Search API error:", error)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
