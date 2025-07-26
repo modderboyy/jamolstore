@@ -3,14 +3,14 @@
 import type React from "react"
 
 import { useState, useRef, useEffect } from "react"
-import { MessageCircle, X, Send, Phone } from "lucide-react"
+import { MessageCircle, X, Send, Phone, Headphones } from "lucide-react"
 import { useTelegram } from "@/contexts/TelegramContext"
 
-interface DraggableFabProps {
+interface ContactFabProps {
   onContactClick?: () => void
 }
 
-export function DraggableFab({ onContactClick }: DraggableFabProps) {
+export function ContactFab({ onContactClick }: ContactFabProps) {
   const { isTelegramWebApp } = useTelegram()
   const [isOpen, setIsOpen] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
@@ -23,6 +23,16 @@ export function DraggableFab({ onContactClick }: DraggableFabProps) {
     setDragStart({
       x: e.clientX - position.x,
       y: e.clientY - position.y,
+    })
+    e.preventDefault()
+  }
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const touch = e.touches[0]
+    setIsDragging(true)
+    setDragStart({
+      x: touch.clientX - position.x,
+      y: touch.clientY - position.y,
     })
     e.preventDefault()
   }
@@ -43,7 +53,28 @@ export function DraggableFab({ onContactClick }: DraggableFabProps) {
     })
   }
 
+  const handleTouchMove = (e: TouchEvent) => {
+    if (!isDragging) return
+
+    const touch = e.touches[0]
+    const newX = touch.clientX - dragStart.x
+    const newY = touch.clientY - dragStart.y
+
+    // Keep FAB within viewport bounds
+    const maxX = window.innerWidth - 64
+    const maxY = window.innerHeight - 64
+
+    setPosition({
+      x: Math.max(0, Math.min(newX, maxX)),
+      y: Math.max(0, Math.min(newY, maxY)),
+    })
+  }
+
   const handleMouseUp = () => {
+    setIsDragging(false)
+  }
+
+  const handleTouchEnd = () => {
     setIsDragging(false)
   }
 
@@ -54,24 +85,38 @@ export function DraggableFab({ onContactClick }: DraggableFabProps) {
     }
   }
 
-  const handleContactClick = (type: "telegram" | "phone") => {
+  const handleContactClick = (type: "telegram" | "phone" | "support") => {
     if (type === "telegram") {
       window.open("https://t.me/jamolstroy_admin", "_blank")
     } else if (type === "phone") {
       window.open("tel:+998901234567", "_self")
+    } else if (type === "support") {
+      window.open("https://t.me/jamolstroy_support", "_blank")
     }
     setIsOpen(false)
     onContactClick?.()
   }
 
   useEffect(() => {
-    document.addEventListener("mousemove", handleMouseMove)
-    document.addEventListener("mouseup", handleMouseUp)
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove)
-      document.removeEventListener("mouseup", handleMouseUp)
+    const handleMouseMoveGlobal = (e: MouseEvent) => handleMouseMove(e)
+    const handleTouchMoveGlobal = (e: TouchEvent) => handleTouchMove(e)
+    const handleMouseUpGlobal = () => handleMouseUp()
+    const handleTouchEndGlobal = () => handleTouchEnd()
+
+    if (isDragging) {
+      document.addEventListener("mousemove", handleMouseMoveGlobal)
+      document.addEventListener("touchmove", handleTouchMoveGlobal, { passive: false })
+      document.addEventListener("mouseup", handleMouseUpGlobal)
+      document.addEventListener("touchend", handleTouchEndGlobal)
     }
-  }, [])
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMoveGlobal)
+      document.removeEventListener("touchmove", handleTouchMoveGlobal)
+      document.removeEventListener("mouseup", handleMouseUpGlobal)
+      document.removeEventListener("touchend", handleTouchEndGlobal)
+    }
+  }, [isDragging, dragStart])
 
   if (isTelegramWebApp) {
     return null
@@ -109,16 +154,24 @@ export function DraggableFab({ onContactClick }: DraggableFabProps) {
               <Phone className="w-5 h-5" />
               <span className="text-sm font-medium">Qo'ng'iroq</span>
             </button>
+            <button
+              onClick={() => handleContactClick("support")}
+              className="flex items-center space-x-3 bg-purple-500 hover:bg-purple-600 text-white px-4 py-3 rounded-full shadow-lg transition-all duration-200 hover:scale-105"
+            >
+              <Headphones className="w-5 h-5" />
+              <span className="text-sm font-medium">Yordam</span>
+            </button>
           </div>
         )}
 
         {/* Main FAB Button */}
         <button
           onMouseDown={handleMouseDown}
+          onTouchStart={handleTouchStart}
           onClick={handleClick}
           className={`
-            w-14 h-14 bg-primary hover:bg-primary/90 text-primary-foreground 
-            rounded-full shadow-lg flex items-center justify-center
+            w-14 h-14 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 
+            text-white rounded-full shadow-lg flex items-center justify-center
             transition-all duration-200 hover:scale-110 active:scale-95
             ${isDragging ? "scale-110" : ""}
           `}

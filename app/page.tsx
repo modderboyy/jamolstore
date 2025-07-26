@@ -10,11 +10,11 @@ import { BottomNavigation } from "@/components/layout/bottom-navigation"
 import { CategoryBar } from "@/components/layout/category-bar"
 import { AdBanner } from "@/components/layout/ad-banner"
 import { ProductCard } from "@/components/ui/product-card"
-import { DraggableFab } from "@/components/ui/draggable-fab"
 import { QuantityModal } from "@/components/ui/quantity-modal"
 import { CartSidebar } from "@/components/layout/cart-sidebar"
 import { Search, Package, TrendingUp, Star, Filter, User } from "lucide-react"
 import { useDebounce } from "@/hooks/use-debounce"
+import { ContactFab } from "@/components/ui/contact-fab"
 
 interface Product {
   id: string
@@ -73,8 +73,8 @@ export default function HomePage() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [showCartSidebar, setShowCartSidebar] = useState(false)
 
-  // Debounce search query for real-time search
-  const debouncedSearchQuery = useDebounce(searchQuery, 300)
+  // Debounce search query for real-time search - reduced to 150ms for faster response
+  const debouncedSearchQuery = useDebounce(searchQuery, 150)
 
   useEffect(() => {
     fetchCategories()
@@ -82,12 +82,23 @@ export default function HomePage() {
   }, [])
 
   useEffect(() => {
-    if (debouncedSearchQuery) {
+    if (debouncedSearchQuery.trim()) {
       fetchSearchResults()
     } else {
+      setSearchResults([])
       fetchProducts()
     }
   }, [debouncedSearchQuery, selectedCategory, sortBy, deliveryFilter])
+
+  // Auto-refresh homepage every 30 seconds when not searching
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      const interval = setInterval(() => {
+        fetchProducts()
+      }, 30000)
+      return () => clearInterval(interval)
+    }
+  }, [searchQuery, selectedCategory, sortBy, deliveryFilter])
 
   const fetchCategories = async () => {
     try {
@@ -584,7 +595,7 @@ export default function HomePage() {
       </div>
 
       <BottomNavigation />
-      <DraggableFab onCartClick={() => setShowCartSidebar(true)} />
+      <ContactFab />
 
       {/* Cart Sidebar */}
       <CartSidebar isOpen={showCartSidebar} onClose={() => setShowCartSidebar(false)} />
