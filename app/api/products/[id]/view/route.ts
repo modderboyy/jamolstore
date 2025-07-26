@@ -9,7 +9,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       return NextResponse.json({ error: "Product ID is required" }, { status: 400 })
     }
 
-    // Increment view count using the database function
+    // Increment product view count
     const { error } = await supabase.rpc("increment_product_view", {
       product_id_param: productId,
     })
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error("View increment error:", error)
+    console.error("View increment API error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

@@ -10,6 +10,7 @@ import { BottomNavigation } from "@/components/layout/bottom-navigation"
 import { CategoryBar } from "@/components/layout/category-bar"
 import { AdBanner } from "@/components/layout/ad-banner"
 import { ProductCard } from "@/components/ui/product-card"
+import { DraggableFab } from "@/components/ui/draggable-fab"
 import { QuantityModal } from "@/components/ui/quantity-modal"
 import { CartSidebar } from "@/components/layout/cart-sidebar"
 import { Search, Package, TrendingUp, Star, Filter, User, RefreshCw } from "lucide-react"
@@ -64,8 +65,8 @@ export default function HomePage() {
   const [popularSearches, setPopularSearches] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [searchLoading, setSearchLoading] = useState(false)
-  const [searchQuery, setSearchQuery] = useState(searchParams.get("search") || "")
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(searchParams.get("category"))
+  const [searchQuery, setSearchQuery] = useState(searchParams?.get("search") || "")
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(searchParams?.get("category"))
   const [sortBy, setSortBy] = useState<string>("featured")
   const [deliveryFilter, setDeliveryFilter] = useState<string>("all")
   const [showQuantityModal, setShowQuantityModal] = useState(false)
@@ -633,6 +634,7 @@ export default function HomePage() {
       </div>
 
       <BottomNavigation />
+      <DraggableFab onCartClick={() => setShowCartSidebar(true)} />
 
       {/* Cart Sidebar */}
       <CartSidebar isOpen={showCartSidebar} onClose={() => setShowCartSidebar(false)} />
