@@ -112,6 +112,8 @@ export default function ProfilePage() {
   }
 
   const formatPhoneInput = (value: string) => {
+    if (!value) return ""
+
     // Remove all non-digit characters
     const digits = value.replace(/\D/g, "")
 
@@ -132,13 +134,19 @@ export default function ProfilePage() {
   const handleEditProfile = async () => {
     if (!user) return
 
+    // Validate required fields
+    if (!editForm.first_name?.trim() || !editForm.last_name?.trim()) {
+      alert("Ism va familiya majburiy maydonlar")
+      return
+    }
+
     setIsUpdating(true)
     try {
       const { data, error } = await supabase.rpc("update_user_profile", {
         user_id_param: user.id,
         first_name_param: editForm.first_name.trim(),
         last_name_param: editForm.last_name.trim(),
-        phone_number_param: editForm.phone_number.trim(),
+        phone_number_param: editForm.phone_number?.trim() || "",
         email_param: "", // Email not needed
       })
 
@@ -295,12 +303,12 @@ export default function ProfilePage() {
               <div className="flex items-start space-x-4">
                 <div className="w-20 h-20 bg-primary rounded-full flex items-center justify-center">
                   <span className="text-primary-foreground text-2xl font-bold">
-                    {user.first_name.charAt(0).toUpperCase()}
+                    {user.first_name?.charAt(0)?.toUpperCase() || "U"}
                   </span>
                 </div>
                 <div className="flex-1">
                   <h1 className="text-2xl font-bold mb-2">
-                    {user.first_name} {user.last_name}
+                    {user.first_name || ""} {user.last_name || ""}
                   </h1>
                   <div className="space-y-2 text-sm text-muted-foreground">
                     {user.phone_number && (
@@ -312,6 +320,10 @@ export default function ProfilePage() {
                     <div className="flex items-center space-x-2">
                       <Calendar className="w-4 h-4" />
                       <span>A'zo bo'lgan: {formatDate(user.created_at)}</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <MapPin className="w-4 h-4" />
+                      <span>Qashqadaryo viloyati, G'uzor tumani</span>
                     </div>
                   </div>
                 </div>
@@ -348,6 +360,26 @@ export default function ProfilePage() {
                 </div>
               </div>
             )}
+
+            {/* Delivery Info */}
+            <div className="bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-950/20 dark:to-blue-950/20 rounded-xl border border-border p-6 mb-6">
+              <div className="flex items-center space-x-3 mb-3">
+                <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center">
+                  <span className="text-white text-xl">🚚</span>
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-green-700 dark:text-green-300">Yetkazib berish xizmati</h3>
+                  <p className="text-sm text-green-600 dark:text-green-400">
+                    200,000 so'mdan yuqori xaridlarda tekin yetkazib berish!
+                  </p>
+                </div>
+              </div>
+              <div className="text-sm text-muted-foreground">
+                <p>• Tez va xavfsiz yetkazib berish</p>
+                <p>• Qashqadaryo viloyati bo'ylab</p>
+                <p>• Professional kuryer xizmati</p>
+              </div>
+            </div>
 
             {/* Menu Items */}
             <div className="space-y-3 mb-6">
@@ -464,6 +496,28 @@ export default function ProfilePage() {
                   ))}
                 </div>
               </div>
+
+              {/* Delivery Info */}
+              <div className="bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-950/20 dark:to-blue-950/20 rounded-xl border border-border p-6">
+                <div className="flex items-center space-x-3 mb-3">
+                  <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center">
+                    <span className="text-white text-xl">🚚</span>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-green-700 dark:text-green-300">
+                      Yetkazib berish xizmati
+                    </h3>
+                    <p className="text-sm text-green-600 dark:text-green-400">
+                      200,000 so'mdan yuqori xaridlarda tekin yetkazib berish!
+                    </p>
+                  </div>
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  <p>• Tez va xavfsiz yetkazib berish</p>
+                  <p>• Qashqadaryo viloyati bo'ylab</p>
+                  <p>• Professional kuryer xizmati</p>
+                </div>
+              </div>
             </div>
           )
         )}
@@ -479,7 +533,7 @@ export default function ProfilePage() {
                 <label className="block text-sm font-medium mb-2">Ism *</label>
                 <input
                   type="text"
-                  value={editForm.first_name}
+                  value={editForm.first_name || ""}
                   onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })}
                   className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
                   placeholder="Ismingizni kiriting"
@@ -489,7 +543,7 @@ export default function ProfilePage() {
                 <label className="block text-sm font-medium mb-2">Familiya *</label>
                 <input
                   type="text"
-                  value={editForm.last_name}
+                  value={editForm.last_name || ""}
                   onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })}
                   className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
                   placeholder="Familiyangizni kiriting"
@@ -499,7 +553,7 @@ export default function ProfilePage() {
                 <label className="block text-sm font-medium mb-2">Telefon raqam</label>
                 <input
                   type="tel"
-                  value={editForm.phone_number}
+                  value={editForm.phone_number || ""}
                   onChange={(e) => setEditForm({ ...editForm, phone_number: formatPhoneInput(e.target.value) })}
                   className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
                   placeholder="+998 90 123 45 67"
@@ -516,7 +570,7 @@ export default function ProfilePage() {
               </button>
               <button
                 onClick={handleEditProfile}
-                disabled={isUpdating || !editForm.first_name.trim() || !editForm.last_name.trim()}
+                disabled={isUpdating || !editForm.first_name?.trim() || !editForm.last_name?.trim()}
                 className="flex-1 py-2 px-4 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
               >
                 {isUpdating ? (

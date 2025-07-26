@@ -329,6 +329,23 @@ export default function CheckoutPage() {
       </div>
 
       <div className="container mx-auto px-4 py-6 space-y-6">
+        {/* Delivery Info Banner */}
+        <div className="bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-950/20 dark:to-blue-950/20 rounded-xl border border-border p-4">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center">
+              <span className="text-white text-lg">🚚</span>
+            </div>
+            <div>
+              <h3 className="font-semibold text-green-700 dark:text-green-300">
+                200,000 so'mdan yuqori xaridlarda tekin yetkazib berish!
+              </h3>
+              <p className="text-sm text-green-600 dark:text-green-400">
+                Qashqadaryo viloyati bo'ylab tez va xavfsiz yetkazib berish
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* Order Items */}
         <div className="bg-card rounded-lg border border-border p-4">
           <h3 className="text-lg font-semibold mb-4">Buyurtma tarkibi</h3>
@@ -420,14 +437,12 @@ export default function CheckoutPage() {
               </div>
 
               {/* Free delivery notification */}
-              {deliveryInfo && deliveryInfo.cart_total >= deliveryInfo.free_delivery_threshold && (
+              {deliveryInfo && deliveryInfo.cart_total >= 200000 && (
                 <div className="mt-4 p-3 bg-green-50 dark:bg-green-950/20 rounded-lg">
                   <div className="flex items-center space-x-2 text-green-600 mb-1">
                     <span className="text-sm font-medium">🎉 Yetkazib berish tekin!</span>
                   </div>
-                  <p className="text-xs text-green-600">
-                    Siz {formatPrice(deliveryInfo.free_delivery_threshold)} so'mdan yuqori mahsulot olyapsiz
-                  </p>
+                  <p className="text-xs text-green-600">Siz 200,000 so'mdan yuqori mahsulot olyapsiz</p>
                 </div>
               )}
 

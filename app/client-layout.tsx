@@ -13,6 +13,7 @@ import { useCart } from "@/contexts/CartContext"
 import { ShoppingCart } from "lucide-react"
 import { useState, useEffect } from "react"
 import { usePathname } from "next/navigation"
+import { Toaster } from "@/components/ui/toaster"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -89,11 +90,12 @@ export default function ClientLayout({
   return (
     <html lang="uz" suppressHydrationWarning>
       <body className={inter.className}>
-        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} disableTransitionOnChange>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <TelegramProvider>
             <AuthProvider>
               <CartProvider>
                 <LayoutContent>{children}</LayoutContent>
+                <Toaster />
               </CartProvider>
             </AuthProvider>
           </TelegramProvider>

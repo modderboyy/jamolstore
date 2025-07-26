@@ -65,6 +65,12 @@ export default function AddressesPage() {
     e.preventDefault()
     if (!user) return
 
+    // Validate required fields
+    if (!formData.name?.trim() || !formData.address?.trim()) {
+      alert("Manzil nomi va manzil majburiy maydonlar")
+      return
+    }
+
     setIsSubmitting(true)
     try {
       if (editingAddress) {
@@ -72,24 +78,25 @@ export default function AddressesPage() {
         const { error } = await supabase
           .from("addresses")
           .update({
-            name: formData.name,
-            address: formData.address,
-            city: formData.city,
-            region: formData.region,
+            name: formData.name.trim(),
+            address: formData.address.trim(),
+            city: formData.city?.trim() || "",
+            region: formData.region?.trim() || "",
             is_default: formData.is_default,
             updated_at: new Date().toISOString(),
           })
           .eq("id", editingAddress.id)
+          .eq("user_id", user.id) // Security check
 
         if (error) throw error
       } else {
-        // Add new address
+        // Add new address using function
         const { data, error } = await supabase.rpc("add_user_address", {
           user_id_param: user.id,
-          name_param: formData.name,
-          address_param: formData.address,
-          city_param: formData.city,
-          region_param: formData.region,
+          name_param: formData.name.trim(),
+          address_param: formData.address.trim(),
+          city_param: formData.city?.trim() || "",
+          region_param: formData.region?.trim() || "",
           is_default_param: formData.is_default,
         })
 
@@ -123,8 +130,8 @@ export default function AddressesPage() {
   const handleEdit = (address: Address) => {
     setEditingAddress(address)
     setFormData({
-      name: address.name,
-      address: address.address,
+      name: address.name || "",
+      address: address.address || "",
       city: address.city || "",
       region: address.region || "",
       is_default: address.is_default,
@@ -136,7 +143,7 @@ export default function AddressesPage() {
     if (!confirm("Bu manzilni o'chirishni xohlaysizmi?")) return
 
     try {
-      const { error } = await supabase.from("addresses").delete().eq("id", addressId)
+      const { error } = await supabase.from("addresses").delete().eq("id", addressId).eq("user_id", user.id) // Security check
 
       if (error) throw error
       fetchAddresses()
@@ -214,6 +221,23 @@ export default function AddressesPage() {
       </div>
 
       <div className="container mx-auto px-4 py-6">
+        {/* Delivery Info */}
+        <div className="bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-950/20 dark:to-blue-950/20 rounded-xl border border-border p-4 mb-6">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center">
+              <span className="text-white text-lg">🚚</span>
+            </div>
+            <div>
+              <h3 className="font-semibold text-green-700 dark:text-green-300">
+                200,000 so'mdan yuqori xaridlarda tekin yetkazib berish!
+              </h3>
+              <p className="text-sm text-green-600 dark:text-green-400">
+                Qashqadaryo viloyati bo'ylab tez va xavfsiz yetkazib berish
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* Addresses List */}
         {addresses.length === 0 ? (
           <div className="text-center py-12">
@@ -297,7 +321,7 @@ export default function AddressesPage() {
                 <label className="block text-sm font-medium mb-2">Nomi *</label>
                 <input
                   type="text"
-                  value={formData.name}
+                  value={formData.name || ""}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
                   placeholder="Uy, Ish, va hokazo"
@@ -307,7 +331,7 @@ export default function AddressesPage() {
               <div>
                 <label className="block text-sm font-medium mb-2">Manzil *</label>
                 <textarea
-                  value={formData.address}
+                  value={formData.address || ""}
                   onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                   className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
                   rows={3}
@@ -319,7 +343,7 @@ export default function AddressesPage() {
                 <label className="block text-sm font-medium mb-2">Shahar</label>
                 <input
                   type="text"
-                  value={formData.city}
+                  value={formData.city || ""}
                   onChange={(e) => setFormData({ ...formData, city: e.target.value })}
                   className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
                   placeholder="Shahar nomi"
@@ -329,7 +353,7 @@ export default function AddressesPage() {
                 <label className="block text-sm font-medium mb-2">Viloyat</label>
                 <input
                   type="text"
-                  value={formData.region}
+                  value={formData.region || ""}
                   onChange={(e) => setFormData({ ...formData, region: e.target.value })}
                   className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
                   placeholder="Viloyat nomi"
@@ -358,7 +382,7 @@ export default function AddressesPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmitting || !formData.name.trim() || !formData.address.trim()}
+                  disabled={isSubmitting || !formData.name?.trim() || !formData.address?.trim()}
                   className="flex-1 py-2 px-4 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
                 >
                   {isSubmitting ? (

@@ -154,7 +154,6 @@ export default function CartPage() {
                             <Plus className="w-4 h-4" />
                           </button>
                         </div>
-
                         <button
                           onClick={() => handleRemoveItem(item.id)}
                           className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
@@ -195,14 +194,12 @@ export default function CartPage() {
                   </div>
                 )}
 
-                {deliveryInfo.has_delivery_items && deliveryInfo.cart_total >= deliveryInfo.free_delivery_threshold && (
+                {deliveryInfo.has_delivery_items && deliveryInfo.cart_total >= 200000 && (
                   <div className="mb-3 p-3 bg-green-50 dark:bg-green-950/20 rounded-lg">
                     <div className="flex items-center space-x-2 text-green-600 mb-1">
                       <span className="text-sm font-medium">🎉 Yetkazib berish tekin!</span>
                     </div>
-                    <p className="text-xs text-green-600">
-                      Siz {formatPrice(deliveryInfo.free_delivery_threshold)} so'mdan yuqori mahsulot olyapsiz
-                    </p>
+                    <p className="text-xs text-green-600">Siz 200,000 so'mdan yuqori mahsulot olyapsiz</p>
                   </div>
                 )}
               </div>
