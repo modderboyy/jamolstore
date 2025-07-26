@@ -15,6 +15,7 @@ export function DraggableFab({ onCartClick }: DraggableFabProps) {
   const [position, setPosition] = useState({ x: 20, y: 100 })
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
+  const [hasMoved, setHasMoved] = useState(false)
   const fabRef = useRef<HTMLButtonElement>(null)
   const totalItems = getTotalItems()
 
@@ -33,10 +34,13 @@ export function DraggableFab({ onCartClick }: DraggableFabProps) {
         x: Math.max(0, Math.min(newX, maxX)),
         y: Math.max(0, Math.min(newY, maxY)),
       })
+      setHasMoved(true)
     }
 
     const handleMouseUp = () => {
       setIsDragging(false)
+      // Reset hasMoved after a short delay to allow click detection
+      setTimeout(() => setHasMoved(false), 100)
     }
 
     if (isDragging) {
@@ -59,10 +63,11 @@ export function DraggableFab({ onCartClick }: DraggableFabProps) {
       y: e.clientY - rect.top,
     })
     setIsDragging(true)
+    setHasMoved(false)
   }
 
   const handleClick = (e: React.MouseEvent) => {
-    if (isDragging) {
+    if (hasMoved) {
       e.preventDefault()
       return
     }

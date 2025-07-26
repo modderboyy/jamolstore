@@ -1,6 +1,7 @@
 "use client"
 
 import type React from "react"
+
 import { useEffect, useState, useCallback } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
@@ -64,8 +65,8 @@ export default function HomePage() {
   const [popularSearches, setPopularSearches] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [searchLoading, setSearchLoading] = useState(false)
-  const [searchQuery, setSearchQuery] = useState(searchParams.get("search") || "")
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(searchParams.get("category"))
+  const [searchQuery, setSearchQuery] = useState("")
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [sortBy, setSortBy] = useState<string>("featured")
   const [deliveryFilter, setDeliveryFilter] = useState<string>("all")
   const [showQuantityModal, setShowQuantityModal] = useState(false)
@@ -75,6 +76,16 @@ export default function HomePage() {
 
   // Debounce search query for real-time search
   const debouncedSearchQuery = useDebounce(searchQuery, 300)
+
+  // Initialize from URL params
+  useEffect(() => {
+    if (searchParams) {
+      const search = searchParams.get("search") || ""
+      const category = searchParams.get("category")
+      setSearchQuery(search)
+      setSelectedCategory(category)
+    }
+  }, [searchParams])
 
   // Auto-refresh every 30 seconds
   useEffect(() => {
@@ -260,7 +271,7 @@ export default function HomePage() {
 
   const handleProductView = (productId: string) => {
     // Increment view count
-    fetch(`/api/products/${productId}/view`, { method: "POST" })
+    fetch(`/api/products/${productId}/view`, { method: "POST" }).catch(console.error)
     router.push(`/product/${productId}`)
   }
 
@@ -288,7 +299,9 @@ export default function HomePage() {
     if (selectedCategory) params.set("category", selectedCategory)
 
     const queryString = params.toString()
-    window.history.replaceState({}, "", queryString ? `/?${queryString}` : "/")
+    if (typeof window !== "undefined") {
+      window.history.replaceState({}, "", queryString ? `/?${queryString}` : "/")
+    }
   }
 
   const getSectionTitle = () => {
