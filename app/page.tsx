@@ -1,652 +1,285 @@
 "use client"
 
-import type React from "react"
-
-import { useEffect, useState, useCallback } from "react"
-import { useSearchParams, useRouter } from "next/navigation"
+import { useState, useEffect, useCallback } from "react"
+import { useRouter } from "next/navigation"
+import { useAuth } from "@/contexts/AuthContext"
+import { useCart } from "@/contexts/CartContext"
+import { useTelegram } from "@/contexts/TelegramContext"
 import { supabase } from "@/lib/supabase"
-import { TopBar } from "@/components/layout/top-bar"
-import { BottomNavigation } from "@/components/layout/bottom-navigation"
-import { CategoryBar } from "@/components/layout/category-bar"
-import { AdBanner } from "@/components/layout/ad-banner"
-import { ProductCard } from "@/components/ui/product-card"
-import { QuantityModal } from "@/components/ui/quantity-modal"
-import { CartSidebar } from "@/components/layout/cart-sidebar"
-import { Search, Package, TrendingUp, Star, Filter, User } from "lucide-react"
 import { useDebounce } from "@/hooks/use-debounce"
+import { TopBar } from "@/components/layout/top-bar"
+import { CategoryBar } from "@/components/layout/category-bar"
+import { BottomNavigation } from "@/components/layout/bottom-navigation"
+import { ProductCard } from "@/components/ui/product-card"
+import { AdBanner } from "@/components/layout/ad-banner"
 import { ContactFab } from "@/components/ui/contact-fab"
+import { Search, Grid, List, Sparkles } from "lucide-react"
 
 interface Product {
   id: string
-  name_uz: string
+  name: string
+  description: string
   price: number
-  unit: string
-  images: string[]
-  is_featured: boolean
-  is_popular: boolean
+  rental_price: number
+  image_url: string
+  category: string
   stock_quantity: number
-  available_quantity: number
-  has_delivery: boolean
-  delivery_price: number
-  delivery_limit: number
-  product_type: "sale" | "rental"
-  rental_price_per_unit?: number
-  category: {
-    name_uz: string
-  }
-  average_rating?: number
-  review_count?: number
+  view_count: number
+  is_rental: boolean
+  is_active: boolean
+  created_at: string
 }
 
 interface SearchResult {
+  type: string
   id: string
   title: string
-  subtitle: string
-  type: "product" | "worker"
-  image_url?: string
+  description: string
   price: number
+  image_url: string
   category: string
-  rating: number
-  has_delivery: boolean
-}
-
-interface Category {
-  id: string
-  name_uz: string
-  icon_name: string
+  relevance_score: number
 }
 
 export default function HomePage() {
-  const searchParams = useSearchParams()
   const router = useRouter()
+  const { user } = useAuth()
+  const { cart } = useCart()
+  const { isTelegramWebApp } = useTelegram()
+
   const [products, setProducts] = useState<Product[]>([])
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
-  const [categories, setCategories] = useState<Category[]>([])
-  const [popularSearches, setPopularSearches] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [searchLoading, setSearchLoading] = useState(false)
-  const [searchQuery, setSearchQuery] = useState(searchParams.get("search") || "")
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(searchParams.get("category"))
-  const [sortBy, setSortBy] = useState<string>("featured")
-  const [deliveryFilter, setDeliveryFilter] = useState<string>("all")
-  const [showQuantityModal, setShowQuantityModal] = useState(false)
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
-  const [showCartSidebar, setShowCartSidebar] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [selectedCategory, setSelectedCategory] = useState("all")
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
+  const [isSearching, setIsSearching] = useState(false)
 
-  // Debounce search query for real-time search - reduced to 150ms for faster response
+  // Real-time search with faster debounce
   const debouncedSearchQuery = useDebounce(searchQuery, 150)
 
-  useEffect(() => {
-    fetchCategories()
-    fetchPopularSearches()
-  }, [])
-
-  useEffect(() => {
-    if (debouncedSearchQuery.trim()) {
-      fetchSearchResults()
-    } else {
-      setSearchResults([])
-      fetchProducts()
-    }
-  }, [debouncedSearchQuery, selectedCategory, sortBy, deliveryFilter])
-
-  // Auto-refresh homepage every 30 seconds when not searching
-  useEffect(() => {
-    if (!searchQuery.trim()) {
-      const interval = setInterval(() => {
-        fetchProducts()
-      }, 30000)
-      return () => clearInterval(interval)
-    }
-  }, [searchQuery, selectedCategory, sortBy, deliveryFilter])
-
-  const fetchCategories = async () => {
+  // Fetch products
+  const fetchProducts = useCallback(async () => {
     try {
-      const { data, error } = await supabase
-        .from("categories")
-        .select("id, name_uz, icon_name")
-        .eq("is_active", true)
-        .order("name_uz")
+      setIsLoading(true)
+      let query = supabase.from("products").select("*").eq("is_active", true).order("created_at", { ascending: false })
+
+      if (selectedCategory !== "all") {
+        query = query.eq("category", selectedCategory)
+      }
+
+      const { data, error } = await query.limit(50)
 
       if (error) throw error
-      setCategories(data || [])
+      setProducts(data || [])
     } catch (error) {
-      console.error("Categories fetch error:", error)
+      console.error("Error fetching products:", error)
+    } finally {
+      setIsLoading(false)
     }
-  }
+  }, [selectedCategory])
 
-  const fetchPopularSearches = async () => {
-    try {
-      const { data, error } = await supabase.rpc("get_popular_searches", { limit_count: 8 })
-
-      if (error) throw error
-      setPopularSearches(data || [])
-    } catch (error) {
-      console.error("Popular searches error:", error)
-    }
-  }
-
-  const fetchSearchResults = useCallback(async () => {
-    if (!debouncedSearchQuery.trim()) {
+  // Search function
+  const performSearch = useCallback(async (query: string) => {
+    if (!query.trim()) {
       setSearchResults([])
-      setSearchLoading(false)
+      setIsSearching(false)
       return
     }
 
-    setSearchLoading(true)
     try {
+      setIsSearching(true)
       const { data, error } = await supabase.rpc("search_all_content", {
-        search_term: debouncedSearchQuery,
-        limit_count: 20,
+        search_query: query.trim(),
       })
 
       if (error) throw error
       setSearchResults(data || [])
     } catch (error) {
-      console.error("Search results error:", error)
+      console.error("Search error:", error)
       setSearchResults([])
     } finally {
-      setSearchLoading(false)
-      setLoading(false)
+      setIsSearching(false)
     }
-  }, [debouncedSearchQuery])
+  }, [])
 
-  const calculateAvailableQuantity = async (productId: string, stockQuantity: number) => {
-    try {
-      const { data: soldData, error: soldError } = await supabase
-        .from("order_items")
-        .select(`
-          quantity,
-          orders!inner(status)
-        `)
-        .eq("product_id", productId)
-        .in("orders.status", ["confirmed", "processing", "shipped", "delivered"])
+  // Auto-refresh every 30 seconds when not searching
+  useEffect(() => {
+    if (!debouncedSearchQuery) {
+      const interval = setInterval(() => {
+        fetchProducts()
+      }, 30000)
 
-      if (soldError) throw soldError
-
-      const soldQuantity = (soldData || []).reduce((sum, item) => sum + item.quantity, 0)
-      return Math.max(0, stockQuantity - soldQuantity)
-    } catch (error) {
-      console.error("Available quantity calculation error:", error)
-      return stockQuantity
+      return () => clearInterval(interval)
     }
-  }
+  }, [debouncedSearchQuery, fetchProducts])
 
-  const fetchProducts = async () => {
-    try {
-      let query = supabase
-        .from("products")
-        .select(`
-          *,
-          category:categories(name_uz)
-        `)
-        .eq("is_available", true)
-        .gt("stock_quantity", 0)
+  // Initial load
+  useEffect(() => {
+    fetchProducts()
+  }, [fetchProducts])
 
-      // Apply category filter
-      if (selectedCategory) {
-        query = query.eq("category_id", selectedCategory)
-      }
+  // Handle search
+  useEffect(() => {
+    performSearch(debouncedSearchQuery)
+  }, [debouncedSearchQuery, performSearch])
 
-      // Apply delivery filter
-      if (deliveryFilter === "available") {
-        query = query.eq("has_delivery", true)
-      } else if (deliveryFilter === "free") {
-        query = query.eq("has_delivery", true).eq("delivery_price", 0)
-      } else if (deliveryFilter === "none") {
-        query = query.eq("has_delivery", false)
-      }
-
-      // Apply sorting
-      switch (sortBy) {
-        case "featured":
-          query = query.order("is_featured", { ascending: false }).order("is_popular", { ascending: false })
-          break
-        case "popular":
-          query = query.order("is_popular", { ascending: false }).order("view_count", { ascending: false })
-          break
-        case "price_low":
-          query = query.order("price", { ascending: true })
-          break
-        case "price_high":
-          query = query.order("price", { ascending: false })
-          break
-        case "newest":
-          query = query.order("created_at", { ascending: false })
-          break
-        default:
-          query = query.order("is_featured", { ascending: false })
-      }
-
-      query = query.limit(50)
-
-      const { data, error } = await query
-
-      if (error) throw error
-
-      const productsWithAvailability = await Promise.all(
-        (data || []).map(async (product) => {
-          const availableQuantity = await calculateAvailableQuantity(product.id, product.stock_quantity)
-          return {
-            ...product,
-            available_quantity: availableQuantity,
-            average_rating: 4.0 + Math.random() * 1.0,
-            review_count: Math.floor(Math.random() * 100) + 1,
-          }
-        }),
-      )
-
-      const availableProducts = productsWithAvailability.filter((product) => product.available_quantity > 0)
-
-      setProducts(availableProducts)
-    } catch (error) {
-      console.error("Products fetch error:", error)
-    } finally {
-      setLoading(false)
+  // Handle category change
+  useEffect(() => {
+    if (!searchQuery) {
+      fetchProducts()
     }
-  }
+  }, [selectedCategory, searchQuery, fetchProducts])
 
-  const handleCategorySelect = (categoryId: string | null) => {
-    setSelectedCategory(categoryId)
-    const params = new URLSearchParams()
-    if (searchQuery) params.set("search", searchQuery)
-    if (categoryId) params.set("category", categoryId)
-
-    const queryString = params.toString()
-    router.push(queryString ? `/?${queryString}` : "/")
-  }
-
-  const handleProductView = (productId: string) => {
-    // Increment view count
-    supabase.rpc("increment_product_view", { product_id_param: productId })
-    router.push(`/product/${productId}`)
-  }
-
-  const handleWorkerView = (workerId: string) => {
-    router.push(`/workers/${workerId}`)
-  }
-
-  const handleAddToCart = (product: Product) => {
-    setSelectedProduct(product)
-    setShowQuantityModal(true)
-  }
-
-  const handleSearchExample = (query: string) => {
-    setSearchQuery(query)
-    router.push(`/?search=${encodeURIComponent(query)}`)
-  }
-
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value
-    setSearchQuery(value)
-
-    // Update URL without triggering navigation
-    const params = new URLSearchParams()
-    if (value) params.set("search", value)
-    if (selectedCategory) params.set("category", selectedCategory)
-
-    const queryString = params.toString()
-    window.history.replaceState({}, "", queryString ? `/?${queryString}` : "/")
-  }
-
-  const getSectionTitle = () => {
-    if (searchQuery) {
-      return `"${searchQuery}" bo'yicha qidiruv natijalari`
-    }
-    if (selectedCategory) {
-      const category = categories.find((c) => c.id === selectedCategory)
-      return category ? `${category.name_uz} kategoriyasi` : "Mahsulotlar"
-    }
-    return "Barcha mahsulotlar"
-  }
-
-  const getSectionIcon = () => {
-    if (searchQuery) return Search
-    if (selectedCategory) return Filter
-    return Package
-  }
+  const displayProducts = searchQuery ? searchResults : products
+  const isShowingSearchResults = searchQuery.length > 0
 
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-4">
-      <TopBar searchQuery={searchQuery} onSearchChange={handleSearchChange} />
-      <CategoryBar
-        categories={categories}
-        selectedCategory={selectedCategory}
-        onCategorySelect={handleCategorySelect}
-      />
+      <TopBar />
+
+      {/* Search Bar */}
+      <div className="bg-card border-b border-border sticky top-16 z-30">
+        <div className="container mx-auto px-4 py-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+            <input
+              type="text"
+              placeholder="Mahsulotlarni qidiring..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            />
+            {isSearching && (
+              <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Category Bar */}
+      {!isShowingSearchResults && (
+        <CategoryBar selectedCategory={selectedCategory} onCategoryChange={setSelectedCategory} />
+      )}
+
+      {/* View Controls */}
+      <div className="bg-card border-b border-border">
+        <div className="container mx-auto px-4 py-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              {isShowingSearchResults ? (
+                <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+                  <Search className="w-4 h-4" />
+                  <span>
+                    {searchResults.length} ta natija "{searchQuery}" uchun
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+                  <Sparkles className="w-4 h-4" />
+                  <span>{products.length} ta mahsulot</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setViewMode("grid")}
+                className={`p-2 rounded-lg transition-colors ${
+                  viewMode === "grid" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+                }`}
+              >
+                <Grid className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setViewMode("list")}
+                className={`p-2 rounded-lg transition-colors ${
+                  viewMode === "list" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+                }`}
+              >
+                <List className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Ad Banner */}
       <AdBanner />
 
+      {/* Content */}
       <div className="container mx-auto px-4 py-6">
-        {/* Search Examples - Show when no search query */}
-        {!searchQuery && !selectedCategory && popularSearches.length > 0 && (
-          <div className="mb-6">
-            <h3 className="text-lg font-semibold mb-3">Mashhur qidiruvlar</h3>
-            <div className="flex flex-wrap gap-2">
-              {popularSearches.map((search, index) => (
-                <button
-                  key={index}
-                  onClick={() => handleSearchExample(search.query)}
-                  className="px-3 py-1.5 bg-muted hover:bg-muted/80 rounded-full text-sm transition-colors"
-                >
-                  {search.query}
-                </button>
-              ))}
-            </div>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-20">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
           </div>
-        )}
-
-        {/* Section Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
-          <div className="flex items-center space-x-3">
-            {(() => {
-              const Icon = getSectionIcon()
-              return <Icon className="w-6 h-6 text-primary" />
-            })()}
-            <div>
-              <h2 className="text-xl font-bold">{getSectionTitle()}</h2>
-              <p className="text-sm text-muted-foreground">
-                {loading || searchLoading
-                  ? "Yuklanmoqda..."
-                  : searchQuery
-                    ? `${searchResults.length} ta natija topildi`
-                    : `${products.length} ta mahsulot topildi`}
-              </p>
+        ) : displayProducts.length === 0 ? (
+          <div className="text-center py-20">
+            <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
+              {isShowingSearchResults ? (
+                <Search className="w-8 h-8 text-muted-foreground" />
+              ) : (
+                <Sparkles className="w-8 h-8 text-muted-foreground" />
+              )}
             </div>
-          </div>
-
-          {/* Filters - Only show for products - Responsive */}
-          {!searchQuery && (
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center space-y-2 sm:space-y-0 sm:space-x-2">
-              {/* Delivery Filter */}
-              <select
-                value={deliveryFilter}
-                onChange={(e) => setDeliveryFilter(e.target.value)}
-                className="w-full sm:w-auto px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 text-sm"
+            <h3 className="text-lg font-semibold mb-2">
+              {isShowingSearchResults ? "Hech narsa topilmadi" : "Mahsulotlar yo'q"}
+            </h3>
+            <p className="text-muted-foreground mb-4">
+              {isShowingSearchResults
+                ? `"${searchQuery}" bo'yicha hech qanday mahsulot topilmadi`
+                : "Hozircha bu kategoriyada mahsulotlar yo'q"}
+            </p>
+            {isShowingSearchResults && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
               >
-                <option value="all">Barchasi</option>
-                <option value="available">Yetkazib berish mavjud</option>
-                <option value="free">Tekin yetkazib berish</option>
-                <option value="none">Yetkazib berish yo'q</option>
-              </select>
-
-              {/* Sort Dropdown */}
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                className="w-full sm:w-auto px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 text-sm"
-              >
-                <option value="featured">Tavsiya etilgan</option>
-                <option value="popular">Mashhur</option>
-                <option value="newest">Yangi</option>
-                <option value="price_low">Arzon narx</option>
-                <option value="price_high">Qimmat narx</option>
-              </select>
-            </div>
-          )}
-        </div>
-
-        {/* Search Results */}
-        {searchQuery && (
-          <div className="space-y-6">
-            {searchLoading ? (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {Array.from({ length: 10 }).map((_, index) => (
-                  <div key={index} className="bg-card rounded-lg border border-border p-4 animate-pulse">
-                    <div className="aspect-square bg-muted rounded-lg mb-3"></div>
-                    <div className="h-4 bg-muted rounded mb-2"></div>
-                    <div className="h-3 bg-muted rounded w-2/3"></div>
-                  </div>
-                ))}
-              </div>
-            ) : searchResults.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center mx-auto mb-6">
-                  <Search className="w-10 h-10 text-muted-foreground" />
-                </div>
-                <h3 className="text-xl font-bold mb-2">Hech narsa topilmadi</h3>
-                <p className="text-muted-foreground mb-6">"{searchQuery}" bo'yicha hech qanday natija topilmadi</p>
-                <button
-                  onClick={() => {
-                    setSearchQuery("")
-                    router.push("/")
-                  }}
-                  className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-                >
-                  Barcha mahsulotlarni ko'rish
-                </button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {searchResults.map((result, index) => (
-                  <div
-                    key={`${result.type}-${result.id}`}
-                    className="animate-slideInUp"
-                    style={{ animationDelay: `${index * 50}ms` }}
-                  >
-                    {result.type === "product" ? (
-                      <div
-                        onClick={() => handleProductView(result.id)}
-                        className="bg-card rounded-lg border border-border p-4 hover:shadow-md transition-all cursor-pointer"
-                      >
-                        <div className="aspect-square bg-muted rounded-lg mb-3 overflow-hidden">
-                          {result.image_url && (
-                            <img
-                              src={result.image_url || "/placeholder.svg"}
-                              alt={result.title}
-                              className="w-full h-full object-cover"
-                            />
-                          )}
-                        </div>
-                        <h3 className="font-medium text-sm line-clamp-2 mb-1">{result.title}</h3>
-                        <p className="text-xs text-muted-foreground mb-2">{result.category}</p>
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-sm">
-                            {new Intl.NumberFormat("uz-UZ").format(result.price)} so'm
-                          </span>
-                          <div className="flex items-center space-x-1">
-                            <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-                            <span className="text-xs">{(result.rating || 0).toFixed(1)}</span>
-                          </div>
-                        </div>
-                        {result.has_delivery && (
-                          <div className="mt-2">
-                            <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
-                              Yetkazib berish
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div
-                        onClick={() => handleWorkerView(result.id)}
-                        className="bg-card rounded-lg border border-border p-4 hover:shadow-md transition-all cursor-pointer"
-                      >
-                        <div className="aspect-square bg-muted rounded-lg mb-3 overflow-hidden">
-                          {result.image_url ? (
-                            <img
-                              src={result.image_url || "/placeholder.svg"}
-                              alt={result.title}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-full h-full bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center">
-                              <User className="w-8 h-8 text-primary/50" />
-                            </div>
-                          )}
-                        </div>
-                        <h3 className="font-medium text-sm line-clamp-2 mb-1">{result.title}</h3>
-                        <p className="text-xs text-muted-foreground mb-2">{result.subtitle}</p>
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-sm">
-                            {new Intl.NumberFormat("uz-UZ").format(result.price)} so'm/soat
-                          </span>
-                          <div className="flex items-center space-x-1">
-                            <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-                            <span className="text-xs">{(result.rating || 0).toFixed(1)}</span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+                Barcha mahsulotlarni ko'rish
+              </button>
             )}
           </div>
-        )}
-
-        {/* Products Grid - Only show when not searching */}
-        {!searchQuery && (
-          <>
-            {loading ? (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {Array.from({ length: 10 }).map((_, index) => (
-                  <div key={index} className="bg-card rounded-lg border border-border p-4 animate-pulse">
-                    <div className="aspect-square bg-muted rounded-lg mb-3"></div>
-                    <div className="h-4 bg-muted rounded mb-2"></div>
-                    <div className="h-3 bg-muted rounded w-2/3"></div>
-                  </div>
-                ))}
-              </div>
-            ) : products.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center mx-auto mb-6">
-                  <Search className="w-10 h-10 text-muted-foreground" />
-                </div>
-                <h3 className="text-xl font-bold mb-2">Hech narsa topilmadi</h3>
-                <p className="text-muted-foreground mb-6">Bu kategoriyada mahsulotlar yo'q</p>
-                <button
-                  onClick={() => {
-                    setSelectedCategory(null)
-                    setDeliveryFilter("all")
-                    router.push("/")
-                  }}
-                  className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-                >
-                  Barcha mahsulotlarni ko'rish
-                </button>
-              </div>
-            ) : (
-              <div className="product-grid">
-                {products.map((product, index) => (
-                  <div key={product.id} className="product-card" style={{ animationDelay: `${index * 50}ms` }}>
-                    <ProductCard product={product} onQuickView={handleProductView} onAddToCart={handleAddToCart} />
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Featured Products Section */}
-            {!selectedCategory && (
-              <div className="mt-12">
-                <div className="flex items-center space-x-3 mb-6">
-                  <Star className="w-6 h-6 text-yellow-500" />
-                  <div>
-                    <h2 className="text-xl font-bold">Tavsiya etilgan mahsulotlar</h2>
-                    <p className="text-sm text-muted-foreground">Eng yaxshi takliflar</p>
-                  </div>
-                </div>
-
-                <div className="product-grid">
-                  {products
-                    .filter((product) => product.is_featured)
-                    .slice(0, 10)
-                    .map((product, index) => (
-                      <div
-                        key={`featured-${product.id}`}
-                        className="product-card"
-                        style={{ animationDelay: `${index * 50}ms` }}
-                      >
-                        <ProductCard product={product} onQuickView={handleProductView} onAddToCart={handleAddToCart} />
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
-
-            {/* Popular Products Section */}
-            {!selectedCategory && (
-              <div className="mt-12">
-                <div className="flex items-center space-x-3 mb-6">
-                  <TrendingUp className="w-6 h-6 text-green-500" />
-                  <div>
-                    <h2 className="text-xl font-bold">Mashhur mahsulotlar</h2>
-                    <p className="text-sm text-muted-foreground">Ko'p sotilayotgan mahsulotlar</p>
-                  </div>
-                </div>
-
-                <div className="product-grid">
-                  {products
-                    .filter((product) => product.is_popular)
-                    .slice(0, 10)
-                    .map((product, index) => (
-                      <div
-                        key={`popular-${product.id}`}
-                        className="product-card"
-                        style={{ animationDelay: `${index * 50}ms` }}
-                      >
-                        <ProductCard product={product} onQuickView={handleProductView} onAddToCart={handleAddToCart} />
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
-          </>
+        ) : (
+          <div
+            className={
+              viewMode === "grid" ? "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4" : "space-y-4"
+            }
+          >
+            {displayProducts.map((item) => (
+              <ProductCard
+                key={item.id}
+                product={
+                  isShowingSearchResults
+                    ? {
+                        id: item.id,
+                        name: item.title,
+                        description: item.description,
+                        price: item.price,
+                        rental_price: 0,
+                        image_url: item.image_url,
+                        category: item.category,
+                        stock_quantity: 1,
+                        view_count: 0,
+                        is_rental: false,
+                        is_active: true,
+                        created_at: new Date().toISOString(),
+                      }
+                    : item
+                }
+                viewMode={viewMode}
+                showRelevanceScore={isShowingSearchResults ? item.relevance_score : undefined}
+              />
+            ))}
+          </div>
         )}
       </div>
 
-      <BottomNavigation />
+      {/* Contact FAB */}
       <ContactFab />
 
-      {/* Cart Sidebar */}
-      <CartSidebar isOpen={showCartSidebar} onClose={() => setShowCartSidebar(false)} />
-
-      {/* Quantity Modal */}
-      <QuantityModal isOpen={showQuantityModal} onClose={() => setShowQuantityModal(false)} product={selectedProduct} />
-
-      <style jsx>{`
-        @keyframes slideInUp {
-          from {
-            opacity: 0;
-            transform: translateY(20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-
-        .product-grid {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 1rem;
-        }
-
-        @media (min-width: 768px) {
-          .product-grid {
-            grid-template-columns: repeat(3, 1fr);
-          }
-        }
-
-        @media (min-width: 1024px) {
-          .product-grid {
-            grid-template-columns: repeat(4, 1fr);
-          }
-        }
-
-        @media (min-width: 1280px) {
-          .product-grid {
-            grid-template-columns: repeat(5, 1fr);
-          }
-        }
-
-        .product-card {
-          animation: slideInUp 0.6s ease-out;
-        }
-
-        .animate-slideInUp {
-          animation: slideInUp 0.6s ease-out;
-        }
-      `}</style>
+      <BottomNavigation />
     </div>
   )
 }

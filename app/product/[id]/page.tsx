@@ -8,7 +8,7 @@ import { useCart } from "@/contexts/CartContext"
 import { supabase } from "@/lib/supabase"
 import { TopBar } from "@/components/layout/top-bar"
 import { BottomNavigation } from "@/components/layout/bottom-navigation"
-import { DraggableFab } from "@/components/ui/draggable-fab"
+import { ContactFab } from "@/components/ui/contact-fab"
 import {
   ArrowLeft,
   Star,
@@ -393,7 +393,7 @@ export default function ProductPage() {
         </div>
       </div>
 
-      <DraggableFab />
+      <ContactFab />
       <BottomNavigation />
     </div>
   )
