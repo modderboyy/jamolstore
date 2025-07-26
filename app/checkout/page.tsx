@@ -409,7 +409,7 @@ export default function CheckoutPage() {
                   .map((item, index) => (
                     <div
                       key={index}
-                      className="flex justify-between items-center text-sm bg-green-50 dark:bg-green-950/20 p-2 rounded"
+                      className="flex justify-between items-center text-sm bg-green-50 dark:bg-green-900/20 p-2 rounded"
                     >
                       <span>
                         {item.product.name_uz} ({item.quantity} ta)
@@ -421,18 +421,18 @@ export default function CheckoutPage() {
 
               {/* Free delivery notification */}
               {deliveryInfo && deliveryInfo.cart_total >= deliveryInfo.free_delivery_threshold && (
-                <div className="mt-4 p-3 bg-green-50 dark:bg-green-950/20 rounded-lg">
+                <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
                   <div className="flex items-center space-x-2 text-green-600 mb-1">
                     <span className="text-sm font-medium">🎉 Yetkazib berish tekin!</span>
                   </div>
-                  <p className="text-xs text-green-600">
+                  <p className="text-xs text-green-600 dark:text-green-400">
                     Siz {formatPrice(deliveryInfo.free_delivery_threshold)} so'mdan yuqori mahsulot olyapsiz
                   </p>
                 </div>
               )}
 
               {/* Delivery service option */}
-              <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg">
+              <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                 <button
                   onClick={() => setDeliveryWithService(!deliveryWithService)}
                   className="flex items-center space-x-3 w-full text-left"
@@ -471,12 +471,12 @@ export default function CheckoutPage() {
                 {items
                   .filter((item) => !item.product.has_delivery)
                   .map((item, index) => (
-                    <div key={index} className="text-sm bg-orange-50 dark:bg-orange-950/20 p-2 rounded">
+                    <div key={index} className="text-sm bg-orange-50 dark:bg-orange-900/20 p-2 rounded">
                       {item.product.name_uz} ({item.quantity} ta)
                     </div>
                   ))}
               </div>
-              <div className="mt-2 p-3 bg-orange-100 dark:bg-orange-950/30 rounded-lg">
+              <div className="mt-2 p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800">
                 <div className="flex items-start space-x-2">
                   <AlertCircle className="w-5 h-5 text-orange-600 mt-0.5 flex-shrink-0" />
                   <div className="text-sm">
