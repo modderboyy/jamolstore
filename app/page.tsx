@@ -1,5 +1,7 @@
 "use client"
 
+import type React from "react"
+
 import { useEffect, useState, useCallback } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
@@ -8,7 +10,6 @@ import { BottomNavigation } from "@/components/layout/bottom-navigation"
 import { CategoryBar } from "@/components/layout/category-bar"
 import { AdBanner } from "@/components/layout/ad-banner"
 import { ProductCard } from "@/components/ui/product-card"
-import { DraggableFab } from "@/components/ui/draggable-fab"
 import { QuantityModal } from "@/components/ui/quantity-modal"
 import { CartSidebar } from "@/components/layout/cart-sidebar"
 import { Search, Package, TrendingUp, Star, Filter, User, RefreshCw } from "lucide-react"
@@ -63,8 +64,8 @@ export default function HomePage() {
   const [popularSearches, setPopularSearches] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [searchLoading, setSearchLoading] = useState(false)
-  const [searchQuery, setSearchQuery] = useState("")
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState(searchParams.get("search") || "")
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(searchParams.get("category"))
   const [sortBy, setSortBy] = useState<string>("featured")
   const [deliveryFilter, setDeliveryFilter] = useState<string>("all")
   const [showQuantityModal, setShowQuantityModal] = useState(false)
@@ -73,18 +74,8 @@ export default function HomePage() {
   const [autoRefresh, setAutoRefresh] = useState(true)
   const [lastRefresh, setLastRefresh] = useState(new Date())
 
-  // Debounce search query for real-time search
-  const debouncedSearchQuery = useDebounce(searchQuery, 300)
-
-  // Initialize from URL params
-  useEffect(() => {
-    if (searchParams) {
-      const search = searchParams.get("search") || ""
-      const category = searchParams.get("category")
-      setSearchQuery(search)
-      setSelectedCategory(category)
-    }
-  }, [searchParams])
+  // Debounce search query for real-time search (reduced to 200ms for faster response)
+  const debouncedSearchQuery = useDebounce(searchQuery, 200)
 
   // Auto-refresh every 30 seconds
   useEffect(() => {
@@ -148,13 +139,11 @@ export default function HomePage() {
 
     setSearchLoading(true)
     try {
-      const { data, error } = await supabase.rpc("search_all_content", {
-        search_term: debouncedSearchQuery,
-        limit_count: 20,
-      })
+      // Use the instant search API for real-time results
+      const response = await fetch(`/api/search/instant?q=${encodeURIComponent(debouncedSearchQuery)}`)
+      const data = await response.json()
 
-      if (error) throw error
-      setSearchResults(data || [])
+      setSearchResults(data.results || [])
     } catch (error) {
       console.error("Search results error:", error)
       setSearchResults([])
@@ -289,8 +278,25 @@ export default function HomePage() {
     router.push(`/?search=${encodeURIComponent(query)}`)
   }
 
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value
+    setSearchQuery(value)
+
+    // Update URL without triggering navigation
+    const params = new URLSearchParams()
+    if (value) params.set("search", value)
+    if (selectedCategory) params.set("category", selectedCategory)
+
+    const queryString = params.toString()
+    window.history.replaceState({}, "", queryString ? `/?${queryString}` : "/")
+  }
+
   const handleManualRefresh = () => {
-    fetchProducts()
+    if (searchQuery) {
+      fetchSearchResults()
+    } else {
+      fetchProducts()
+    }
     setLastRefresh(new Date())
   }
 
@@ -313,7 +319,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-4">
-      <TopBar />
+      <TopBar searchQuery={searchQuery} onSearchChange={handleSearchChange} />
       <CategoryBar
         categories={categories}
         selectedCategory={selectedCategory}
@@ -627,7 +633,6 @@ export default function HomePage() {
       </div>
 
       <BottomNavigation />
-      <DraggableFab onCartClick={() => setShowCartSidebar(true)} />
 
       {/* Cart Sidebar */}
       <CartSidebar isOpen={showCartSidebar} onClose={() => setShowCartSidebar(false)} />
