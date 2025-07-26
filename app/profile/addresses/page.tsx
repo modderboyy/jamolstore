@@ -8,14 +8,22 @@ import { useAuth } from "@/contexts/AuthContext"
 import { supabase } from "@/lib/supabase"
 import { TopBar } from "@/components/layout/top-bar"
 import { BottomNavigation } from "@/components/layout/bottom-navigation"
-import { ArrowLeft, MapPin, Plus, Edit, Trash2, Check } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { MapPin, Plus, Edit, Trash2, Home, Building, ArrowLeft } from "lucide-react"
 
 interface Address {
   id: string
-  name: string
-  address: string
+  title: string
+  full_address: string
+  district: string
+  landmark?: string
+  phone_number?: string
   is_default: boolean
-  created_at: string
+  address_type: "home" | "work" | "other"
 }
 
 export default function AddressesPage() {
@@ -25,12 +33,16 @@ export default function AddressesPage() {
   const [loading, setLoading] = useState(true)
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingAddress, setEditingAddress] = useState<Address | null>(null)
-  const [isSubmitting, setIsSubmitting] = useState(false)
   const [formData, setFormData] = useState({
-    name: "",
-    address: "",
+    title: "",
+    full_address: "",
+    district: "",
+    landmark: "",
+    phone_number: "",
+    address_type: "home" as "home" | "work" | "other",
     is_default: false,
   })
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
     if (!user) {
@@ -45,7 +57,7 @@ export default function AddressesPage() {
 
     try {
       const { data, error } = await supabase
-        .from("addresses")
+        .from("user_addresses")
         .select("*")
         .eq("user_id", user.id)
         .order("is_default", { ascending: false })
@@ -60,51 +72,73 @@ export default function AddressesPage() {
     }
   }
 
+  const formatPhoneInput = (value: string) => {
+    if (!value) return ""
+    const digits = value.replace(/\D/g, "")
+
+    if (digits.length <= 3) {
+      return `+${digits}`
+    } else if (digits.length <= 5) {
+      return `+${digits.slice(0, 3)} ${digits.slice(3)}`
+    } else if (digits.length <= 8) {
+      return `+${digits.slice(0, 3)} ${digits.slice(3, 5)} ${digits.slice(5)}`
+    } else if (digits.length <= 10) {
+      return `+${digits.slice(0, 3)} ${digits.slice(3, 5)} ${digits.slice(5, 8)} ${digits.slice(8)}`
+    } else {
+      return `+${digits.slice(0, 3)} ${digits.slice(3, 5)} ${digits.slice(5, 8)} ${digits.slice(8, 10)} ${digits.slice(10, 12)}`
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-
     if (!user) return
-    if (!formData.name?.trim() || !formData.address?.trim()) {
-      alert("Barcha maydonlarni to'ldiring")
+
+    if (!formData.title?.trim() || !formData.full_address?.trim() || !formData.district?.trim()) {
+      alert("Sarlavha, to'liq manzil va tuman majburiy maydonlar")
       return
     }
 
     setIsSubmitting(true)
     try {
+      const addressData = {
+        user_id: user.id,
+        title: formData.title.trim(),
+        full_address: formData.full_address.trim(),
+        district: formData.district.trim(),
+        landmark: formData.landmark?.trim() || null,
+        phone_number: formData.phone_number?.trim() || null,
+        address_type: formData.address_type,
+        is_default: formData.is_default,
+      }
+
       if (editingAddress) {
         // Update existing address
         const { error } = await supabase
-          .from("addresses")
-          .update({
-            name: formData.name.trim(),
-            address: formData.address.trim(),
-            is_default: formData.is_default,
-          })
+          .from("user_addresses")
+          .update(addressData)
           .eq("id", editingAddress.id)
-
-        if (error) throw error
-      } else {
-        // Add new address
-        const { error } = await supabase.from("addresses").insert({
-          user_id: user.id,
-          name: formData.name.trim(),
-          address: formData.address.trim(),
-          is_default: formData.is_default,
-        })
-
-        if (error) throw error
-      }
-
-      // If this is set as default, update other addresses
-      if (formData.is_default) {
-        await supabase
-          .from("addresses")
-          .update({ is_default: false })
           .eq("user_id", user.id)
-          .neq("id", editingAddress?.id || "")
+
+        if (error) throw error
+        alert("Manzil muvaffaqiyatli yangilandi")
+      } else {
+        // Create new address
+        const { error } = await supabase.from("user_addresses").insert(addressData)
+
+        if (error) throw error
+        alert("Manzil muvaffaqiyatli qo'shildi")
       }
 
-      setFormData({ name: "", address: "", is_default: false })
+      // Reset form
+      setFormData({
+        title: "",
+        full_address: "",
+        district: "",
+        landmark: "",
+        phone_number: "",
+        address_type: "home",
+        is_default: false,
+      })
       setShowAddForm(false)
       setEditingAddress(null)
       fetchAddresses()
@@ -119,9 +153,13 @@ export default function AddressesPage() {
   const handleEdit = (address: Address) => {
     setEditingAddress(address)
     setFormData({
-      name: address.name || "",
-      address: address.address || "",
-      is_default: address.is_default,
+      title: address.title || "",
+      full_address: address.full_address || "",
+      district: address.district || "",
+      landmark: address.landmark || "",
+      phone_number: address.phone_number || "",
+      address_type: address.address_type || "home",
+      is_default: address.is_default || false,
     })
     setShowAddForm(true)
   }
@@ -130,9 +168,10 @@ export default function AddressesPage() {
     if (!confirm("Bu manzilni o'chirishni xohlaysizmi?")) return
 
     try {
-      const { error } = await supabase.from("addresses").delete().eq("id", addressId)
+      const { error } = await supabase.from("user_addresses").delete().eq("id", addressId).eq("user_id", user?.id)
 
       if (error) throw error
+      alert("Manzil muvaffaqiyatli o'chirildi")
       fetchAddresses()
     } catch (error) {
       console.error("Error deleting address:", error)
@@ -144,11 +183,15 @@ export default function AddressesPage() {
     if (!user) return
 
     try {
-      // First, set all addresses to non-default
-      await supabase.from("addresses").update({ is_default: false }).eq("user_id", user.id)
+      // First, remove default from all addresses
+      await supabase.from("user_addresses").update({ is_default: false }).eq("user_id", user.id)
 
       // Then set the selected address as default
-      const { error } = await supabase.from("addresses").update({ is_default: true }).eq("id", addressId)
+      const { error } = await supabase
+        .from("user_addresses")
+        .update({ is_default: true })
+        .eq("id", addressId)
+        .eq("user_id", user.id)
 
       if (error) throw error
       fetchAddresses()
@@ -158,10 +201,26 @@ export default function AddressesPage() {
     }
   }
 
-  const resetForm = () => {
-    setFormData({ name: "", address: "", is_default: false })
-    setShowAddForm(false)
-    setEditingAddress(null)
+  const getAddressTypeIcon = (type: string) => {
+    switch (type) {
+      case "home":
+        return <Home className="w-4 h-4" />
+      case "work":
+        return <Building className="w-4 h-4" />
+      default:
+        return <MapPin className="w-4 h-4" />
+    }
+  }
+
+  const getAddressTypeLabel = (type: string) => {
+    switch (type) {
+      case "home":
+        return "Uy"
+      case "work":
+        return "Ish"
+      default:
+        return "Boshqa"
+    }
   }
 
   if (loading) {
@@ -184,173 +243,212 @@ export default function AddressesPage() {
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center space-x-3">
-            <button onClick={() => router.back()} className="p-2 hover:bg-muted rounded-lg transition-colors">
+            <Button variant="ghost" size="sm" onClick={() => router.back()} className="p-2">
               <ArrowLeft className="w-5 h-5" />
-            </button>
+            </Button>
             <h1 className="text-2xl font-bold">Manzillarim</h1>
           </div>
-          <button
-            onClick={() => setShowAddForm(true)}
-            className="flex items-center space-x-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors"
+          <Button
+            onClick={() => {
+              setEditingAddress(null)
+              setFormData({
+                title: "",
+                full_address: "",
+                district: "",
+                landmark: "",
+                phone_number: "",
+                address_type: "home",
+                is_default: false,
+              })
+              setShowAddForm(true)
+            }}
+            className="flex items-center space-x-2"
           >
             <Plus className="w-4 h-4" />
             <span>Qo'shish</span>
-          </button>
-        </div>
-
-        {/* Delivery Info */}
-        <div className="bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-950/20 dark:to-blue-950/20 rounded-xl border border-border p-6 mb-6">
-          <div className="flex items-center space-x-3 mb-3">
-            <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center">
-              <span className="text-white text-xl">🚚</span>
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold text-green-700 dark:text-green-300">Yetkazib berish xizmati</h3>
-              <p className="text-sm text-green-600 dark:text-green-400">
-                200,000 so'mdan yuqori xaridlarda tekin yetkazib berish!
-              </p>
-            </div>
-          </div>
-          <div className="text-sm text-muted-foreground">
-            <p>• Qashqadaryo viloyati, G'uzor tumani bo'ylab</p>
-            <p>• Tez va xavfsiz yetkazib berish</p>
-          </div>
+          </Button>
         </div>
 
         {/* Addresses List */}
-        <div className="space-y-4">
-          {addresses.length === 0 ? (
-            <div className="text-center py-12">
-              <MapPin className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+        {addresses.length === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-12">
+              <MapPin className="w-12 h-12 text-muted-foreground mb-4" />
               <h3 className="text-lg font-semibold mb-2">Manzillar yo'q</h3>
-              <p className="text-muted-foreground mb-4">Yetkazib berish uchun manzil qo'shing</p>
-              <button
-                onClick={() => setShowAddForm(true)}
-                className="bg-primary text-primary-foreground px-6 py-2 rounded-lg hover:bg-primary/90 transition-colors"
-              >
-                Birinchi manzilni qo'shish
-              </button>
-            </div>
-          ) : (
-            addresses.map((address) => (
-              <div
-                key={address.id}
-                className={`bg-card rounded-xl border p-4 ${
-                  address.is_default ? "border-primary bg-primary/5" : "border-border"
-                }`}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-2 mb-2">
-                      <h3 className="font-semibold">{address.name}</h3>
-                      {address.is_default && (
-                        <span className="bg-primary text-primary-foreground text-xs px-2 py-1 rounded-full">
-                          Asosiy
-                        </span>
+              <p className="text-muted-foreground text-center mb-4">Buyurtma berish uchun manzil qo'shing</p>
+              <Button onClick={() => setShowAddForm(true)} className="flex items-center space-x-2">
+                <Plus className="w-4 h-4" />
+                <span>Birinchi manzilni qo'shish</span>
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-4">
+            {addresses.map((address) => (
+              <Card key={address.id} className={address.is_default ? "border-primary" : ""}>
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-2 mb-2">
+                        {getAddressTypeIcon(address.address_type)}
+                        <h3 className="font-semibold">{address.title}</h3>
+                        {address.is_default && (
+                          <span className="bg-primary text-primary-foreground text-xs px-2 py-1 rounded">Asosiy</span>
+                        )}
+                      </div>
+                      <p className="text-sm text-muted-foreground mb-1">{address.full_address}</p>
+                      <p className="text-sm text-muted-foreground mb-1">{address.district}</p>
+                      {address.landmark && (
+                        <p className="text-sm text-muted-foreground mb-1">Mo'ljal: {address.landmark}</p>
+                      )}
+                      {address.phone_number && (
+                        <p className="text-sm text-muted-foreground">Tel: {address.phone_number}</p>
                       )}
                     </div>
-                    <p className="text-muted-foreground text-sm mb-3">{address.address}</p>
                     <div className="flex items-center space-x-2">
-                      <MapPin className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-sm text-muted-foreground">Qashqadaryo viloyati, G'uzor tumani</span>
+                      <Button variant="ghost" size="sm" onClick={() => handleEdit(address)}>
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDelete(address.id)}
+                        className="text-red-500 hover:text-red-600"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    {!address.is_default && (
-                      <button
-                        onClick={() => handleSetDefault(address.id)}
-                        className="p-2 hover:bg-muted rounded-lg transition-colors"
-                        title="Asosiy qilish"
-                      >
-                        <Check className="w-4 h-4" />
-                      </button>
-                    )}
-                    <button
-                      onClick={() => handleEdit(address)}
-                      className="p-2 hover:bg-muted rounded-lg transition-colors"
-                      title="Tahrirlash"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(address.id)}
-                      className="p-2 hover:bg-muted rounded-lg transition-colors text-red-500"
-                      title="O'chirish"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
+                  {!address.is_default && (
+                    <div className="mt-3 pt-3 border-t">
+                      <Button variant="outline" size="sm" onClick={() => handleSetDefault(address.id)}>
+                        Asosiy qilish
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Add/Edit Address Modal */}
       {showAddForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-card rounded-xl border border-border p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-4">
-              {editingAddress ? "Manzilni tahrirlash" : "Yangi manzil qo'shish"}
-            </h3>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">Manzil nomi *</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
-                  placeholder="Masalan: Uy, Ish, Do'kon"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">To'liq manzil *</label>
-                <textarea
-                  value={formData.address}
-                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all min-h-[80px]"
-                  placeholder="To'liq manzilni kiriting"
-                  required
-                />
-              </div>
-              <div className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  id="is_default"
-                  checked={formData.is_default}
-                  onChange={(e) => setFormData({ ...formData, is_default: e.target.checked })}
-                  className="rounded border-gray-300 text-primary focus:ring-primary"
-                />
-                <label htmlFor="is_default" className="text-sm">
-                  Asosiy manzil sifatida belgilash
-                </label>
-              </div>
-              <div className="flex space-x-3 mt-6">
-                <button
-                  type="button"
-                  onClick={resetForm}
-                  disabled={isSubmitting}
-                  className="flex-1 py-2 px-4 bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition-colors disabled:opacity-50"
-                >
-                  Bekor qilish
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting || !formData.name?.trim() || !formData.address?.trim()}
-                  className="flex-1 py-2 px-4 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
-                >
-                  {isSubmitting ? (
-                    <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-                  ) : (
-                    <span>{editingAddress ? "Yangilash" : "Saqlash"}</span>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
+          <Card className="w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <CardHeader>
+              <CardTitle>{editingAddress ? "Manzilni tahrirlash" : "Yangi manzil qo'shish"}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <Label htmlFor="title">Sarlavha *</Label>
+                  <Input
+                    id="title"
+                    value={formData.title}
+                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                    placeholder="Masalan: Uyim, Ishxonam"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="address_type">Manzil turi</Label>
+                  <select
+                    id="address_type"
+                    value={formData.address_type}
+                    onChange={(e) =>
+                      setFormData({ ...formData, address_type: e.target.value as "home" | "work" | "other" })
+                    }
+                    className="w-full px-3 py-2 bg-background border border-input rounded-md"
+                  >
+                    <option value="home">Uy</option>
+                    <option value="work">Ish</option>
+                    <option value="other">Boshqa</option>
+                  </select>
+                </div>
+
+                <div>
+                  <Label htmlFor="full_address">To'liq manzil *</Label>
+                  <Textarea
+                    id="full_address"
+                    value={formData.full_address}
+                    onChange={(e) => setFormData({ ...formData, full_address: e.target.value })}
+                    placeholder="Ko'cha, uy raqami va boshqa ma'lumotlar"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="district">Tuman *</Label>
+                  <Input
+                    id="district"
+                    value={formData.district}
+                    onChange={(e) => setFormData({ ...formData, district: e.target.value })}
+                    placeholder="Masalan: G'uzor tumani"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="landmark">Mo'ljal</Label>
+                  <Input
+                    id="landmark"
+                    value={formData.landmark}
+                    onChange={(e) => setFormData({ ...formData, landmark: e.target.value })}
+                    placeholder="Yaqin atrofdagi mashhur joy"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="phone_number">Telefon raqam</Label>
+                  <Input
+                    id="phone_number"
+                    type="tel"
+                    value={formData.phone_number}
+                    onChange={(e) => setFormData({ ...formData, phone_number: formatPhoneInput(e.target.value) })}
+                    placeholder="+998 90 123 45 67"
+                  />
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="is_default"
+                    checked={formData.is_default}
+                    onChange={(e) => setFormData({ ...formData, is_default: e.target.checked })}
+                    className="rounded"
+                  />
+                  <Label htmlFor="is_default">Asosiy manzil sifatida belgilash</Label>
+                </div>
+
+                <div className="flex space-x-3 pt-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setShowAddForm(false)
+                      setEditingAddress(null)
+                    }}
+                    disabled={isSubmitting}
+                    className="flex-1"
+                  >
+                    Bekor qilish
+                  </Button>
+                  <Button type="submit" disabled={isSubmitting} className="flex-1">
+                    {isSubmitting ? (
+                      <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                    ) : editingAddress ? (
+                      "Yangilash"
+                    ) : (
+                      "Qo'shish"
+                    )}
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
         </div>
       )}
 

@@ -1,254 +1,227 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
+import { useAuth } from "@/contexts/AuthContext"
 import { useCart } from "@/contexts/CartContext"
 import { TopBar } from "@/components/layout/top-bar"
 import { BottomNavigation } from "@/components/layout/bottom-navigation"
-import { ArrowLeft, Minus, Plus, Trash2, ShoppingCart, AlertTriangle } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Separator } from "@/components/ui/separator"
+import { Minus, Plus, Trash2, ShoppingBag, ArrowRight, Truck } from "lucide-react"
 import Image from "next/image"
 
 export default function CartPage() {
+  const { user } = useAuth()
   const router = useRouter()
-  const { items, totalItems, totalPrice, deliveryInfo, grandTotal, updateQuantity, removeFromCart } = useCart()
+  const { items, updateQuantity, removeFromCart, totalItems, grandTotal, clearCart } = useCart()
+  const [isLoading, setIsLoading] = useState(false)
+
+  useEffect(() => {
+    if (!user) {
+      router.push("/login")
+    }
+  }, [user, router])
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat("uz-UZ").format(price)
   }
 
-  const handleQuantityChange = async (itemId: string, newQuantity: number) => {
-    if (newQuantity < 1) return
-    try {
-      await updateQuantity(itemId, newQuantity)
-    } catch (error) {
-      console.error("Miqdorni yangilashda xatolik:", error)
-    }
-  }
-
-  const handleRemoveItem = async (itemId: string) => {
-    try {
-      await removeFromCart(itemId)
-    } catch (error) {
-      console.error("Mahsulotni o'chirishda xatolik:", error)
+  const handleQuantityChange = (itemId: string, newQuantity: number) => {
+    if (newQuantity <= 0) {
+      removeFromCart(itemId)
+    } else {
+      updateQuantity(itemId, newQuantity)
     }
   }
 
   const handleCheckout = () => {
+    if (items.length === 0) return
+    setIsLoading(true)
     router.push("/checkout")
   }
 
-  const hasDeliveryItems = items.some((item) => item.product.has_delivery)
-  const hasNonDeliveryItems = items.some((item) => !item.product.has_delivery)
+  const deliveryFee = grandTotal >= 200000 ? 0 : 15000
+  const finalTotal = grandTotal + deliveryFee
+
+  if (!user) {
+    return null
+  }
 
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-4">
       <TopBar />
 
-      <div className="container mx-auto px-4 py-4 border-b border-border">
-        <div className="flex items-center space-x-4">
-          <button onClick={() => router.back()} className="p-2 -ml-2 rounded-lg hover:bg-muted transition-colors">
-            <ArrowLeft className="w-6 h-6" />
-          </button>
-          <div>
-            <h1 className="text-xl font-bold">Savatcha</h1>
-            <p className="text-sm text-muted-foreground">{totalItems} ta mahsulot</p>
-          </div>
-        </div>
-      </div>
-
       <div className="container mx-auto px-4 py-6">
-        {items.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center mx-auto mb-6">
-              <ShoppingCart className="w-10 h-10 text-muted-foreground" />
-            </div>
-            <h3 className="text-xl font-bold mb-2">Savatcha bo'sh</h3>
-            <p className="text-muted-foreground mb-6">Mahsulotlarni qo'shish uchun katalogga o'ting</p>
-            <button
-              onClick={() => router.push("/")}
-              className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-2xl font-bold flex items-center space-x-2">
+            <ShoppingBag className="w-6 h-6" />
+            <span>Savat</span>
+            {totalItems > 0 && (
+              <Badge variant="secondary" className="ml-2">
+                {totalItems}
+              </Badge>
+            )}
+          </h1>
+          {items.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (confirm("Savatni tozalashni xohlaysizmi?")) {
+                  clearCart()
+                }
+              }}
+              className="text-red-500 hover:text-red-600"
             >
-              Xarid qilishni boshlash
-            </button>
-          </div>
+              <Trash2 className="w-4 h-4 mr-2" />
+              Tozalash
+            </Button>
+          )}
+        </div>
+
+        {items.length === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-12">
+              <ShoppingBag className="w-16 h-16 text-muted-foreground mb-4" />
+              <h3 className="text-xl font-semibold mb-2">Savat bo'sh</h3>
+              <p className="text-muted-foreground text-center mb-6">
+                Mahsulotlarni ko'rish va savatga qo'shish uchun katalogga o'ting
+              </p>
+              <Button onClick={() => router.push("/catalog")} className="flex items-center space-x-2">
+                <span>Katalogga o'tish</span>
+                <ArrowRight className="w-4 h-4" />
+              </Button>
+            </CardContent>
+          </Card>
         ) : (
           <div className="space-y-6">
             {/* Cart Items */}
             <div className="space-y-4">
               {items.map((item) => (
-                <div key={item.id} className="bg-card rounded-lg border border-border p-4">
-                  <div className="flex space-x-4">
-                    {/* Product Image */}
-                    <div className="w-20 h-20 bg-muted rounded-lg overflow-hidden flex-shrink-0">
-                      {item.product.images?.[0] ? (
-                        <Image
-                          src={item.product.images[0] || "/placeholder.svg"}
-                          alt={item.product.name_uz}
-                          width={80}
-                          height={80}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full bg-muted-foreground/20" />
-                      )}
-                    </div>
-
-                    {/* Product Info */}
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold line-clamp-2 mb-2">{item.product.name_uz}</h3>
-
-                      {/* Delivery Status */}
-                      <div className="mb-3">
-                        {item.product.has_delivery ? (
-                          <span className="text-xs text-green-600 bg-green-50 dark:bg-green-950/20 px-2 py-1 rounded">
-                            Yetkazib berish mavjud
-                          </span>
-                        ) : (
-                          <span className="text-xs text-red-600 bg-red-50 dark:bg-red-950/20 px-2 py-1 rounded flex items-center space-x-1 w-fit">
-                            <AlertTriangle className="w-3 h-3" />
-                            <span>Yetkazib berish mavjud emas</span>
-                          </span>
+                <Card key={item.id}>
+                  <CardContent className="p-4">
+                    <div className="flex items-start space-x-4">
+                      <div className="relative w-20 h-20 bg-muted rounded-lg overflow-hidden flex-shrink-0">
+                        <Image src={item.image || "/placeholder.svg"} alt={item.name} fill className="object-cover" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-sm mb-1 line-clamp-2">{item.name}</h3>
+                        <p className="text-sm text-muted-foreground mb-2">{formatPrice(item.price)} so'm</p>
+                        {item.variation && (
+                          <p className="text-xs text-muted-foreground mb-2">Variant: {item.variation}</p>
                         )}
-                      </div>
-
-                      {/* Price */}
-                      <div className="mb-3">
-                        <span className="text-lg font-bold">
-                          {item.product.product_type === "rental" && item.product.rental_price_per_unit ? (
-                            <>
-                              {formatPrice(item.product.rental_price_per_unit)} so'm
-                              <span className="text-sm text-muted-foreground ml-1">
-                                /
-                                {item.product.rental_time_unit === "hour"
-                                  ? "soat"
-                                  : item.product.rental_time_unit === "day"
-                                    ? "kun"
-                                    : item.product.rental_time_unit === "week"
-                                      ? "hafta"
-                                      : "oy"}
-                              </span>
-                            </>
-                          ) : (
-                            <>
-                              {formatPrice(item.product.price)} so'm
-                              <span className="text-sm text-muted-foreground ml-1">/{item.product.unit}</span>
-                            </>
-                          )}
-                        </span>
-                      </div>
-
-                      {/* Quantity Controls */}
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <button
-                            onClick={() => handleQuantityChange(item.id, item.quantity - 1)}
-                            disabled={item.quantity <= 1}
-                            className="w-8 h-8 bg-muted rounded-full flex items-center justify-center hover:bg-muted/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleQuantityChange(item.id, item.quantity - 1)}
+                              className="h-8 w-8 p-0"
+                            >
+                              <Minus className="w-3 h-3" />
+                            </Button>
+                            <span className="text-sm font-medium w-8 text-center">{item.quantity}</span>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleQuantityChange(item.id, item.quantity + 1)}
+                              className="h-8 w-8 p-0"
+                            >
+                              <Plus className="w-3 h-3" />
+                            </Button>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeFromCart(item.id)}
+                            className="text-red-500 hover:text-red-600 h-8 w-8 p-0"
                           >
-                            <Minus className="w-4 h-4" />
-                          </button>
-                          <span className="text-lg font-semibold min-w-[2rem] text-center">{item.quantity}</span>
-                          <button
-                            onClick={() => handleQuantityChange(item.id, item.quantity + 1)}
-                            className="w-8 h-8 bg-muted rounded-full flex items-center justify-center hover:bg-muted/80 transition-colors"
-                          >
-                            <Plus className="w-4 h-4" />
-                          </button>
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
                         </div>
-                        <button
-                          onClick={() => handleRemoveItem(item.id)}
-                          className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
                       </div>
-
-                      {/* Item Total */}
-                      <div className="mt-3 pt-3 border-t border-border flex justify-between items-center">
-                        <span className="text-sm text-muted-foreground">Jami:</span>
-                        <span className="font-bold text-primary">
-                          {formatPrice(
-                            (item.product.product_type === "rental" && item.product.rental_price_per_unit
-                              ? item.product.rental_price_per_unit
-                              : item.product.price) * item.quantity,
-                          )}{" "}
-                          so'm
-                        </span>
+                      <div className="text-right">
+                        <p className="font-semibold text-sm">{formatPrice(item.price * item.quantity)} so'm</p>
                       </div>
                     </div>
-                  </div>
-                </div>
+                  </CardContent>
+                </Card>
               ))}
             </div>
 
             {/* Delivery Info */}
-            {deliveryInfo && (
-              <div className="bg-card rounded-lg border border-border p-4">
-                <h3 className="font-semibold mb-3">Yetkazib berish ma'lumotlari</h3>
-
-                {hasNonDeliveryItems && (
-                  <div className="mb-3 p-3 bg-red-50 dark:bg-red-950/20 rounded-lg">
-                    <div className="flex items-center space-x-2 text-red-600 text-sm">
-                      <AlertTriangle className="w-4 h-4" />
-                      <span>Ba'zi mahsulotlarga yetkazib berish mavjud emas</span>
-                    </div>
+            <Card className="bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-950/20 dark:to-blue-950/20 border-green-200 dark:border-green-800">
+              <CardContent className="p-4">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center">
+                    <Truck className="w-5 h-5 text-white" />
                   </div>
-                )}
-
-                {deliveryInfo.has_delivery_items && deliveryInfo.cart_total >= 200000 && (
-                  <div className="mb-3 p-3 bg-green-50 dark:bg-green-950/20 rounded-lg">
-                    <div className="flex items-center space-x-2 text-green-600 mb-1">
-                      <span className="text-sm font-medium">🎉 Yetkazib berish tekin!</span>
-                    </div>
-                    <p className="text-xs text-green-600">Siz 200,000 so'mdan yuqori mahsulot olyapsiz</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Order Summary */}
-            <div className="bg-card rounded-lg border border-border p-4">
-              <h3 className="font-semibold mb-4">Buyurtma xulosasi</h3>
-              <div className="space-y-3">
-                <div className="flex justify-between">
-                  <span>Mahsulotlar ({totalItems} ta):</span>
-                  <span className="font-medium">{formatPrice(totalPrice)} so'm</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Yetkazib berish:</span>
-                  <div className="text-right">
-                    {deliveryInfo?.has_delivery_items ? (
-                      deliveryInfo.delivery_discount > 0 ? (
-                        <div>
-                          <span className="line-through text-muted-foreground text-sm">
-                            {formatPrice(deliveryInfo.original_delivery_fee)} so'm
-                          </span>
-                          <span className="ml-2 text-green-600 font-medium">0 so'm</span>
-                          <div className="text-xs text-green-600">-{deliveryInfo.discount_percentage}% chegirma</div>
-                        </div>
-                      ) : (
-                        <span className="font-medium">{formatPrice(deliveryInfo.final_delivery_fee)} so'm</span>
-                      )
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-green-700 dark:text-green-300">Yetkazib berish</h3>
+                    {grandTotal >= 200000 ? (
+                      <p className="text-sm text-green-600 dark:text-green-400">🎉 Tekin yetkazib berish!</p>
                     ) : (
-                      <span className="text-red-600 font-medium">Mavjud emas</span>
+                      <p className="text-sm text-green-600 dark:text-green-400">
+                        200,000 so'mdan yuqorida tekin yetkazib berish
+                      </p>
                     )}
                   </div>
+                  {grandTotal < 200000 && (
+                    <div className="text-right">
+                      <p className="text-sm font-medium text-green-700 dark:text-green-300">
+                        {formatPrice(200000 - grandTotal)} so'm qoldi
+                      </p>
+                    </div>
+                  )}
                 </div>
-                <div className="border-t border-border pt-3">
-                  <div className="flex justify-between">
-                    <span className="text-lg font-bold">Jami:</span>
-                    <span className="text-lg font-bold text-primary">{formatPrice(grandTotal)} so'm</span>
+              </CardContent>
+            </Card>
+
+            {/* Order Summary */}
+            <Card>
+              <CardContent className="p-4">
+                <h3 className="font-semibold mb-4">Buyurtma xulosasi</h3>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span>Mahsulotlar ({totalItems} ta)</span>
+                    <span>{formatPrice(grandTotal)} so'm</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span>Yetkazib berish</span>
+                    <span className={deliveryFee === 0 ? "text-green-600" : ""}>
+                      {deliveryFee === 0 ? "Tekin" : `${formatPrice(deliveryFee)} so'm`}
+                    </span>
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between font-semibold">
+                    <span>Jami</span>
+                    <span>{formatPrice(finalTotal)} so'm</span>
                   </div>
                 </div>
-              </div>
-            </div>
+              </CardContent>
+            </Card>
 
             {/* Checkout Button */}
-            <button
-              onClick={handleCheckout}
-              className="w-full bg-primary text-primary-foreground rounded-lg py-4 font-medium hover:bg-primary/90 transition-all duration-300 hover:shadow-lg hover:scale-[1.01]"
-            >
-              Buyurtma berish
-            </button>
+            <div className="sticky bottom-20 md:bottom-4 bg-background/80 backdrop-blur-sm p-4 -mx-4 border-t">
+              <Button
+                onClick={handleCheckout}
+                disabled={isLoading || items.length === 0}
+                className="w-full h-12 text-lg font-semibold"
+                size="lg"
+              >
+                {isLoading ? (
+                  <div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <span>Buyurtma berish</span>
+                    <span className="ml-2">({formatPrice(finalTotal)} so'm)</span>
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         )}
       </div>
