@@ -7,13 +7,14 @@ import { Toaster } from "@/components/ui/toaster"
 import { AuthProvider } from "@/contexts/AuthContext"
 import { CartProvider } from "@/contexts/CartContext"
 import { TelegramProvider } from "@/contexts/TelegramContext"
+import { DraggableFab } from "@/components/ui/draggable-fab"
 
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
   title: "JamolStroy - Qurilish materiallari",
   description: "Qurilish materiallari va jihozlari onlayn do'koni",
-  generator: "v0.dev",
+    generator: 'v0.dev'
 }
 
 export default function RootLayout({
@@ -29,6 +30,7 @@ export default function RootLayout({
             <AuthProvider>
               <CartProvider>
                 {children}
+                <DraggableFab />
                 <Toaster />
               </CartProvider>
             </AuthProvider>

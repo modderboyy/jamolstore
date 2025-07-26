@@ -12,7 +12,6 @@ export default function ProfilePage() {
   const router = useRouter()
   const [isEditing, setIsEditing] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const [mounted, setMounted] = useState(false)
   const [formData, setFormData] = useState({
     first_name: "",
     last_name: "",
@@ -21,12 +20,6 @@ export default function ProfilePage() {
   })
 
   useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  useEffect(() => {
-    if (!mounted) return
-
     if (!user) {
       router.push("/login")
       return
@@ -38,13 +31,15 @@ export default function ProfilePage() {
       phone_number: user.phone_number || "",
       email: user.email || "",
     })
-  }, [user, router, mounted])
+  }, [user, router])
 
   const handleSave = async () => {
-    if (!user || !mounted) return
+    if (!user) return
 
     setIsLoading(true)
     try {
+      const authClient = getAuthenticatedClient()
+
       const response = await fetch("/api/profile/update", {
         method: "PUT",
         headers: {
@@ -61,17 +56,13 @@ export default function ProfilePage() {
       }
 
       // Update local storage with new user data
-      if (typeof window !== "undefined") {
-        localStorage.setItem("jamolstroy_user", JSON.stringify(result.user))
-      }
+      localStorage.setItem("jamolstroy_user", JSON.stringify(result.user))
 
       setIsEditing(false)
       alert("Profil muvaffaqiyatli yangilandi!")
 
       // Refresh the page to update user context
-      if (typeof window !== "undefined") {
-        window.location.reload()
-      }
+      window.location.reload()
     } catch (error) {
       console.error("Profile update error:", error)
       alert("Profil yangilashda xatolik: " + (error as Error).message)
@@ -81,7 +72,7 @@ export default function ProfilePage() {
   }
 
   const handleCancel = () => {
-    if (!user || !mounted) return
+    if (!user) return
 
     setFormData({
       first_name: user.first_name || "",
@@ -90,33 +81,6 @@ export default function ProfilePage() {
       email: user.email || "",
     })
     setIsEditing(false)
-  }
-
-  const handleSignOut = () => {
-    if (!mounted) return
-    signOut()
-  }
-
-  const handleNavigation = (path: string) => {
-    if (!mounted) return
-    router.push(path)
-  }
-
-  const handleBack = () => {
-    if (!mounted) return
-    router.back()
-  }
-
-  if (!mounted) {
-    return (
-      <div className="min-h-screen bg-background pb-20 md:pb-4">
-        <TopBar />
-        <div className="flex items-center justify-center py-20">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-        </div>
-        <BottomNavigation />
-      </div>
-    )
   }
 
   if (!user) {
@@ -140,7 +104,7 @@ export default function ProfilePage() {
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <button onClick={handleBack} className="p-2 -ml-2 rounded-lg hover:bg-muted transition-colors">
+              <button onClick={() => router.back()} className="p-2 -ml-2 rounded-lg hover:bg-muted transition-colors">
                 <ArrowLeft className="w-6 h-6" />
               </button>
               <h1 className="text-xl font-bold">Profil</h1>
@@ -269,7 +233,7 @@ export default function ProfilePage() {
         {/* Menu Items */}
         <div className="bg-card rounded-lg border border-border overflow-hidden">
           <button
-            onClick={() => handleNavigation("/profile/addresses")}
+            onClick={() => router.push("/profile/addresses")}
             className="w-full flex items-center justify-between p-4 hover:bg-muted transition-colors border-b border-border"
           >
             <div className="flex items-center space-x-3">
@@ -280,7 +244,7 @@ export default function ProfilePage() {
           </button>
 
           <button
-            onClick={() => handleNavigation("/orders")}
+            onClick={() => router.push("/orders")}
             className="w-full flex items-center justify-between p-4 hover:bg-muted transition-colors border-b border-border"
           >
             <div className="flex items-center space-x-3">
@@ -291,7 +255,7 @@ export default function ProfilePage() {
           </button>
 
           <button
-            onClick={() => handleNavigation("/profile/reviews")}
+            onClick={() => router.push("/profile/reviews")}
             className="w-full flex items-center justify-between p-4 hover:bg-muted transition-colors"
           >
             <div className="flex items-center space-x-3">
@@ -304,7 +268,7 @@ export default function ProfilePage() {
 
         {/* Sign Out */}
         <button
-          onClick={handleSignOut}
+          onClick={signOut}
           className="w-full py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
         >
           Chiqish
