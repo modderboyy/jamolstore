@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useCart } from "@/contexts/CartContext"
-import { X, Minus, Plus, Trash2, ShoppingCart } from "lucide-react"
+import { X, Minus, Plus, Trash2, ShoppingCart, AlertTriangle } from "lucide-react"
 import Image from "next/image"
 
 interface CartSidebarProps {
@@ -13,7 +13,7 @@ interface CartSidebarProps {
 
 export function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
   const router = useRouter()
-  const { items, totalItems, totalPrice, deliveryFee, grandTotal, updateQuantity, removeFromCart } = useCart()
+  const { items, totalItems, totalPrice, deliveryInfo, grandTotal, updateQuantity, removeFromCart } = useCart()
   const [updatingItems, setUpdatingItems] = useState<Set<string>>(new Set())
 
   useEffect(() => {
@@ -68,6 +68,9 @@ export function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
     onClose()
     router.push("/checkout")
   }
+
+  const hasDeliveryItems = items.some((item) => item.product.has_delivery)
+  const hasNonDeliveryItems = items.some((item) => !item.product.has_delivery)
 
   return (
     <>
@@ -163,6 +166,20 @@ export function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
                           )}
                         </div>
 
+                        {/* Delivery Status */}
+                        <div className="mb-2">
+                          {item.product.has_delivery ? (
+                            <span className="text-xs text-green-600 bg-green-50 dark:bg-green-950/20 px-2 py-1 rounded">
+                              Yetkazib berish mavjud
+                            </span>
+                          ) : (
+                            <span className="text-xs text-red-600 bg-red-50 dark:bg-red-950/20 px-2 py-1 rounded flex items-center space-x-1">
+                              <AlertTriangle className="w-3 h-3" />
+                              <span>Yetkazib berish mavjud emas</span>
+                            </span>
+                          )}
+                        </div>
+
                         {/* Quantity Controls */}
                         <div className="flex items-center justify-between">
                           <div className="flex items-center space-x-2">
@@ -215,6 +232,29 @@ export function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
 
             {/* Footer */}
             <div className="border-t border-border p-4 space-y-4 bg-gradient-to-t from-muted/10 to-transparent">
+              {/* Delivery Info */}
+              {deliveryInfo && (
+                <div className="space-y-2">
+                  {hasNonDeliveryItems && (
+                    <div className="flex items-center space-x-2 text-sm text-red-600 bg-red-50 dark:bg-red-950/20 p-2 rounded">
+                      <AlertTriangle className="w-4 h-4" />
+                      <span>Ba'zi mahsulotlarga yetkazib berish mavjud emas</span>
+                    </div>
+                  )}
+                  {deliveryInfo.has_delivery_items &&
+                    deliveryInfo.cart_total >= deliveryInfo.free_delivery_threshold && (
+                      <div className="bg-green-50 dark:bg-green-950/20 p-3 rounded-lg">
+                        <div className="flex items-center space-x-2 text-green-600 mb-1">
+                          <span className="text-sm font-medium">🎉 Yetkazib berish tekin!</span>
+                        </div>
+                        <p className="text-xs text-green-600">
+                          Siz {formatPrice(deliveryInfo.free_delivery_threshold)} so'mdan yuqori mahsulot olyapsiz
+                        </p>
+                      </div>
+                    )}
+                </div>
+              )}
+
               {/* Summary */}
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
@@ -223,7 +263,23 @@ export function CartSidebar({ isOpen, onClose }: CartSidebarProps) {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Yetkazib berish:</span>
-                  <span>{deliveryFee === 0 ? "Tekin" : formatPrice(deliveryFee) + " so'm"}</span>
+                  <div className="text-right">
+                    {deliveryInfo?.has_delivery_items ? (
+                      deliveryInfo.delivery_discount > 0 ? (
+                        <div>
+                          <span className="line-through text-muted-foreground text-xs">
+                            {formatPrice(deliveryInfo.original_delivery_fee)} so'm
+                          </span>
+                          <span className="ml-2 text-green-600 font-medium">0 so'm</span>
+                          <div className="text-xs text-green-600">-{deliveryInfo.discount_percentage}% chegirma</div>
+                        </div>
+                      ) : (
+                        <span>{formatPrice(deliveryInfo.final_delivery_fee)} so'm</span>
+                      )
+                    ) : (
+                      <span className="text-red-600">Mavjud emas</span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex justify-between font-bold text-lg">
                   <span>Jami:</span>

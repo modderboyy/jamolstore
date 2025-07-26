@@ -4,15 +4,18 @@ import type React from "react"
 
 import { useState, useRef, useEffect } from "react"
 import { ShoppingCart } from "lucide-react"
-import { useRouter } from "next/navigation"
 import { useCart } from "@/contexts/CartContext"
 
-export function DraggableFab() {
-  const router = useRouter()
+interface DraggableFabProps {
+  onCartClick: () => void
+}
+
+export function DraggableFab({ onCartClick }: DraggableFabProps) {
   const { uniqueItemsCount } = useCart()
   const [position, setPosition] = useState({ x: 0, y: 0 })
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
+  const [hasMoved, setHasMoved] = useState(false)
   const fabRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
@@ -33,6 +36,7 @@ export function DraggableFab() {
 
   const handleMouseDown = (e: React.MouseEvent) => {
     setIsDragging(true)
+    setHasMoved(false)
     setDragStart({
       x: e.clientX - position.x,
       y: e.clientY - position.y,
@@ -44,6 +48,11 @@ export function DraggableFab() {
 
     const newX = e.clientX - dragStart.x
     const newY = e.clientY - dragStart.y
+
+    // Check if moved significantly
+    if (Math.abs(newX - position.x) > 5 || Math.abs(newY - position.y) > 5) {
+      setHasMoved(true)
+    }
 
     // Constrain to window bounds
     const maxX = window.innerWidth - 56 // FAB width
@@ -62,6 +71,7 @@ export function DraggableFab() {
   const handleTouchStart = (e: React.TouchEvent) => {
     const touch = e.touches[0]
     setIsDragging(true)
+    setHasMoved(false)
     setDragStart({
       x: touch.clientX - position.x,
       y: touch.clientY - position.y,
@@ -75,6 +85,11 @@ export function DraggableFab() {
     const touch = e.touches[0]
     const newX = touch.clientX - dragStart.x
     const newY = touch.clientY - dragStart.y
+
+    // Check if moved significantly
+    if (Math.abs(newX - position.x) > 5 || Math.abs(newY - position.y) > 5) {
+      setHasMoved(true)
+    }
 
     // Constrain to window bounds
     const maxX = window.innerWidth - 56 // FAB width
@@ -107,8 +122,9 @@ export function DraggableFab() {
   }, [isDragging, dragStart])
 
   const handleClick = () => {
-    if (!isDragging) {
-      router.push("/cart")
+    // Only trigger click if not dragged
+    if (!hasMoved) {
+      onCartClick()
     }
   }
 

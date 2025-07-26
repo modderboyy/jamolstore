@@ -7,7 +7,18 @@ import { useTelegram } from "@/contexts/TelegramContext"
 import { supabase } from "@/lib/supabase"
 import { BottomNavigation } from "@/components/layout/bottom-navigation"
 import { TopBar } from "@/components/layout/top-bar"
-import { Package, Clock, CheckCircle, Truck, XCircle, Eye, Phone, MapPin, ShoppingBag } from "lucide-react"
+import {
+  Package,
+  Clock,
+  CheckCircle,
+  Truck,
+  XCircle,
+  Eye,
+  Phone,
+  MapPin,
+  ShoppingBag,
+  AlertTriangle,
+} from "lucide-react"
 import Image from "next/image"
 
 interface OrderItem {
@@ -101,6 +112,7 @@ export default function OrdersPage() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [showOrderDetail, setShowOrderDetail] = useState(false)
   const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(null)
+  const [cancellingOrder, setCancellingOrder] = useState<string | null>(null)
 
   useEffect(() => {
     if (!loading) {
@@ -153,6 +165,35 @@ export default function OrdersPage() {
       console.error("Buyurtmalarni yuklashda xatolik:", error)
     } finally {
       setLoadingOrders(false)
+    }
+  }
+
+  const handleCancelOrder = async (orderId: string) => {
+    if (!user) return
+
+    setCancellingOrder(orderId)
+    try {
+      const { data, error } = await supabase.rpc("cancel_order", {
+        order_id_param: orderId,
+        customer_id_param: user.id,
+      })
+
+      if (error) throw error
+
+      if (data.success) {
+        alert(data.message)
+        fetchOrders() // Refresh orders
+        if (selectedOrder?.id === orderId) {
+          setShowOrderDetail(false)
+        }
+      } else {
+        alert(data.message)
+      }
+    } catch (error) {
+      console.error("Order cancellation error:", error)
+      alert("Buyurtmani bekor qilishda xatolik yuz berdi")
+    } finally {
+      setCancellingOrder(null)
     }
   }
 
@@ -498,7 +539,9 @@ export default function OrdersPage() {
                     <span>Yetkazib berish:</span>
                     <span>
                       {selectedOrder.delivery_fee === null || selectedOrder.delivery_fee === 0
-                        ? "Tekin"
+                        ? selectedOrder.delivery_with_service
+                          ? "Tekin"
+                          : "Mavjud emas"
                         : formatPrice(selectedOrder.delivery_fee) + " so'm"}
                     </span>
                   </div>
@@ -520,9 +563,18 @@ export default function OrdersPage() {
                   <Phone className="w-5 h-5" />
                   <span>Qo'llab-quvvatlash</span>
                 </button>
-                {selectedOrder.status === "pending" && (
-                  <button className="flex-1 bg-destructive text-destructive-foreground rounded-lg py-3 font-medium hover:bg-destructive/90 transition-colors">
-                    Bekor qilish
+                {(selectedOrder.status === "pending" || selectedOrder.status === "confirmed") && (
+                  <button
+                    onClick={() => handleCancelOrder(selectedOrder.id)}
+                    disabled={cancellingOrder === selectedOrder.id}
+                    className="flex-1 bg-destructive text-destructive-foreground rounded-lg py-3 font-medium hover:bg-destructive/90 transition-colors flex items-center justify-center space-x-2 disabled:opacity-50"
+                  >
+                    {cancellingOrder === selectedOrder.id ? (
+                      <div className="w-5 h-5 border-2 border-destructive-foreground/30 border-t-destructive-foreground rounded-full animate-spin" />
+                    ) : (
+                      <AlertTriangle className="w-5 h-5" />
+                    )}
+                    <span>{cancellingOrder === selectedOrder.id ? "Bekor qilinmoqda..." : "Bekor qilish"}</span>
                   </button>
                 )}
               </div>

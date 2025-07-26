@@ -10,6 +10,7 @@ import { AdBanner } from "@/components/layout/ad-banner"
 import { ProductCard } from "@/components/ui/product-card"
 import { DraggableFab } from "@/components/ui/draggable-fab"
 import { QuantityModal } from "@/components/ui/quantity-modal"
+import { CartSidebar } from "@/components/layout/cart-sidebar"
 import { Search, Package, TrendingUp, Star, Filter } from "lucide-react"
 
 interface Product {
@@ -53,6 +54,7 @@ export default function HomePage() {
   const [deliveryFilter, setDeliveryFilter] = useState<string>("all")
   const [showQuantityModal, setShowQuantityModal] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+  const [showCartSidebar, setShowCartSidebar] = useState(false)
 
   useEffect(() => {
     fetchCategories()
@@ -502,7 +504,10 @@ export default function HomePage() {
       </div>
 
       <BottomNavigation />
-      <DraggableFab />
+      <DraggableFab onCartClick={() => setShowCartSidebar(true)} />
+
+      {/* Cart Sidebar */}
+      <CartSidebar isOpen={showCartSidebar} onClose={() => setShowCartSidebar(false)} />
 
       {/* Quantity Modal */}
       <QuantityModal isOpen={showQuantityModal} onClose={() => setShowQuantityModal(false)} product={selectedProduct} />

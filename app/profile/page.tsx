@@ -6,7 +6,19 @@ import { useAuth } from "@/contexts/AuthContext"
 import { supabase } from "@/lib/supabase"
 import { TopBar } from "@/components/layout/top-bar"
 import { BottomNavigation } from "@/components/layout/bottom-navigation"
-import { User, Phone, Mail, MapPin, Calendar, ShoppingBag, Star, Edit, LogOut, AlertTriangle } from "lucide-react"
+import {
+  User,
+  Phone,
+  Mail,
+  MapPin,
+  Calendar,
+  ShoppingBag,
+  Star,
+  Edit,
+  LogOut,
+  AlertTriangle,
+  Building2,
+} from "lucide-react"
 
 interface UserStats {
   totalOrders: number
@@ -15,16 +27,36 @@ interface UserStats {
   joinDate: string
 }
 
+interface CompanyInfo {
+  name: string
+  description: string
+  established_year: number
+  employee_count: number
+  services: string[]
+  phone_number: string
+  location: string
+  time: string
+}
+
 export default function ProfilePage() {
   const { user, signOut } = useAuth()
   const router = useRouter()
   const [stats, setStats] = useState<UserStats | null>(null)
+  const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [mathQuestion, setMathQuestion] = useState("")
   const [mathAnswer, setMathAnswer] = useState("")
   const [correctAnswer, setCorrectAnswer] = useState(0)
   const [showFinalConfirm, setShowFinalConfirm] = useState(false)
+  const [activeTab, setActiveTab] = useState<"profile" | "company">("profile")
+  const [showEditForm, setShowEditForm] = useState(false)
+  const [editForm, setEditForm] = useState({
+    first_name: "",
+    last_name: "",
+    phone_number: "",
+    email: "",
+  })
 
   useEffect(() => {
     if (!user) {
@@ -32,6 +64,13 @@ export default function ProfilePage() {
       return
     }
     fetchUserStats()
+    fetchCompanyInfo()
+    setEditForm({
+      first_name: user.first_name || "",
+      last_name: user.last_name || "",
+      phone_number: user.phone_number || "",
+      email: user.email || "",
+    })
   }, [user, router])
 
   const fetchUserStats = async () => {
@@ -59,6 +98,43 @@ export default function ProfilePage() {
       console.error("Error fetching user stats:", error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchCompanyInfo = async () => {
+    try {
+      const { data, error } = await supabase.from("company").select("*").eq("is_active", true).single()
+
+      if (error) throw error
+      setCompanyInfo(data)
+    } catch (error) {
+      console.error("Company info error:", error)
+    }
+  }
+
+  const handleEditProfile = async () => {
+    if (!user) return
+
+    try {
+      const { error } = await supabase
+        .from("users")
+        .update({
+          first_name: editForm.first_name,
+          last_name: editForm.last_name,
+          phone_number: editForm.phone_number,
+          email: editForm.email,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", user.id)
+
+      if (error) throw error
+
+      alert("Profil muvaffaqiyatli yangilandi!")
+      setShowEditForm(false)
+      // Refresh user data would require updating the auth context
+    } catch (error) {
+      console.error("Profile update error:", error)
+      alert("Profilni yangilashda xatolik yuz berdi")
     }
   }
 
@@ -160,124 +236,284 @@ export default function ProfilePage() {
       <TopBar />
 
       <div className="container mx-auto px-4 py-6">
-        {/* Profile Header */}
-        <div className="bg-card rounded-xl border border-border p-6 mb-6">
-          <div className="flex items-start space-x-4">
-            <div className="w-20 h-20 bg-primary rounded-full flex items-center justify-center">
-              <span className="text-primary-foreground text-2xl font-bold">
-                {user.first_name.charAt(0).toUpperCase()}
-              </span>
+        {/* Tab Navigation */}
+        <div className="flex space-x-1 mb-6 bg-muted rounded-lg p-1">
+          <button
+            onClick={() => setActiveTab("profile")}
+            className={`flex-1 flex items-center justify-center space-x-2 py-2 px-4 rounded-md transition-colors ${
+              activeTab === "profile"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <User className="w-4 h-4" />
+            <span>Profil</span>
+          </button>
+          <button
+            onClick={() => setActiveTab("company")}
+            className={`flex-1 flex items-center justify-center space-x-2 py-2 px-4 rounded-md transition-colors ${
+              activeTab === "company"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Building2 className="w-4 h-4" />
+            <span>Kompaniya</span>
+          </button>
+        </div>
+
+        {activeTab === "profile" ? (
+          <>
+            {/* Profile Header */}
+            <div className="bg-card rounded-xl border border-border p-6 mb-6">
+              <div className="flex items-start space-x-4">
+                <div className="w-20 h-20 bg-primary rounded-full flex items-center justify-center">
+                  <span className="text-primary-foreground text-2xl font-bold">
+                    {user.first_name.charAt(0).toUpperCase()}
+                  </span>
+                </div>
+                <div className="flex-1">
+                  <h1 className="text-2xl font-bold mb-2">
+                    {user.first_name} {user.last_name}
+                  </h1>
+                  <div className="space-y-2 text-sm text-muted-foreground">
+                    {user.phone_number && (
+                      <div className="flex items-center space-x-2">
+                        <Phone className="w-4 h-4" />
+                        <span>{user.phone_number}</span>
+                      </div>
+                    )}
+                    {user.email && (
+                      <div className="flex items-center space-x-2">
+                        <Mail className="w-4 h-4" />
+                        <span>{user.email}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center space-x-2">
+                      <Calendar className="w-4 h-4" />
+                      <span>A'zo bo'lgan: {formatDate(user.created_at)}</span>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowEditForm(true)}
+                  className="p-2 hover:bg-muted rounded-lg transition-colors"
+                >
+                  <Edit className="w-5 h-5" />
+                </button>
+              </div>
             </div>
-            <div className="flex-1">
-              <h1 className="text-2xl font-bold mb-2">
-                {user.first_name} {user.last_name}
-              </h1>
-              <div className="space-y-2 text-sm text-muted-foreground">
-                {user.phone_number && (
-                  <div className="flex items-center space-x-2">
-                    <Phone className="w-4 h-4" />
-                    <span>{user.phone_number}</span>
+
+            {/* Stats Cards */}
+            {stats && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div className="bg-card rounded-xl border border-border p-4 text-center">
+                  <ShoppingBag className="w-8 h-8 text-primary mx-auto mb-2" />
+                  <div className="text-2xl font-bold">{stats.totalOrders}</div>
+                  <div className="text-sm text-muted-foreground">Buyurtmalar</div>
+                </div>
+                <div className="bg-card rounded-xl border border-border p-4 text-center">
+                  <div className="text-2xl font-bold text-green-600">{formatPrice(stats.totalSpent)}</div>
+                  <div className="text-sm text-muted-foreground">Jami xarid</div>
+                </div>
+                <div className="bg-card rounded-xl border border-border p-4 text-center">
+                  <Star className="w-8 h-8 text-yellow-500 mx-auto mb-2" />
+                  <div className="text-2xl font-bold">{stats.averageRating}</div>
+                  <div className="text-sm text-muted-foreground">Reyting</div>
+                </div>
+                <div className="bg-card rounded-xl border border-border p-4 text-center">
+                  <User className="w-8 h-8 text-blue-500 mx-auto mb-2" />
+                  <div className="text-2xl font-bold">VIP</div>
+                  <div className="text-sm text-muted-foreground">Status</div>
+                </div>
+              </div>
+            )}
+
+            {/* Menu Items */}
+            <div className="space-y-3 mb-6">
+              <button
+                onClick={() => router.push("/orders")}
+                className="w-full flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
+              >
+                <div className="flex items-center space-x-3">
+                  <ShoppingBag className="w-5 h-5 text-primary" />
+                  <span className="font-medium">Buyurtmalarim</span>
+                </div>
+                <span className="text-muted-foreground">→</span>
+              </button>
+
+              <button
+                onClick={() => router.push("/cart")}
+                className="w-full flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
+              >
+                <div className="flex items-center space-x-3">
+                  <ShoppingBag className="w-5 h-5 text-primary" />
+                  <span className="font-medium">Savatcha</span>
+                </div>
+                <span className="text-muted-foreground">→</span>
+              </button>
+
+              <button className="w-full flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors">
+                <div className="flex items-center space-x-3">
+                  <MapPin className="w-5 h-5 text-primary" />
+                  <span className="font-medium">Manzillarim</span>
+                </div>
+                <span className="text-muted-foreground">→</span>
+              </button>
+
+              <button className="w-full flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors">
+                <div className="flex items-center space-x-3">
+                  <Star className="w-5 h-5 text-primary" />
+                  <span className="font-medium">Sharhlarim</span>
+                </div>
+                <span className="text-muted-foreground">→</span>
+              </button>
+            </div>
+
+            {/* Logout Section */}
+            <div className="bg-card rounded-xl border border-border p-6">
+              <h3 className="text-lg font-semibold mb-4 flex items-center">
+                <AlertTriangle className="w-5 h-5 text-red-500 mr-2" />
+                Xavfsizlik
+              </h3>
+              <button
+                onClick={handleLogoutClick}
+                className="w-full flex items-center justify-center space-x-2 bg-red-500 text-white py-3 px-6 rounded-lg hover:bg-red-600 transition-colors"
+              >
+                <LogOut className="w-5 h-5" />
+                <span>Hisobdan chiqish</span>
+              </button>
+            </div>
+          </>
+        ) : (
+          /* Company Tab */
+          companyInfo && (
+            <div className="space-y-6">
+              {/* Company Header */}
+              <div className="bg-card rounded-xl border border-border p-6">
+                <div className="flex items-start space-x-4">
+                  <div className="w-20 h-20 bg-primary rounded-full flex items-center justify-center">
+                    <Building2 className="w-10 h-10 text-primary-foreground" />
                   </div>
-                )}
-                {user.email && (
-                  <div className="flex items-center space-x-2">
-                    <Mail className="w-4 h-4" />
-                    <span>{user.email}</span>
+                  <div className="flex-1">
+                    <h1 className="text-2xl font-bold mb-2">{companyInfo.name}</h1>
+                    <p className="text-muted-foreground leading-relaxed">{companyInfo.description}</p>
                   </div>
-                )}
-                <div className="flex items-center space-x-2">
-                  <Calendar className="w-4 h-4" />
-                  <span>A'zo bo'lgan: {formatDate(user.created_at)}</span>
+                </div>
+              </div>
+
+              {/* Company Stats */}
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div className="bg-card rounded-xl border border-border p-4 text-center">
+                  <div className="text-2xl font-bold text-primary">{companyInfo.established_year}</div>
+                  <div className="text-sm text-muted-foreground">Tashkil etilgan</div>
+                </div>
+                <div className="bg-card rounded-xl border border-border p-4 text-center">
+                  <div className="text-2xl font-bold text-green-600">{companyInfo.employee_count}+</div>
+                  <div className="text-sm text-muted-foreground">Xodimlar</div>
+                </div>
+                <div className="bg-card rounded-xl border border-border p-4 text-center">
+                  <div className="text-2xl font-bold text-blue-600">24/7</div>
+                  <div className="text-sm text-muted-foreground">Xizmat</div>
+                </div>
+              </div>
+
+              {/* Contact Info */}
+              <div className="bg-card rounded-xl border border-border p-6">
+                <h3 className="text-lg font-semibold mb-4">Aloqa ma'lumotlari</h3>
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-3">
+                    <Phone className="w-5 h-5 text-primary" />
+                    <span>{companyInfo.phone_number}</span>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <MapPin className="w-5 h-5 text-primary" />
+                    <span>{companyInfo.location}</span>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <Calendar className="w-5 h-5 text-primary" />
+                    <span>Ish vaqti: {companyInfo.time}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Services */}
+              <div className="bg-card rounded-xl border border-border p-6">
+                <h3 className="text-lg font-semibold mb-4">Xizmatlarimiz</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {companyInfo.services.map((service, index) => (
+                    <div key={index} className="flex items-center space-x-3 p-3 bg-muted/50 rounded-lg">
+                      <div className="w-2 h-2 bg-primary rounded-full"></div>
+                      <span>{service}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
-            <button className="p-2 hover:bg-muted rounded-lg transition-colors">
-              <Edit className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-
-        {/* Stats Cards */}
-        {stats && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-card rounded-xl border border-border p-4 text-center">
-              <ShoppingBag className="w-8 h-8 text-primary mx-auto mb-2" />
-              <div className="text-2xl font-bold">{stats.totalOrders}</div>
-              <div className="text-sm text-muted-foreground">Buyurtmalar</div>
-            </div>
-            <div className="bg-card rounded-xl border border-border p-4 text-center">
-              <div className="text-2xl font-bold text-green-600">{formatPrice(stats.totalSpent)}</div>
-              <div className="text-sm text-muted-foreground">Jami xarid</div>
-            </div>
-            <div className="bg-card rounded-xl border border-border p-4 text-center">
-              <Star className="w-8 h-8 text-yellow-500 mx-auto mb-2" />
-              <div className="text-2xl font-bold">{stats.averageRating}</div>
-              <div className="text-sm text-muted-foreground">Reyting</div>
-            </div>
-            <div className="bg-card rounded-xl border border-border p-4 text-center">
-              <User className="w-8 h-8 text-blue-500 mx-auto mb-2" />
-              <div className="text-2xl font-bold">VIP</div>
-              <div className="text-sm text-muted-foreground">Status</div>
-            </div>
-          </div>
+          )
         )}
-
-        {/* Menu Items */}
-        <div className="space-y-3 mb-6">
-          <button
-            onClick={() => router.push("/orders")}
-            className="w-full flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
-          >
-            <div className="flex items-center space-x-3">
-              <ShoppingBag className="w-5 h-5 text-primary" />
-              <span className="font-medium">Buyurtmalarim</span>
-            </div>
-            <span className="text-muted-foreground">→</span>
-          </button>
-
-          <button
-            onClick={() => router.push("/cart")}
-            className="w-full flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors"
-          >
-            <div className="flex items-center space-x-3">
-              <ShoppingBag className="w-5 h-5 text-primary" />
-              <span className="font-medium">Savatcha</span>
-            </div>
-            <span className="text-muted-foreground">→</span>
-          </button>
-
-          <button className="w-full flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors">
-            <div className="flex items-center space-x-3">
-              <MapPin className="w-5 h-5 text-primary" />
-              <span className="font-medium">Manzillarim</span>
-            </div>
-            <span className="text-muted-foreground">→</span>
-          </button>
-
-          <button className="w-full flex items-center justify-between p-4 bg-card rounded-xl border border-border hover:border-primary/20 transition-colors">
-            <div className="flex items-center space-x-3">
-              <Star className="w-5 h-5 text-primary" />
-              <span className="font-medium">Sharhlarim</span>
-            </div>
-            <span className="text-muted-foreground">→</span>
-          </button>
-        </div>
-
-        {/* Logout Section */}
-        <div className="bg-card rounded-xl border border-border p-6">
-          <h3 className="text-lg font-semibold mb-4 flex items-center">
-            <AlertTriangle className="w-5 h-5 text-red-500 mr-2" />
-            Xavfsizlik
-          </h3>
-          <button
-            onClick={handleLogoutClick}
-            className="w-full flex items-center justify-center space-x-2 bg-red-500 text-white py-3 px-6 rounded-lg hover:bg-red-600 transition-colors"
-          >
-            <LogOut className="w-5 h-5" />
-            <span>Hisobdan chiqish</span>
-          </button>
-        </div>
       </div>
+
+      {/* Edit Profile Modal */}
+      {showEditForm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-card rounded-xl border border-border p-6 w-full max-w-md">
+            <h3 className="text-lg font-semibold mb-4">Profilni tahrirlash</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Ism</label>
+                <input
+                  type="text"
+                  value={editForm.first_name}
+                  onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })}
+                  className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Familiya</label>
+                <input
+                  type="text"
+                  value={editForm.last_name}
+                  onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })}
+                  className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Telefon</label>
+                <input
+                  type="tel"
+                  value={editForm.phone_number}
+                  onChange={(e) => setEditForm({ ...editForm, phone_number: e.target.value })}
+                  className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Email</label>
+                <input
+                  type="email"
+                  value={editForm.email}
+                  onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                  className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all"
+                />
+              </div>
+            </div>
+            <div className="flex space-x-3 mt-6">
+              <button
+                onClick={() => setShowEditForm(false)}
+                className="flex-1 py-2 px-4 bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition-colors"
+              >
+                Bekor qilish
+              </button>
+              <button
+                onClick={handleEditProfile}
+                className="flex-1 py-2 px-4 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+              >
+                Saqlash
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Logout Confirmation Modal */}
       {showLogoutConfirm && (

@@ -57,8 +57,9 @@ export default function WorkersPage() {
         .eq("user.role", "worker")
 
       if (searchQuery) {
+        // Fix the search query syntax
         query = query.or(
-          `profession_uz.ilike.%${searchQuery}%,skills.cs.{${searchQuery}},user.first_name.ilike.%${searchQuery}%,user.last_name.ilike.%${searchQuery}%`,
+          `profession_uz.ilike.%${searchQuery}%,user.first_name.ilike.%${searchQuery}%,user.last_name.ilike.%${searchQuery}%`,
         )
       }
 

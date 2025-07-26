@@ -29,20 +29,30 @@ interface CartItem {
   }
 }
 
+interface DeliveryInfo {
+  cart_total: number
+  original_delivery_fee: number
+  delivery_discount: number
+  final_delivery_fee: number
+  free_delivery_threshold: number
+  has_delivery_items: boolean
+  discount_percentage: number
+}
+
 interface CartContextType {
   items: CartItem[]
   totalItems: number
   uniqueItemsCount: number
   totalPrice: number
-  deliveryFee: number
+  deliveryInfo: DeliveryInfo | null
   grandTotal: number
   loading: boolean
   addToCart: (productId: string, quantity: number, options?: any) => Promise<void>
   updateQuantity: (itemId: string, quantity: number) => Promise<void>
   removeFromCart: (itemId: string) => Promise<void>
   clearCart: () => Promise<void>
-  setDeliveryFee: (fee: number) => void
   refreshCart: () => Promise<void>
+  refreshDeliveryInfo: () => Promise<void>
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined)
@@ -50,7 +60,7 @@ const CartContext = createContext<CartContextType | undefined>(undefined)
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
   const [items, setItems] = useState<CartItem[]>([])
-  const [deliveryFee, setDeliveryFeeState] = useState(0)
+  const [deliveryInfo, setDeliveryInfo] = useState<DeliveryInfo | null>(null)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
@@ -58,8 +68,17 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       fetchCartItems()
     } else {
       setItems([])
+      setDeliveryInfo(null)
     }
   }, [user])
+
+  useEffect(() => {
+    if (user && items.length > 0) {
+      fetchDeliveryInfo()
+    } else {
+      setDeliveryInfo(null)
+    }
+  }, [user, items])
 
   const fetchCartItems = async () => {
     if (!user) return
@@ -80,6 +99,21 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       console.error("Cart fetch error:", error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchDeliveryInfo = async () => {
+    if (!user) return
+
+    try {
+      const { data, error } = await supabase.rpc("calculate_delivery_with_threshold", {
+        customer_id_param: user.id,
+      })
+
+      if (error) throw error
+      setDeliveryInfo(data)
+    } catch (error) {
+      console.error("Delivery info error:", error)
     }
   }
 
@@ -153,17 +187,18 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
       if (error) throw error
       setItems([])
+      setDeliveryInfo(null)
     } catch (error) {
       console.error("Clear cart error:", error)
     }
   }
 
-  const setDeliveryFee = (fee: number) => {
-    setDeliveryFeeState(fee)
-  }
-
   const refreshCart = async () => {
     await fetchCartItems()
+  }
+
+  const refreshDeliveryInfo = async () => {
+    await fetchDeliveryInfo()
   }
 
   // Calculate totals
@@ -175,22 +210,22 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
     return sum + item.product.price * item.quantity
   }, 0)
-  const grandTotal = totalPrice + deliveryFee
+  const grandTotal = totalPrice + (deliveryInfo?.final_delivery_fee || 0)
 
   const value: CartContextType = {
     items,
     totalItems,
     uniqueItemsCount,
     totalPrice,
-    deliveryFee,
+    deliveryInfo,
     grandTotal,
     loading,
     addToCart,
     updateQuantity,
     removeFromCart,
     clearCart,
-    setDeliveryFee,
     refreshCart,
+    refreshDeliveryInfo,
   }
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>
