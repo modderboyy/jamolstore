@@ -30,7 +30,6 @@ export default function RootLayout({
             <AuthProvider>
               <CartProvider>
                 {children}
-                <DraggableFab onCartClick={() => setShowCartSidebar(true)} />
                 <Toaster />
               </CartProvider>
             </AuthProvider>
