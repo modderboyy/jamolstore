@@ -1,12 +1,11 @@
--- Fix get_user_reviews function return type
+-- Fix function return types to match expected text types
 DROP FUNCTION IF EXISTS get_user_reviews(uuid);
-CREATE OR REPLACE FUNCTION get_user_reviews(user_id uuid)
+CREATE OR REPLACE FUNCTION get_user_reviews(user_id_param uuid)
 RETURNS TABLE (
     id uuid,
     product_name text,
     rating integer,
     comment text,
-    is_verified boolean,
     created_at timestamp with time zone
 ) 
 LANGUAGE plpgsql
@@ -18,25 +17,22 @@ BEGIN
         r.id,
         p.name::text as product_name,
         r.rating,
-        r.comment,
-        r.is_verified,
+        r.comment::text,
         r.created_at
     FROM reviews r
     JOIN products p ON r.product_id = p.id
-    WHERE r.user_id = get_user_reviews.user_id
+    WHERE r.user_id = user_id_param
     ORDER BY r.created_at DESC;
 END;
 $$;
 
--- Fix get_user_addresses function return type
 DROP FUNCTION IF EXISTS get_user_addresses(uuid);
-CREATE OR REPLACE FUNCTION get_user_addresses(user_id uuid)
+CREATE OR REPLACE FUNCTION get_user_addresses(user_id_param uuid)
 RETURNS TABLE (
     id uuid,
+    title text,
     address_line text,
     city text,
-    region text,
-    postal_code text,
     is_default boolean,
     created_at timestamp with time zone
 ) 
@@ -47,14 +43,13 @@ BEGIN
     RETURN QUERY
     SELECT 
         a.id,
+        a.title::text,
         a.address_line::text,
         a.city::text,
-        a.region::text,
-        a.postal_code::text,
         a.is_default,
         a.created_at
     FROM user_addresses a
-    WHERE a.user_id = get_user_addresses.user_id
+    WHERE a.user_id = user_id_param
     ORDER BY a.is_default DESC, a.created_at DESC;
 END;
 $$;
@@ -67,9 +62,8 @@ RETURNS TABLE (
     id uuid,
     title text,
     description text,
-    price numeric,
+    price decimal,
     image_url text,
-    category text,
     relevance_score float
 ) 
 LANGUAGE plpgsql
@@ -84,23 +78,21 @@ BEGIN
         p.description::text,
         p.price,
         p.image_url::text,
-        p.category::text,
         (
             CASE 
                 WHEN p.name ILIKE '%' || search_query || '%' THEN 3.0
                 WHEN p.description ILIKE '%' || search_query || '%' THEN 2.0
-                WHEN p.category ILIKE '%' || search_query || '%' THEN 1.0
-                ELSE 0.5
+                WHEN c.name ILIKE '%' || search_query || '%' THEN 1.5
+                ELSE 1.0
             END
         )::float as relevance_score
     FROM products p
-    WHERE p.is_active = true
-    AND (
+    LEFT JOIN categories c ON p.category_id = c.id
+    WHERE 
         p.name ILIKE '%' || search_query || '%' OR
         p.description ILIKE '%' || search_query || '%' OR
-        p.category ILIKE '%' || search_query || '%'
-    )
-    ORDER BY relevance_score DESC, p.created_at DESC
+        c.name ILIKE '%' || search_query || '%'
+    ORDER BY relevance_score DESC, p.name ASC
     LIMIT 50;
 END;
 $$;

@@ -4,30 +4,26 @@ import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
 import { useCart } from "@/contexts/CartContext"
-import { useTelegram } from "@/contexts/TelegramContext"
-import { supabase } from "@/lib/supabase"
-import { useDebounce } from "@/hooks/use-debounce"
 import { TopBar } from "@/components/layout/top-bar"
 import { CategoryBar } from "@/components/layout/category-bar"
 import { BottomNavigation } from "@/components/layout/bottom-navigation"
 import { ProductCard } from "@/components/ui/product-card"
 import { AdBanner } from "@/components/layout/ad-banner"
 import { ContactFab } from "@/components/ui/contact-fab"
-import { Search, Grid, List, Sparkles } from "lucide-react"
+import { Search, Filter, Grid, List, Loader2 } from "lucide-react"
+import { useDebounce } from "@/hooks/use-debounce"
 
 interface Product {
   id: string
   name: string
   description: string
   price: number
-  rental_price: number
   image_url: string
-  category: string
+  category_id: string
+  category_name?: string
   stock_quantity: number
-  view_count: number
-  is_rental: boolean
-  is_active: boolean
-  created_at: string
+  is_rental?: boolean
+  rental_price_per_day?: number
 }
 
 interface SearchResult {
@@ -37,248 +33,250 @@ interface SearchResult {
   description: string
   price: number
   image_url: string
-  category: string
   relevance_score: number
 }
 
 export default function HomePage() {
-  const router = useRouter()
   const { user } = useAuth()
-  const { cart } = useCart()
-  const { isTelegramWebApp } = useTelegram()
+  const { addToCart } = useCart()
+  const router = useRouter()
 
   const [products, setProducts] = useState<Product[]>([])
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const [categories, setCategories] = useState<any[]>([])
+  const [selectedCategory, setSelectedCategory] = useState<string>("")
   const [searchQuery, setSearchQuery] = useState("")
-  const [selectedCategory, setSelectedCategory] = useState("all")
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
+  const [isLoading, setIsLoading] = useState(true)
   const [isSearching, setIsSearching] = useState(false)
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
+  const [mounted, setMounted] = useState(false)
 
-  // Real-time search with faster debounce
+  // Debounce search query for real-time search
   const debouncedSearchQuery = useDebounce(searchQuery, 150)
 
-  // Fetch products
-  const fetchProducts = useCallback(async () => {
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  // Fetch initial data
+  const fetchData = useCallback(async () => {
+    if (!mounted) return
+
     try {
       setIsLoading(true)
-      let query = supabase.from("products").select("*").eq("is_active", true).order("created_at", { ascending: false })
 
-      if (selectedCategory !== "all") {
-        query = query.eq("category", selectedCategory)
+      // Fetch categories
+      const categoriesResponse = await fetch("/api/categories")
+      if (categoriesResponse.ok) {
+        const categoriesData = await categoriesResponse.json()
+        setCategories(categoriesData.categories || [])
       }
 
-      const { data, error } = await query.limit(50)
-
-      if (error) throw error
-      setProducts(data || [])
+      // Fetch products
+      const productsResponse = await fetch("/api/products")
+      if (productsResponse.ok) {
+        const productsData = await productsResponse.json()
+        setProducts(productsData.products || [])
+      }
     } catch (error) {
-      console.error("Error fetching products:", error)
+      console.error("Error fetching data:", error)
     } finally {
       setIsLoading(false)
     }
-  }, [selectedCategory])
+  }, [mounted])
 
   // Search function
-  const performSearch = useCallback(async (query: string) => {
-    if (!query.trim()) {
-      setSearchResults([])
-      setIsSearching(false)
-      return
-    }
+  const performSearch = useCallback(
+    async (query: string) => {
+      if (!mounted || !query.trim()) {
+        setSearchResults([])
+        setIsSearching(false)
+        return
+      }
 
-    try {
-      setIsSearching(true)
-      const { data, error } = await supabase.rpc("search_all_content", {
-        search_query: query.trim(),
-      })
+      try {
+        setIsSearching(true)
+        const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`)
+        if (response.ok) {
+          const data = await response.json()
+          setSearchResults(data.results || [])
+        }
+      } catch (error) {
+        console.error("Search error:", error)
+        setSearchResults([])
+      } finally {
+        setIsSearching(false)
+      }
+    },
+    [mounted],
+  )
 
-      if (error) throw error
-      setSearchResults(data || [])
-    } catch (error) {
-      console.error("Search error:", error)
-      setSearchResults([])
-    } finally {
-      setIsSearching(false)
+  // Initial data fetch
+  useEffect(() => {
+    if (mounted) {
+      fetchData()
     }
-  }, [])
+  }, [mounted, fetchData])
 
   // Auto-refresh every 30 seconds when not searching
   useEffect(() => {
-    if (!debouncedSearchQuery) {
-      const interval = setInterval(() => {
-        fetchProducts()
-      }, 30000)
+    if (!mounted || debouncedSearchQuery) return
 
-      return () => clearInterval(interval)
+    const interval = setInterval(() => {
+      fetchData()
+    }, 30000)
+
+    return () => clearInterval(interval)
+  }, [mounted, debouncedSearchQuery, fetchData])
+
+  // Real-time search
+  useEffect(() => {
+    if (mounted) {
+      performSearch(debouncedSearchQuery)
     }
-  }, [debouncedSearchQuery, fetchProducts])
+  }, [debouncedSearchQuery, mounted, performSearch])
 
-  // Initial load
-  useEffect(() => {
-    fetchProducts()
-  }, [fetchProducts])
+  const handleAddToCart = (product: Product | SearchResult) => {
+    if (!mounted) return
 
-  // Handle search
-  useEffect(() => {
-    performSearch(debouncedSearchQuery)
-  }, [debouncedSearchQuery, performSearch])
-
-  // Handle category change
-  useEffect(() => {
-    if (!searchQuery) {
-      fetchProducts()
+    const cartItem = {
+      id: product.id,
+      name: "title" in product ? product.title : product.name,
+      price: product.price,
+      image_url: product.image_url,
+      quantity: 1,
     }
-  }, [selectedCategory, searchQuery, fetchProducts])
+    addToCart(cartItem)
+  }
 
-  const displayProducts = searchQuery ? searchResults : products
-  const isShowingSearchResults = searchQuery.length > 0
+  const handleProductClick = (productId: string) => {
+    if (!mounted) return
+    router.push(`/product/${productId}`)
+  }
+
+  const filteredProducts = selectedCategory
+    ? products.filter((product) => product.category_id === selectedCategory)
+    : products
+
+  const displayProducts = debouncedSearchQuery ? searchResults : filteredProducts
+
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-background">
+        <TopBar />
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+        <BottomNavigation />
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-4">
       <TopBar />
 
       {/* Search Bar */}
-      <div className="bg-card border-b border-border sticky top-16 z-30">
+      <div className="sticky top-16 z-40 bg-background border-b border-border">
         <div className="container mx-auto px-4 py-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-            <input
-              type="text"
-              placeholder="Mahsulotlarni qidiring..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-            />
-            {isSearching && (
-              <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Category Bar */}
-      {!isShowingSearchResults && (
-        <CategoryBar selectedCategory={selectedCategory} onCategoryChange={setSelectedCategory} />
-      )}
-
-      {/* View Controls */}
-      <div className="bg-card border-b border-border">
-        <div className="container mx-auto px-4 py-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              {isShowingSearchResults ? (
-                <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-                  <Search className="w-4 h-4" />
-                  <span>
-                    {searchResults.length} ta natija "{searchQuery}" uchun
-                  </span>
-                </div>
-              ) : (
-                <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-                  <Sparkles className="w-4 h-4" />
-                  <span>{products.length} ta mahsulot</span>
-                </div>
+          <div className="flex items-center space-x-3">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Mahsulotlarni qidiring..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-muted rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all"
+              />
+              {isSearching && (
+                <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 animate-spin text-primary" />
               )}
             </div>
 
             <div className="flex items-center space-x-2">
               <button
-                onClick={() => setViewMode("grid")}
-                className={`p-2 rounded-lg transition-colors ${
-                  viewMode === "grid" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
-                }`}
+                onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}
+                className="p-2 rounded-lg bg-muted hover:bg-muted/80 transition-colors"
               >
-                <Grid className="w-4 h-4" />
+                {viewMode === "grid" ? <List className="w-4 h-4" /> : <Grid className="w-4 h-4" />}
               </button>
-              <button
-                onClick={() => setViewMode("list")}
-                className={`p-2 rounded-lg transition-colors ${
-                  viewMode === "list" ? "bg-primary text-primary-foreground" : "hover:bg-muted"
-                }`}
-              >
-                <List className="w-4 h-4" />
+
+              <button className="p-2 rounded-lg bg-muted hover:bg-muted/80 transition-colors">
+                <Filter className="w-4 h-4" />
               </button>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Category Bar - Hide when searching */}
+      {!debouncedSearchQuery && (
+        <CategoryBar
+          categories={categories}
+          selectedCategory={selectedCategory}
+          onCategorySelect={setSelectedCategory}
+        />
+      )}
+
+      {/* Search Results Info */}
+      {debouncedSearchQuery && (
+        <div className="container mx-auto px-4 py-2">
+          <p className="text-sm text-muted-foreground">
+            {isSearching
+              ? "Qidirilmoqda..."
+              : `"${debouncedSearchQuery}" uchun ${searchResults.length} ta natija topildi`}
+          </p>
+        </div>
+      )}
 
       {/* Ad Banner */}
       <AdBanner />
 
-      {/* Content */}
+      {/* Products Grid */}
       <div className="container mx-auto px-4 py-6">
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
           </div>
-        ) : displayProducts.length === 0 ? (
-          <div className="text-center py-20">
-            <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
-              {isShowingSearchResults ? (
-                <Search className="w-8 h-8 text-muted-foreground" />
-              ) : (
-                <Sparkles className="w-8 h-8 text-muted-foreground" />
-              )}
-            </div>
-            <h3 className="text-lg font-semibold mb-2">
-              {isShowingSearchResults ? "Hech narsa topilmadi" : "Mahsulotlar yo'q"}
-            </h3>
-            <p className="text-muted-foreground mb-4">
-              {isShowingSearchResults
-                ? `"${searchQuery}" bo'yicha hech qanday mahsulot topilmadi`
-                : "Hozircha bu kategoriyada mahsulotlar yo'q"}
-            </p>
-            {isShowingSearchResults && (
-              <button
-                onClick={() => setSearchQuery("")}
-                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-              >
-                Barcha mahsulotlarni ko'rish
-              </button>
-            )}
-          </div>
-        ) : (
+        ) : displayProducts.length > 0 ? (
           <div
-            className={
-              viewMode === "grid" ? "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4" : "space-y-4"
-            }
+            className={`grid gap-4 ${
+              viewMode === "grid"
+                ? "grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+                : "grid-cols-1 md:grid-cols-2"
+            }`}
           >
-            {displayProducts.map((item) => (
+            {displayProducts.map((product) => (
               <ProductCard
-                key={item.id}
-                product={
-                  isShowingSearchResults
-                    ? {
-                        id: item.id,
-                        name: item.title,
-                        description: item.description,
-                        price: item.price,
-                        rental_price: 0,
-                        image_url: item.image_url,
-                        category: item.category,
-                        stock_quantity: 1,
-                        view_count: 0,
-                        is_rental: false,
-                        is_active: true,
-                        created_at: new Date().toISOString(),
-                      }
-                    : item
-                }
+                key={product.id}
+                product={{
+                  id: product.id,
+                  name: "title" in product ? product.title : product.name,
+                  description: product.description,
+                  price: product.price,
+                  image_url: product.image_url,
+                  category_name: "category_name" in product ? product.category_name : undefined,
+                  stock_quantity: "stock_quantity" in product ? product.stock_quantity : 0,
+                  is_rental: "is_rental" in product ? product.is_rental : false,
+                  rental_price_per_day: "rental_price_per_day" in product ? product.rental_price_per_day : undefined,
+                }}
                 viewMode={viewMode}
-                showRelevanceScore={isShowingSearchResults ? item.relevance_score : undefined}
+                onAddToCart={() => handleAddToCart(product)}
+                onClick={() => handleProductClick(product.id)}
               />
             ))}
+          </div>
+        ) : (
+          <div className="text-center py-20">
+            <p className="text-muted-foreground">
+              {debouncedSearchQuery ? "Hech narsa topilmadi" : "Mahsulotlar yuklanmoqda..."}
+            </p>
           </div>
         )}
       </div>
 
-      {/* Contact FAB */}
       <ContactFab />
-
       <BottomNavigation />
     </div>
   )
