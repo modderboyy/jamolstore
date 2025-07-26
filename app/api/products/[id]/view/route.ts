@@ -6,22 +6,35 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const productId = params.id
 
     if (!productId) {
-      return NextResponse.json({ success: false, error: "Product ID required" }, { status: 400 })
+      return NextResponse.json({ error: "Product ID is required" }, { status: 400 })
     }
 
-    // Call the increment function
-    const { error } = await supabase.rpc("increment_product_view", {
-      product_id_param: productId,
-    })
+    // Get user ID from headers (if authenticated)
+    const userId = request.headers.get("x-user-id")
 
-    if (error) {
-      console.error("View increment error:", error)
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+    // Record product view
+    const { error: viewError } = await supabase.from("product_views").insert([
+      {
+        product_id: productId,
+        user_id: userId || null,
+        viewed_at: new Date().toISOString(),
+      },
+    ])
+
+    if (viewError) {
+      console.error("View recording error:", viewError)
+    }
+
+    // Update product view count
+    const { error: updateError } = await supabase.rpc("increment_product_views", { product_id: productId })
+
+    if (updateError) {
+      console.error("View count update error:", updateError)
     }
 
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error("Product view API error:", error)
-    return NextResponse.json({ success: false, error: "Server error" }, { status: 500 })
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

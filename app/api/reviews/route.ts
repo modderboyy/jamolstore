@@ -1,82 +1,73 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { supabase } from "@/lib/supabase"
+import { getAuthenticatedSupabase } from "@/lib/auth-supabase"
 
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization")
-    if (!authHeader?.startsWith("Bearer ")) {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
+    const userId = request.headers.get("x-user-id")
+
+    if (!userId) {
+      return NextResponse.json({ error: "User ID is required" }, { status: 401 })
     }
 
-    const token = authHeader.split(" ")[1]
+    // Create authenticated client
+    const authClient = getAuthenticatedSupabase({ id: userId } as any)
 
-    // Verify token and get user
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser(token)
-
-    if (authError || !user) {
-      return NextResponse.json({ success: false, error: "Invalid token" }, { status: 401 })
-    }
-
-    // Get user reviews using the function
-    const { data, error } = await supabase.rpc("get_user_reviews", {
-      user_id_param: user.id,
-    })
+    // Get user reviews using the fixed function
+    const { data: reviews, error } = await authClient.rpc("get_user_reviews", { user_id_param: userId })
 
     if (error) {
       console.error("Reviews fetch error:", error)
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+      return NextResponse.json({ error: "Failed to fetch reviews" }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true, reviews: data || [] })
+    return NextResponse.json({ reviews: reviews || [] })
   } catch (error) {
     console.error("Reviews API error:", error)
-    return NextResponse.json({ success: false, error: "Server error" }, { status: 500 })
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization")
-    if (!authHeader?.startsWith("Bearer ")) {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
+    const userId = request.headers.get("x-user-id")
+
+    if (!userId) {
+      return NextResponse.json({ error: "User ID is required" }, { status: 401 })
     }
 
-    const token = authHeader.split(" ")[1]
     const body = await request.json()
+    const { product_id, rating, comment } = body
 
-    // Verify token and get user
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser(token)
-
-    if (authError || !user) {
-      return NextResponse.json({ success: false, error: "Invalid token" }, { status: 401 })
+    if (!product_id || !rating) {
+      return NextResponse.json({ error: "Product ID and rating are required" }, { status: 400 })
     }
 
-    // Create review
-    const { data, error } = await supabase
+    // Create authenticated client
+    const authClient = getAuthenticatedSupabase({ id: userId } as any)
+
+    // Create new review
+    const { data: newReview, error } = await authClient
       .from("product_reviews")
-      .insert({
-        customer_id: user.id,
-        product_id: body.product_id,
-        rating: body.rating,
-        comment: body.comment,
-      })
+      .insert([
+        {
+          user_id: userId,
+          product_id,
+          rating,
+          comment: comment || "",
+          created_at: new Date().toISOString(),
+        },
+      ])
       .select()
       .single()
 
     if (error) {
-      console.error("Review create error:", error)
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+      console.error("Review creation error:", error)
+      return NextResponse.json({ error: "Failed to create review" }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true, review: data })
+    return NextResponse.json({ review: newReview })
   } catch (error) {
-    console.error("Review create API error:", error)
-    return NextResponse.json({ success: false, error: "Server error" }, { status: 500 })
+    console.error("Review creation API error:", error)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

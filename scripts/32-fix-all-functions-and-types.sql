@@ -1,232 +1,302 @@
--- Fix all SQL functions with proper types and column references
+-- Fix all function return types and column references
 
--- Drop existing functions first
-DROP FUNCTION IF EXISTS search_all_content(text, integer);
-DROP FUNCTION IF EXISTS get_popular_searches(integer);
+-- Drop existing functions
+DROP FUNCTION IF EXISTS search_all_content(text);
+DROP FUNCTION IF EXISTS search_workers(text);
+DROP FUNCTION IF EXISTS get_search_suggestions(text);
 DROP FUNCTION IF EXISTS get_user_reviews(uuid);
 DROP FUNCTION IF EXISTS get_user_addresses(uuid);
-DROP FUNCTION IF EXISTS increment_product_view(uuid);
-DROP FUNCTION IF EXISTS get_search_suggestions(text, integer);
+DROP FUNCTION IF EXISTS create_user_address(uuid, text, text, text, text, text, text, boolean);
+DROP FUNCTION IF EXISTS update_user_address(uuid, uuid, text, text, text, text, text, text, boolean);
+DROP FUNCTION IF EXISTS delete_user_address(uuid, uuid);
 
--- Create search_all_content function with proper return type
-CREATE OR REPLACE FUNCTION search_all_content(
-  search_term text,
-  limit_count integer DEFAULT 20
-)
+-- Create search_all_content function
+CREATE OR REPLACE FUNCTION search_all_content(search_query text)
 RETURNS TABLE (
-  id text,
+  id uuid,
   title text,
-  subtitle text,
-  type text,
+  description text,
+  price decimal,
   image_url text,
-  price numeric,
   category text,
-  rating numeric,
-  has_delivery boolean
+  type text,
+  rating decimal,
+  reviews_count bigint
 ) 
 LANGUAGE plpgsql
 AS $$
 BEGIN
   RETURN QUERY
-  -- Search products
   SELECT 
-    p.id::text,
-    p.name_uz as title,
-    c.name_uz as subtitle,
-    'product'::text as type,
-    COALESCE(p.images[1], '')::text as image_url,
+    p.id,
+    p.title::text,
+    p.description::text,
     p.price,
-    c.name_uz as category,
-    4.0::numeric as rating,
-    p.has_delivery
+    p.image_url::text,
+    p.category::text,
+    'product'::text as type,
+    COALESCE(AVG(pr.rating), 0)::decimal as rating,
+    COUNT(pr.id) as reviews_count
   FROM products p
-  LEFT JOIN categories c ON p.category_id = c.id
-  WHERE p.is_available = true 
-    AND p.stock_quantity > 0
-    AND (
-      p.name_uz ILIKE '%' || search_term || '%' 
-      OR p.description_uz ILIKE '%' || search_term || '%'
-      OR c.name_uz ILIKE '%' || search_term || '%'
-    )
+  LEFT JOIN product_reviews pr ON p.id = pr.product_id
+  WHERE 
+    p.title ILIKE '%' || search_query || '%' 
+    OR p.description ILIKE '%' || search_query || '%'
+    OR p.category ILIKE '%' || search_query || '%'
+  GROUP BY p.id, p.title, p.description, p.price, p.image_url, p.category
   
   UNION ALL
   
-  -- Search workers
   SELECT 
-    w.id::text,
-    w.full_name as title,
-    w.specialization as subtitle,
-    'worker'::text as type,
-    COALESCE(w.profile_image, '')::text as image_url,
+    w.id,
+    (w.first_name || ' ' || w.last_name)::text as title,
+    w.specialization::text as description,
     w.hourly_rate as price,
-    w.specialization as category,
-    COALESCE(w.rating, 4.0)::numeric as rating,
-    false as has_delivery
+    w.avatar_url::text as image_url,
+    w.specialization::text as category,
+    'worker'::text as type,
+    COALESCE(w.rating, 0)::decimal as rating,
+    w.reviews_count::bigint as reviews_count
   FROM workers w
-  WHERE w.is_available = true
-    AND (
-      w.full_name ILIKE '%' || search_term || '%'
-      OR w.specialization ILIKE '%' || search_term || '%'
-      OR w.bio ILIKE '%' || search_term || '%'
-    )
-  
-  ORDER BY rating DESC
-  LIMIT limit_count;
+  WHERE 
+    w.first_name ILIKE '%' || search_query || '%' 
+    OR w.last_name ILIKE '%' || search_query || '%'
+    OR w.specialization ILIKE '%' || search_query || '%'
+  ORDER BY rating DESC, reviews_count DESC
+  LIMIT 20;
 END;
 $$;
 
--- Create get_popular_searches function
-CREATE OR REPLACE FUNCTION get_popular_searches(limit_count integer DEFAULT 10)
+-- Create search_workers function
+CREATE OR REPLACE FUNCTION search_workers(search_query text)
 RETURNS TABLE (
-  query text,
-  count bigint
-)
+  id uuid,
+  first_name text,
+  last_name text,
+  specialization text,
+  hourly_rate decimal,
+  rating decimal,
+  reviews_count bigint,
+  avatar_url text,
+  is_available boolean
+) 
 LANGUAGE plpgsql
 AS $$
 BEGIN
   RETURN QUERY
   SELECT 
-    'Qurilish materiallari'::text as query, 
-    100::bigint as count
-  UNION ALL
-  SELECT 'Elektr jihozlari'::text, 85::bigint
-  UNION ALL
-  SELECT 'Santexnika'::text, 70::bigint
-  UNION ALL
-  SELECT 'Bo''yoq va lak'::text, 65::bigint
-  UNION ALL
-  SELECT 'Asboblar'::text, 60::bigint
-  UNION ALL
-  SELECT 'Dekorativ materiallar'::text, 55::bigint
-  UNION ALL
-  SELECT 'Oshxona jihozlari'::text, 50::bigint
-  UNION ALL
-  SELECT 'Vannaxona aksessuarlari'::text, 45::bigint
-  ORDER BY count DESC
-  LIMIT limit_count;
+    w.id,
+    w.first_name::text,
+    w.last_name::text,
+    w.specialization::text,
+    w.hourly_rate,
+    COALESCE(w.rating, 0)::decimal,
+    w.reviews_count::bigint,
+    w.avatar_url::text,
+    w.is_available
+  FROM workers w
+  WHERE 
+    w.first_name ILIKE '%' || search_query || '%' 
+    OR w.last_name ILIKE '%' || search_query || '%'
+    OR w.specialization ILIKE '%' || search_query || '%'
+  ORDER BY w.rating DESC, w.reviews_count DESC
+  LIMIT 10;
 END;
 $$;
 
--- Create get_user_reviews function with proper return types
+-- Create get_search_suggestions function
+CREATE OR REPLACE FUNCTION get_search_suggestions(search_query text)
+RETURNS TABLE (
+  suggestion text,
+  type text,
+  count bigint
+) 
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    p.category::text as suggestion,
+    'category'::text as type,
+    COUNT(*)::bigint as count
+  FROM products p
+  WHERE p.category ILIKE '%' || search_query || '%'
+  GROUP BY p.category
+  
+  UNION ALL
+  
+  SELECT 
+    w.specialization::text as suggestion,
+    'specialization'::text as type,
+    COUNT(*)::bigint as count
+  FROM workers w
+  WHERE w.specialization ILIKE '%' || search_query || '%'
+  GROUP BY w.specialization
+  
+  ORDER BY count DESC
+  LIMIT 5;
+END;
+$$;
+
+-- Create get_user_reviews function
 CREATE OR REPLACE FUNCTION get_user_reviews(user_id_param uuid)
 RETURNS TABLE (
   id uuid,
-  product_name text,
+  product_id uuid,
+  product_title text,
   rating integer,
   comment text,
   created_at timestamp with time zone,
-  product_image text
-)
+  product_image_url text
+) 
 LANGUAGE plpgsql
 AS $$
 BEGIN
   RETURN QUERY
   SELECT 
-    r.id,
-    p.name_uz::text as product_name,
-    r.rating,
-    r.comment::text,
-    r.created_at,
-    COALESCE(p.images[1], '')::text as product_image
-  FROM product_reviews r
-  LEFT JOIN products p ON r.product_id = p.id
-  WHERE r.customer_id = user_id_param
-  ORDER BY r.created_at DESC;
+    pr.id,
+    pr.product_id,
+    p.title::text as product_title,
+    pr.rating,
+    pr.comment::text,
+    pr.created_at,
+    p.image_url::text as product_image_url
+  FROM product_reviews pr
+  JOIN products p ON pr.product_id = p.id
+  WHERE pr.user_id = user_id_param
+  ORDER BY pr.created_at DESC;
 END;
 $$;
 
--- Create get_user_addresses function with proper return types
+-- Create get_user_addresses function
 CREATE OR REPLACE FUNCTION get_user_addresses(user_id_param uuid)
 RETURNS TABLE (
   id uuid,
-  title text,
-  address text,
-  is_default boolean,
-  created_at timestamp with time zone
-)
+  name text,
+  phone text,
+  region text,
+  district text,
+  street text,
+  house text,
+  is_default boolean
+) 
 LANGUAGE plpgsql
 AS $$
 BEGIN
   RETURN QUERY
   SELECT 
     a.id,
-    a.title::text,
-    a.address::text,
-    a.is_default,
-    a.created_at
+    a.name::text,
+    a.phone::text,
+    a.region::text,
+    a.district::text,
+    a.street::text,
+    a.house::text,
+    a.is_default
   FROM addresses a
   WHERE a.user_id = user_id_param
   ORDER BY a.is_default DESC, a.created_at DESC;
 END;
 $$;
 
--- Create increment_product_view function
-CREATE OR REPLACE FUNCTION increment_product_view(product_id_param uuid)
-RETURNS void
+-- Create create_user_address function
+CREATE OR REPLACE FUNCTION create_user_address(
+  user_id_param uuid,
+  name_param text,
+  phone_param text,
+  region_param text,
+  district_param text,
+  street_param text,
+  house_param text,
+  is_default_param boolean
+)
+RETURNS uuid
 LANGUAGE plpgsql
 AS $$
+DECLARE
+  new_address_id uuid;
 BEGIN
-  -- Insert or update product view
-  INSERT INTO product_views (product_id, view_count, last_viewed)
-  VALUES (product_id_param, 1, NOW())
-  ON CONFLICT (product_id)
-  DO UPDATE SET 
-    view_count = product_views.view_count + 1,
-    last_viewed = NOW();
-    
-  -- Update product view count
-  UPDATE products 
-  SET view_count = COALESCE(view_count, 0) + 1
-  WHERE id = product_id_param;
+  -- If this is set as default, unset all other defaults for this user
+  IF is_default_param THEN
+    UPDATE addresses 
+    SET is_default = false 
+    WHERE user_id = user_id_param;
+  END IF;
+
+  -- Insert new address
+  INSERT INTO addresses (
+    user_id, name, phone, region, district, street, house, is_default
+  ) VALUES (
+    user_id_param, name_param, phone_param, region_param, 
+    district_param, street_param, house_param, is_default_param
+  ) RETURNING id INTO new_address_id;
+
+  RETURN new_address_id;
 END;
 $$;
 
--- Create get_search_suggestions function
-CREATE OR REPLACE FUNCTION get_search_suggestions(
-  search_term text,
-  limit_count integer DEFAULT 10
+-- Create update_user_address function
+CREATE OR REPLACE FUNCTION update_user_address(
+  address_id_param uuid,
+  user_id_param uuid,
+  name_param text,
+  phone_param text,
+  region_param text,
+  district_param text,
+  street_param text,
+  house_param text,
+  is_default_param boolean
 )
-RETURNS TABLE (
-  suggestion text,
-  type text,
-  count bigint
-)
+RETURNS boolean
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  RETURN QUERY
-  -- Product name suggestions
-  SELECT DISTINCT
-    p.name_uz::text as suggestion,
-    'product'::text as type,
-    COUNT(*)::bigint as count
-  FROM products p
-  WHERE p.name_uz ILIKE '%' || search_term || '%'
-    AND p.is_available = true
-  GROUP BY p.name_uz
-  
-  UNION ALL
-  
-  -- Category suggestions
-  SELECT DISTINCT
-    c.name_uz::text as suggestion,
-    'category'::text as type,
-    COUNT(p.id)::bigint as count
-  FROM categories c
-  LEFT JOIN products p ON c.id = p.category_id
-  WHERE c.name_uz ILIKE '%' || search_term || '%'
-    AND c.is_active = true
-  GROUP BY c.name_uz
-  
-  ORDER BY count DESC
-  LIMIT limit_count;
+  -- If this is set as default, unset all other defaults for this user
+  IF is_default_param THEN
+    UPDATE addresses 
+    SET is_default = false 
+    WHERE user_id = user_id_param AND id != address_id_param;
+  END IF;
+
+  -- Update the address
+  UPDATE addresses 
+  SET 
+    name = name_param,
+    phone = phone_param,
+    region = region_param,
+    district = district_param,
+    street = street_param,
+    house = house_param,
+    is_default = is_default_param,
+    updated_at = NOW()
+  WHERE id = address_id_param AND user_id = user_id_param;
+
+  RETURN FOUND;
 END;
 $$;
 
--- Grant permissions
-GRANT EXECUTE ON FUNCTION search_all_content(text, integer) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION get_popular_searches(integer) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION get_user_reviews(uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION get_user_addresses(uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION increment_product_view(uuid) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION get_search_suggestions(text, integer) TO anon, authenticated;
+-- Create delete_user_address function
+CREATE OR REPLACE FUNCTION delete_user_address(
+  address_id_param uuid,
+  user_id_param uuid
+)
+RETURNS boolean
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  DELETE FROM addresses 
+  WHERE id = address_id_param AND user_id = user_id_param;
+
+  RETURN FOUND;
+END;
+$$;
+
+-- Grant execute permissions
+GRANT EXECUTE ON FUNCTION search_all_content(text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION search_workers(text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION get_search_suggestions(text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION get_user_reviews(uuid) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION get_user_addresses(uuid) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION create_user_address(uuid, text, text, text, text, text, text, boolean) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION update_user_address(uuid, uuid, text, text, text, text, text, text, boolean) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION delete_user_address(uuid, uuid) TO anon, authenticated;

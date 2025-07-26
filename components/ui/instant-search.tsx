@@ -1,51 +1,75 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, useRef } from "react"
-import { Search, X } from "lucide-react"
-import { useRouter } from "next/navigation"
+import { useState, useRef, useEffect } from "react"
+import { Search, X, Clock, TrendingUp } from "lucide-react"
 import { useDebounce } from "@/hooks/use-debounce"
 
 interface SearchResult {
   id: string
   title: string
-  type: string
-  image_url: string
+  description: string
   price: number
+  image_url: string
   category: string
+  type: "product" | "worker"
+  rating: number
+  reviews_count: number
+}
+
+interface SearchSuggestion {
+  suggestion: string
+  type: "category" | "specialization"
+  count: number
 }
 
 interface InstantSearchProps {
-  searchQuery: string
-  onSearchChange: (e: React.ChangeEvent<HTMLInputElement>) => void
+  onResultSelect?: (result: SearchResult) => void
+  onClose?: () => void
   placeholder?: string
 }
 
-export function InstantSearch({
-  searchQuery,
-  onSearchChange,
-  placeholder = "Mahsulot qidirish...",
-}: InstantSearchProps) {
+export function InstantSearch({ onResultSelect, onClose, placeholder = "Qidirish..." }: InstantSearchProps) {
+  const [query, setQuery] = useState("")
   const [results, setResults] = useState<SearchResult[]>([])
+  const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([])
+  const [isLoading, setIsLoading] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const router = useRouter()
+  const [recentSearches, setRecentSearches] = useState<string[]>([])
+
   const searchRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const debouncedQuery = useDebounce(searchQuery, 200)
+  const debouncedQuery = useDebounce(query, 300)
 
+  // Load recent searches from localStorage
   useEffect(() => {
-    if (debouncedQuery.trim().length > 0) {
-      fetchInstantResults(debouncedQuery)
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("jamolstroy_recent_searches")
+      if (saved) {
+        try {
+          setRecentSearches(JSON.parse(saved))
+        } catch (error) {
+          console.error("Error parsing recent searches:", error)
+        }
+      }
+    }
+  }, [])
+
+  // Perform search when debounced query changes
+  useEffect(() => {
+    if (debouncedQuery.trim().length >= 2) {
+      performSearch(debouncedQuery)
     } else {
       setResults([])
-      setIsOpen(false)
+      setSuggestions([])
+      setIsLoading(false)
     }
   }, [debouncedQuery])
 
+  // Handle clicks outside to close dropdown
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
+    function handleClickOutside(event: MouseEvent) {
       if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
         setIsOpen(false)
       }
@@ -55,120 +79,222 @@ export function InstantSearch({
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
-  const fetchInstantResults = async (query: string) => {
-    setLoading(true)
+  const performSearch = async (searchQuery: string) => {
+    setIsLoading(true)
     try {
-      const response = await fetch(`/api/search/instant?q=${encodeURIComponent(query)}&limit=8`)
-      const data = await response.json()
-
-      if (data.success) {
-        setResults(data.results)
-        setIsOpen(data.results.length > 0)
+      const response = await fetch(`/api/search/instant?q=${encodeURIComponent(searchQuery)}`)
+      if (response.ok) {
+        const data = await response.json()
+        setResults(data.results || [])
+        setSuggestions(data.suggestions || [])
       }
     } catch (error) {
-      console.error("Instant search error:", error)
+      console.error("Search error:", error)
+      setResults([])
+      setSuggestions([])
     } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleResultClick = (result: SearchResult) => {
-    setIsOpen(false)
-    if (result.type === "product") {
-      router.push(`/product/${result.id}`)
+      setIsLoading(false)
     }
   }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onSearchChange(e)
-    if (e.target.value.trim().length > 0) {
-      setIsOpen(true)
+    const value = e.target.value
+    setQuery(value)
+    setIsOpen(true)
+  }
+
+  const handleInputFocus = () => {
+    setIsOpen(true)
+  }
+
+  const handleResultClick = (result: SearchResult) => {
+    // Save to recent searches
+    saveRecentSearch(result.title)
+
+    // Clear search
+    setQuery("")
+    setIsOpen(false)
+
+    // Call callback
+    if (onResultSelect) {
+      onResultSelect(result)
     }
   }
 
-  const clearSearch = () => {
-    onSearchChange({ target: { value: "" } } as React.ChangeEvent<HTMLInputElement>)
+  const handleSuggestionClick = (suggestion: SearchSuggestion) => {
+    setQuery(suggestion.suggestion)
+    inputRef.current?.focus()
+    performSearch(suggestion.suggestion)
+  }
+
+  const handleRecentSearchClick = (search: string) => {
+    setQuery(search)
+    inputRef.current?.focus()
+    performSearch(search)
+  }
+
+  const saveRecentSearch = (search: string) => {
+    if (typeof window === "undefined") return
+
+    const updated = [search, ...recentSearches.filter((s) => s !== search)].slice(0, 5)
+    setRecentSearches(updated)
+    localStorage.setItem("jamolstroy_recent_searches", JSON.stringify(updated))
+  }
+
+  const clearRecentSearches = () => {
+    setRecentSearches([])
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("jamolstroy_recent_searches")
+    }
+  }
+
+  const handleClear = () => {
+    setQuery("")
     setResults([])
+    setSuggestions([])
     setIsOpen(false)
     inputRef.current?.focus()
   }
 
   return (
-    <div ref={searchRef} className="relative w-full max-w-2xl">
-      <div className="relative group">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors duration-200" />
+    <div ref={searchRef} className="relative w-full">
+      {/* Search Input */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <input
           ref={inputRef}
           type="text"
-          placeholder={placeholder}
-          value={searchQuery}
+          value={query}
           onChange={handleInputChange}
-          onFocus={() => {
-            if (results.length > 0) setIsOpen(true)
-          }}
-          className="w-full pl-10 pr-10 py-2.5 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all duration-200 text-sm placeholder:text-muted-foreground/70"
+          onFocus={handleInputFocus}
+          placeholder={placeholder}
+          className="w-full pl-10 pr-10 py-2 bg-muted rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all"
         />
-        {searchQuery && (
+        {query && (
           <button
-            onClick={clearSearch}
-            className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 hover:bg-muted-foreground/10 rounded-full transition-colors"
+            onClick={handleClear}
+            className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1 rounded-full hover:bg-muted-foreground/10 transition-colors"
           >
-            <X className="w-3 h-3 text-muted-foreground" />
+            <X className="w-4 h-4 text-muted-foreground" />
           </button>
         )}
       </div>
 
-      {/* Instant Results Dropdown */}
+      {/* Search Dropdown */}
       {isOpen && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-background border border-border rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto">
-          {loading ? (
-            <div className="p-4 text-center text-muted-foreground">
-              <div className="animate-spin w-4 h-4 border-2 border-primary border-t-transparent rounded-full mx-auto"></div>
-              <span className="ml-2 text-sm">Qidirilmoqda...</span>
+        <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto">
+          {/* Loading State */}
+          {isLoading && (
+            <div className="p-4 text-center">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mx-auto"></div>
+              <p className="text-sm text-muted-foreground mt-2">Qidirilmoqda...</p>
             </div>
-          ) : results.length > 0 ? (
-            <div className="py-2">
-              {results.map((result) => (
-                <button
-                  key={result.id}
-                  onClick={() => handleResultClick(result)}
-                  className="w-full px-4 py-3 hover:bg-muted transition-colors text-left flex items-center space-x-3"
-                >
-                  <img
-                    src={result.image_url || "/placeholder.svg"}
-                    alt={result.title}
-                    className="w-10 h-10 rounded-lg object-cover bg-muted"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate">{result.title}</p>
-                    <p className="text-xs text-muted-foreground truncate">{result.category}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-bold text-sm">{new Intl.NumberFormat("uz-UZ").format(result.price)} so'm</p>
-                  </div>
-                </button>
-              ))}
+          )}
 
-              {searchQuery.trim() && (
-                <div className="border-t border-border mt-2 pt-2">
-                  <button
-                    onClick={() => {
-                      setIsOpen(false)
-                      router.push(`/?search=${encodeURIComponent(searchQuery)}`)
-                    }}
-                    className="w-full px-4 py-2 text-sm text-primary hover:bg-primary/5 transition-colors text-center"
-                  >
-                    "{searchQuery}" bo'yicha barcha natijalarni ko'rish
-                  </button>
+          {/* No Query State - Show Recent Searches */}
+          {!query && !isLoading && (
+            <div className="p-4">
+              {recentSearches.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-medium text-muted-foreground flex items-center">
+                      <Clock className="w-4 h-4 mr-2" />
+                      So'nggi qidiruvlar
+                    </h3>
+                    <button
+                      onClick={clearRecentSearches}
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      Tozalash
+                    </button>
+                  </div>
+                  <div className="space-y-1">
+                    {recentSearches.map((search, index) => (
+                      <button
+                        key={index}
+                        onClick={() => handleRecentSearchClick(search)}
+                        className="w-full text-left px-3 py-2 rounded-md hover:bg-muted transition-colors text-sm"
+                      >
+                        {search}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
-          ) : (
-            searchQuery.trim() && (
-              <div className="p-4 text-center text-muted-foreground">
-                <p className="text-sm">Hech narsa topilmadi</p>
-              </div>
-            )
+          )}
+
+          {/* Search Results */}
+          {query && !isLoading && (results.length > 0 || suggestions.length > 0) && (
+            <div className="p-2">
+              {/* Suggestions */}
+              {suggestions.length > 0 && (
+                <div className="mb-4">
+                  <h3 className="text-sm font-medium text-muted-foreground mb-2 px-2 flex items-center">
+                    <TrendingUp className="w-4 h-4 mr-2" />
+                    Tavsiyalar
+                  </h3>
+                  <div className="space-y-1">
+                    {suggestions.map((suggestion, index) => (
+                      <button
+                        key={index}
+                        onClick={() => handleSuggestionClick(suggestion)}
+                        className="w-full text-left px-3 py-2 rounded-md hover:bg-muted transition-colors"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm">{suggestion.suggestion}</span>
+                          <span className="text-xs text-muted-foreground">{suggestion.count} ta</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Results */}
+              {results.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-medium text-muted-foreground mb-2 px-2">Natijalar ({results.length})</h3>
+                  <div className="space-y-1">
+                    {results.map((result) => (
+                      <button
+                        key={result.id}
+                        onClick={() => handleResultClick(result)}
+                        className="w-full text-left p-3 rounded-md hover:bg-muted transition-colors"
+                      >
+                        <div className="flex items-start space-x-3">
+                          <img
+                            src={result.image_url || "/placeholder.svg?height=40&width=40"}
+                            alt={result.title}
+                            className="w-10 h-10 rounded-md object-cover flex-shrink-0"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <h4 className="text-sm font-medium truncate">{result.title}</h4>
+                            <p className="text-xs text-muted-foreground truncate">{result.description}</p>
+                            <div className="flex items-center justify-between mt-1">
+                              <span className="text-sm font-medium text-primary">
+                                {result.price.toLocaleString()} so'm
+                              </span>
+                              <div className="flex items-center space-x-1">
+                                <span className="text-xs text-muted-foreground">⭐ {result.rating.toFixed(1)}</span>
+                                <span className="text-xs text-muted-foreground">({result.reviews_count})</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* No Results */}
+          {query && !isLoading && results.length === 0 && suggestions.length === 0 && (
+            <div className="p-4 text-center">
+              <p className="text-sm text-muted-foreground">"{query}" uchun hech narsa topilmadi</p>
+            </div>
           )}
         </div>
       )}

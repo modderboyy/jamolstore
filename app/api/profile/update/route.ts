@@ -1,47 +1,43 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { supabase } from "@/lib/supabase"
+import { getAuthenticatedSupabase } from "@/lib/auth-supabase"
 
 export async function PUT(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization")
-    if (!authHeader?.startsWith("Bearer ")) {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
+    const userId = request.headers.get("x-user-id")
+    const token = request.headers.get("authorization")?.replace("Bearer ", "")
+
+    if (!userId) {
+      return NextResponse.json({ error: "User ID is required" }, { status: 401 })
     }
 
-    const token = authHeader.split(" ")[1]
     const body = await request.json()
+    const { first_name, last_name, phone_number, email } = body
 
-    // Verify token and get user
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser(token)
-
-    if (authError || !user) {
-      return NextResponse.json({ success: false, error: "Invalid token" }, { status: 401 })
-    }
+    // Create authenticated client
+    const authClient = getAuthenticatedSupabase({ id: userId } as any)
 
     // Update user profile
-    const { data, error } = await supabase
+    const { data: updatedProfile, error } = await authClient
       .from("users")
       .update({
-        first_name: body.first_name,
-        last_name: body.last_name,
-        phone: body.phone,
+        first_name,
+        last_name,
+        phone_number,
+        email,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", user.id)
+      .eq("id", userId)
       .select()
       .single()
 
     if (error) {
       console.error("Profile update error:", error)
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+      return NextResponse.json({ error: "Failed to update profile" }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true, profile: data })
+    return NextResponse.json({ profile: updatedProfile })
   } catch (error) {
     console.error("Profile update API error:", error)
-    return NextResponse.json({ success: false, error: "Server error" }, { status: 500 })
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
