@@ -1,143 +1,91 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
-import { ShoppingCart, User, Bell, Search } from "lucide-react"
+import type React from "react"
+import { User, ShoppingCart, Bell } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { useCart } from "@/contexts/CartContext"
+import { useTelegram } from "@/contexts/TelegramContext"
 import { InstantSearch } from "@/components/ui/instant-search"
+import Link from "next/link"
 
-interface SearchResult {
-  id: string
-  title: string
-  description: string
-  price: number
-  image_url: string
-  category: string
-  type: "product" | "worker"
-  rating: number
-  reviews_count: number
+interface TopBarProps {
+  searchQuery?: string
+  onSearchChange?: (e: React.ChangeEvent<HTMLInputElement>) => void
 }
 
-export function TopBar() {
+export function TopBar({ searchQuery = "", onSearchChange }: TopBarProps) {
   const { user } = useAuth()
   const { getTotalItems } = useCart()
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const [showMobileSearch, setShowMobileSearch] = useState(false)
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  const handleResultSelect = (result: SearchResult) => {
-    if (result.type === "product") {
-      router.push(`/product/${result.id}`)
-    } else if (result.type === "worker") {
-      router.push(`/workers?id=${result.id}`)
-    }
-    setShowMobileSearch(false)
-  }
-
-  const handleProfileClick = () => {
-    if (user) {
-      router.push("/profile")
-    } else {
-      router.push("/login")
-    }
-  }
-
-  const handleCartClick = () => {
-    router.push("/cart")
-  }
-
-  const totalItems = mounted ? getTotalItems() : 0
+  const { isTelegramWebApp } = useTelegram()
+  const totalItems = getTotalItems()
 
   return (
-    <>
-      <div className="bg-card border-b border-border sticky top-0 z-40">
-        <div className="container mx-auto px-4">
-          <div className="flex items-center justify-between h-14">
-            {/* Logo */}
-            <div className="flex items-center space-x-4">
-              <button onClick={() => router.push("/")} className="text-xl font-bold text-primary">
-                JamolStroy
-              </button>
+    <header className="sticky top-0 z-40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border">
+      <div className="container mx-auto px-4">
+        <div className="flex items-center justify-between h-16">
+          {/* Logo */}
+          <Link href="/" className="flex items-center space-x-2">
+            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+              <span className="text-primary-foreground font-bold text-sm">JS</span>
             </div>
+            <span className="font-bold text-lg hidden sm:block">JamolStroy</span>
+          </Link>
 
-            {/* Desktop Search */}
-            <div className="hidden md:flex flex-1 max-w-md mx-8">
-              <InstantSearch onResultSelect={handleResultSelect} placeholder="Mahsulot yoki ishchi qidiring..." />
-            </div>
+          {/* Search Bar with Instant Search */}
+          <div className="flex-1 mx-4">
+            <InstantSearch
+              searchQuery={searchQuery}
+              onSearchChange={onSearchChange || (() => {})}
+              placeholder="Mahsulot, ishchi yoki xizmat qidirish..."
+            />
+          </div>
 
-            {/* Actions */}
-            <div className="flex items-center space-x-2">
-              {/* Mobile Search Button */}
-              <button
-                onClick={() => setShowMobileSearch(true)}
-                className="md:hidden p-2 rounded-lg hover:bg-muted transition-colors"
-              >
-                <Search className="w-5 h-5" />
+          {/* Actions */}
+          <div className="flex items-center space-x-2">
+            {/* Notifications */}
+            {user && (
+              <button className="p-2 hover:bg-muted rounded-lg transition-colors relative">
+                <Bell className="w-5 h-5" />
+                <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></span>
               </button>
+            )}
 
-              {/* Notifications */}
-              {user && (
-                <button className="p-2 rounded-lg hover:bg-muted transition-colors relative">
-                  <Bell className="w-5 h-5" />
-                  <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full text-xs"></span>
-                </button>
+            {/* Cart */}
+            <Link href="/cart" className="p-2 hover:bg-muted rounded-lg transition-colors relative">
+              <ShoppingCart className="w-5 h-5" />
+              {totalItems > 0 && (
+                <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-xs rounded-full w-5 h-5 flex items-center justify-center font-medium">
+                  {totalItems > 99 ? "99+" : totalItems}
+                </span>
               )}
+            </Link>
 
-              {/* Cart */}
-              <button onClick={handleCartClick} className="p-2 rounded-lg hover:bg-muted transition-colors relative">
-                <ShoppingCart className="w-5 h-5" />
-                {totalItems > 0 && (
-                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-primary text-primary-foreground rounded-full text-xs flex items-center justify-center">
-                    {totalItems > 99 ? "99+" : totalItems}
+            {/* Profile */}
+            {user ? (
+              <Link
+                href="/profile"
+                className="flex items-center space-x-2 p-2 hover:bg-muted rounded-lg transition-colors"
+              >
+                <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center">
+                  <span className="text-primary font-medium text-sm">
+                    {user.first_name?.[0] || "U"}
+                    {user.last_name?.[0] || ""}
                   </span>
-                )}
-              </button>
-
-              {/* Profile */}
-              <button onClick={handleProfileClick} className="p-2 rounded-lg hover:bg-muted transition-colors">
-                {user?.avatar_url ? (
-                  <img
-                    src={user.avatar_url || "/placeholder.svg"}
-                    alt={user.first_name}
-                    className="w-6 h-6 rounded-full object-cover"
-                  />
-                ) : (
-                  <User className="w-5 h-5" />
-                )}
-              </button>
-            </div>
+                </div>
+                <span className="hidden md:block text-sm font-medium">{user.first_name}</span>
+              </Link>
+            ) : (
+              <Link
+                href="/login"
+                className="flex items-center space-x-2 p-2 hover:bg-muted rounded-lg transition-colors"
+              >
+                <User className="w-5 h-5" />
+                <span className="hidden md:block text-sm">Kirish</span>
+              </Link>
+            )}
           </div>
         </div>
       </div>
-
-      {/* Mobile Search Overlay */}
-      {showMobileSearch && (
-        <div className="fixed inset-0 bg-background z-50 md:hidden">
-          <div className="p-4">
-            <div className="flex items-center space-x-4 mb-4">
-              <button
-                onClick={() => setShowMobileSearch(false)}
-                className="p-2 rounded-lg hover:bg-muted transition-colors"
-              >
-                ←
-              </button>
-              <div className="flex-1">
-                <InstantSearch
-                  onResultSelect={handleResultSelect}
-                  placeholder="Qidirish..."
-                  onClose={() => setShowMobileSearch(false)}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+    </header>
   )
 }

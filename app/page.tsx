@@ -1,302 +1,667 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import type React from "react"
+import { useEffect, useState, useCallback } from "react"
+import { useSearchParams, useRouter } from "next/navigation"
+import { supabase } from "@/lib/supabase"
 import { TopBar } from "@/components/layout/top-bar"
 import { BottomNavigation } from "@/components/layout/bottom-navigation"
 import { CategoryBar } from "@/components/layout/category-bar"
 import { AdBanner } from "@/components/layout/ad-banner"
 import { ProductCard } from "@/components/ui/product-card"
-import { DraggableFAB } from "@/components/ui/draggable-fab"
-import { supabase } from "@/lib/supabase"
-import { Carousel, CarouselContent, CarouselItem, CarouselNext, CarouselPrevious } from "@/components/ui/carousel"
-import { Card, CardContent } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Star, TrendingUp, Clock, Users } from "lucide-react"
+import { DraggableFab } from "@/components/ui/draggable-fab"
+import { QuantityModal } from "@/components/ui/quantity-modal"
+import { CartSidebar } from "@/components/layout/cart-sidebar"
+import { Search, Package, TrendingUp, Star, Filter, User } from "lucide-react"
+import { useDebounce } from "@/hooks/use-debounce"
 
 interface Product {
   id: string
-  title: string
-  description: string
+  name_uz: string
   price: number
-  image_url: string
-  category: string
-  rating: number
-  reviews_count: number
+  unit: string
+  images: string[]
   is_featured: boolean
-  created_at: string
+  is_popular: boolean
+  stock_quantity: number
+  available_quantity: number
+  has_delivery: boolean
+  delivery_price: number
+  delivery_limit: number
+  product_type: "sale" | "rental"
+  rental_price_per_unit?: number
+  category: {
+    name_uz: string
+  }
+  average_rating?: number
+  review_count?: number
 }
 
-interface Worker {
+interface SearchResult {
   id: string
-  first_name: string
-  last_name: string
-  specialization: string
-  hourly_rate: number
+  title: string
+  subtitle: string
+  type: "product" | "worker"
+  image_url?: string
+  price: number
+  category: string
   rating: number
-  reviews_count: number
-  avatar_url: string
-  is_available: boolean
+  has_delivery: boolean
+}
+
+interface Category {
+  id: string
+  name_uz: string
+  icon_name: string
 }
 
 export default function HomePage() {
+  const searchParams = useSearchParams()
   const router = useRouter()
   const [products, setProducts] = useState<Product[]>([])
-  const [workers, setWorkers] = useState<Worker[]>([])
-  const [featuredProducts, setFeaturedProducts] = useState<Product[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [mounted, setMounted] = useState(false)
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
+  const [popularSearches, setPopularSearches] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [searchQuery, setSearchQuery] = useState(searchParams.get("search") || "")
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(searchParams.get("category"))
+  const [sortBy, setSortBy] = useState<string>("featured")
+  const [deliveryFilter, setDeliveryFilter] = useState<string>("all")
+  const [showQuantityModal, setShowQuantityModal] = useState(false)
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+  const [showCartSidebar, setShowCartSidebar] = useState(false)
+  const [autoRefresh, setAutoRefresh] = useState(true)
+
+  // Debounce search query for real-time search
+  const debouncedSearchQuery = useDebounce(searchQuery, 300)
+
+  // Auto-refresh every 30 seconds
+  useEffect(() => {
+    if (!autoRefresh) return
+
+    const interval = setInterval(() => {
+      if (!searchQuery) {
+        fetchProducts()
+      }
+    }, 30000)
+
+    return () => clearInterval(interval)
+  }, [autoRefresh, searchQuery])
 
   useEffect(() => {
-    setMounted(true)
-    fetchData()
-
-    // Auto-refresh every 30 seconds
-    const interval = setInterval(fetchData, 30000)
-    return () => clearInterval(interval)
+    fetchCategories()
+    fetchPopularSearches()
   }, [])
 
-  const fetchData = async () => {
+  useEffect(() => {
+    if (debouncedSearchQuery) {
+      fetchSearchResults()
+    } else {
+      fetchProducts()
+    }
+  }, [debouncedSearchQuery, selectedCategory, sortBy, deliveryFilter])
+
+  const fetchCategories = async () => {
     try {
-      // Fetch products
-      const { data: productsData, error: productsError } = await supabase
-        .from("products")
-        .select(`
-          id,
-          title,
-          description,
-          price,
-          image_url,
-          category,
-          is_featured,
-          created_at,
-          product_reviews (rating)
-        `)
+      const { data, error } = await supabase
+        .from("categories")
+        .select("id, name_uz, icon_name")
         .eq("is_active", true)
-        .order("created_at", { ascending: false })
-        .limit(20)
+        .order("name_uz")
 
-      if (productsError) {
-        console.error("Products fetch error:", productsError)
-      } else {
-        const processedProducts = (productsData || []).map((product) => ({
-          ...product,
-          rating:
-            product.product_reviews?.length > 0
-              ? product.product_reviews.reduce((sum: number, review: any) => sum + review.rating, 0) /
-                product.product_reviews.length
-              : 0,
-          reviews_count: product.product_reviews?.length || 0,
-        }))
-
-        setProducts(processedProducts)
-        setFeaturedProducts(processedProducts.filter((p) => p.is_featured))
-      }
-
-      // Fetch workers
-      const { data: workersData, error: workersError } = await supabase
-        .from("workers")
-        .select("*")
-        .eq("is_available", true)
-        .order("rating", { ascending: false })
-        .limit(10)
-
-      if (workersError) {
-        console.error("Workers fetch error:", workersError)
-      } else {
-        setWorkers(workersData || [])
-      }
+      if (error) throw error
+      setCategories(data || [])
     } catch (error) {
-      console.error("Data fetch error:", error)
-    } finally {
-      setIsLoading(false)
+      console.error("Categories fetch error:", error)
     }
   }
 
-  const handleProductClick = (productId: string) => {
+  const fetchPopularSearches = async () => {
+    try {
+      const { data, error } = await supabase.rpc("get_popular_searches", { limit_count: 8 })
+
+      if (error) throw error
+      setPopularSearches(data || [])
+    } catch (error) {
+      console.error("Popular searches error:", error)
+    }
+  }
+
+  const fetchSearchResults = useCallback(async () => {
+    if (!debouncedSearchQuery.trim()) {
+      setSearchResults([])
+      setSearchLoading(false)
+      return
+    }
+
+    setSearchLoading(true)
+    try {
+      const { data, error } = await supabase.rpc("search_all_content", {
+        search_term: debouncedSearchQuery,
+        limit_count: 20,
+      })
+
+      if (error) throw error
+      setSearchResults(data || [])
+    } catch (error) {
+      console.error("Search results error:", error)
+      setSearchResults([])
+    } finally {
+      setSearchLoading(false)
+      setLoading(false)
+    }
+  }, [debouncedSearchQuery])
+
+  const calculateAvailableQuantity = async (productId: string, stockQuantity: number) => {
+    try {
+      const { data: soldData, error: soldError } = await supabase
+        .from("order_items")
+        .select(`
+          quantity,
+          orders!inner(status)
+        `)
+        .eq("product_id", productId)
+        .in("orders.status", ["confirmed", "processing", "shipped", "delivered"])
+
+      if (soldError) throw soldError
+
+      const soldQuantity = (soldData || []).reduce((sum, item) => sum + item.quantity, 0)
+      return Math.max(0, stockQuantity - soldQuantity)
+    } catch (error) {
+      console.error("Available quantity calculation error:", error)
+      return stockQuantity
+    }
+  }
+
+  const fetchProducts = async () => {
+    try {
+      let query = supabase
+        .from("products")
+        .select(`
+          *,
+          category:categories(name_uz)
+        `)
+        .eq("is_available", true)
+        .gt("stock_quantity", 0)
+
+      // Apply category filter
+      if (selectedCategory) {
+        query = query.eq("category_id", selectedCategory)
+      }
+
+      // Apply delivery filter
+      if (deliveryFilter === "available") {
+        query = query.eq("has_delivery", true)
+      } else if (deliveryFilter === "free") {
+        query = query.eq("has_delivery", true).eq("delivery_price", 0)
+      } else if (deliveryFilter === "none") {
+        query = query.eq("has_delivery", false)
+      }
+
+      // Apply sorting
+      switch (sortBy) {
+        case "featured":
+          query = query.order("is_featured", { ascending: false }).order("is_popular", { ascending: false })
+          break
+        case "popular":
+          query = query.order("is_popular", { ascending: false }).order("view_count", { ascending: false })
+          break
+        case "price_low":
+          query = query.order("price", { ascending: true })
+          break
+        case "price_high":
+          query = query.order("price", { ascending: false })
+          break
+        case "newest":
+          query = query.order("created_at", { ascending: false })
+          break
+        default:
+          query = query.order("is_featured", { ascending: false })
+      }
+
+      query = query.limit(50)
+
+      const { data, error } = await query
+
+      if (error) throw error
+
+      const productsWithAvailability = await Promise.all(
+        (data || []).map(async (product) => {
+          const availableQuantity = await calculateAvailableQuantity(product.id, product.stock_quantity)
+          return {
+            ...product,
+            available_quantity: availableQuantity,
+            average_rating: 4.0 + Math.random() * 1.0,
+            review_count: Math.floor(Math.random() * 100) + 1,
+          }
+        }),
+      )
+
+      const availableProducts = productsWithAvailability.filter((product) => product.available_quantity > 0)
+
+      setProducts(availableProducts)
+    } catch (error) {
+      console.error("Products fetch error:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleCategorySelect = (categoryId: string | null) => {
+    setSelectedCategory(categoryId)
+    const params = new URLSearchParams()
+    if (searchQuery) params.set("search", searchQuery)
+    if (categoryId) params.set("category", categoryId)
+
+    const queryString = params.toString()
+    router.push(queryString ? `/?${queryString}` : "/")
+  }
+
+  const handleProductView = (productId: string) => {
+    // Increment view count
+    fetch(`/api/products/${productId}/view`, { method: "POST" })
     router.push(`/product/${productId}`)
   }
 
-  const handleWorkerClick = (workerId: string) => {
-    router.push(`/workers?id=${workerId}`)
+  const handleWorkerView = (workerId: string) => {
+    router.push(`/workers/${workerId}`)
   }
 
-  const handleCategoryClick = (category: string) => {
-    router.push(`/catalog?category=${encodeURIComponent(category)}`)
+  const handleAddToCart = (product: Product) => {
+    setSelectedProduct(product)
+    setShowQuantityModal(true)
   }
 
-  if (!mounted) {
-    return null
+  const handleSearchExample = (query: string) => {
+    setSearchQuery(query)
+    router.push(`/?search=${encodeURIComponent(query)}`)
+  }
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value
+    setSearchQuery(value)
+
+    // Update URL without triggering navigation
+    const params = new URLSearchParams()
+    if (value) params.set("search", value)
+    if (selectedCategory) params.set("category", selectedCategory)
+
+    const queryString = params.toString()
+    window.history.replaceState({}, "", queryString ? `/?${queryString}` : "/")
+  }
+
+  const getSectionTitle = () => {
+    if (searchQuery) {
+      return `"${searchQuery}" bo'yicha qidiruv natijalari`
+    }
+    if (selectedCategory) {
+      const category = categories.find((c) => c.id === selectedCategory)
+      return category ? `${category.name_uz} kategoriyasi` : "Mahsulotlar"
+    }
+    return "Barcha mahsulotlar"
+  }
+
+  const getSectionIcon = () => {
+    if (searchQuery) return Search
+    if (selectedCategory) return Filter
+    return Package
   }
 
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-4">
-      <TopBar />
-      <CategoryBar />
+      <TopBar searchQuery={searchQuery} onSearchChange={handleSearchChange} />
+      <CategoryBar
+        categories={categories}
+        selectedCategory={selectedCategory}
+        onCategorySelect={handleCategorySelect}
+      />
+      <AdBanner />
 
-      <div className="container mx-auto px-4 py-6 space-y-8">
-        {/* Ad Banner */}
-        <AdBanner />
+      <div className="container mx-auto px-4 py-6">
+        {/* Auto-refresh toggle */}
+        <div className="flex justify-end mb-4">
+          <label className="flex items-center space-x-2 text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={autoRefresh}
+              onChange={(e) => setAutoRefresh(e.target.checked)}
+              className="rounded"
+            />
+            <span>Avtomatik yangilash</span>
+          </label>
+        </div>
 
-        {/* Featured Products Carousel */}
-        {featuredProducts.length > 0 && (
-          <section>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold flex items-center">
-                <Star className="w-5 h-5 mr-2 text-yellow-500" />
-                Tavsiya etilgan mahsulotlar
-              </h2>
-              <button
-                onClick={() => router.push("/catalog?featured=true")}
-                className="text-sm text-primary hover:underline"
-              >
-                Barchasini ko'rish
-              </button>
+        {/* Search Examples - Show when no search query */}
+        {!searchQuery && !selectedCategory && popularSearches.length > 0 && (
+          <div className="mb-6">
+            <h3 className="text-lg font-semibold mb-3">Mashhur qidiruvlar</h3>
+            <div className="flex flex-wrap gap-2">
+              {popularSearches.map((search, index) => (
+                <button
+                  key={index}
+                  onClick={() => handleSearchExample(search.query)}
+                  className="px-3 py-1.5 bg-muted hover:bg-muted/80 rounded-full text-sm transition-colors"
+                >
+                  {search.query}
+                </button>
+              ))}
             </div>
-
-            <Carousel className="w-full">
-              <CarouselContent>
-                {featuredProducts.map((product) => (
-                  <CarouselItem key={product.id} className="md:basis-1/2 lg:basis-1/3">
-                    <div className="p-1">
-                      <ProductCard product={product} onClick={() => handleProductClick(product.id)} />
-                    </div>
-                  </CarouselItem>
-                ))}
-              </CarouselContent>
-              <CarouselPrevious />
-              <CarouselNext />
-            </Carousel>
-          </section>
+          </div>
         )}
 
-        {/* Top Workers */}
-        {workers.length > 0 && (
-          <section>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold flex items-center">
-                <Users className="w-5 h-5 mr-2 text-blue-500" />
-                Eng yaxshi ishchilar
-              </h2>
-              <button onClick={() => router.push("/workers")} className="text-sm text-primary hover:underline">
-                Barchasini ko'rish
-              </button>
+        {/* Section Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
+          <div className="flex items-center space-x-3">
+            {(() => {
+              const Icon = getSectionIcon()
+              return <Icon className="w-6 h-6 text-primary" />
+            })()}
+            <div>
+              <h2 className="text-xl font-bold">{getSectionTitle()}</h2>
+              <p className="text-sm text-muted-foreground">
+                {loading || searchLoading
+                  ? "Yuklanmoqda..."
+                  : searchQuery
+                    ? `${searchResults.length} ta natija topildi`
+                    : `${products.length} ta mahsulot topildi`}
+              </p>
             </div>
+          </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {workers.slice(0, 6).map((worker) => (
-                <Card
-                  key={worker.id}
-                  className="cursor-pointer hover:shadow-md transition-shadow"
-                  onClick={() => handleWorkerClick(worker.id)}
+          {/* Filters - Only show for products - Responsive */}
+          {!searchQuery && (
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center space-y-2 sm:space-y-0 sm:space-x-2">
+              {/* Delivery Filter */}
+              <select
+                value={deliveryFilter}
+                onChange={(e) => setDeliveryFilter(e.target.value)}
+                className="w-full sm:w-auto px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 text-sm"
+              >
+                <option value="all">Barchasi</option>
+                <option value="available">Yetkazib berish mavjud</option>
+                <option value="free">Tekin yetkazib berish</option>
+                <option value="none">Yetkazib berish yo'q</option>
+              </select>
+
+              {/* Sort Dropdown */}
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="w-full sm:w-auto px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 text-sm"
+              >
+                <option value="featured">Tavsiya etilgan</option>
+                <option value="popular">Mashhur</option>
+                <option value="newest">Yangi</option>
+                <option value="price_low">Arzon narx</option>
+                <option value="price_high">Qimmat narx</option>
+              </select>
+            </div>
+          )}
+        </div>
+
+        {/* Search Results */}
+        {searchQuery && (
+          <div className="space-y-6">
+            {searchLoading ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {Array.from({ length: 10 }).map((_, index) => (
+                  <div key={index} className="bg-card rounded-lg border border-border p-4 animate-pulse">
+                    <div className="aspect-square bg-muted rounded-lg mb-3"></div>
+                    <div className="h-4 bg-muted rounded mb-2"></div>
+                    <div className="h-3 bg-muted rounded w-2/3"></div>
+                  </div>
+                ))}
+              </div>
+            ) : searchResults.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center mx-auto mb-6">
+                  <Search className="w-10 h-10 text-muted-foreground" />
+                </div>
+                <h3 className="text-xl font-bold mb-2">Hech narsa topilmadi</h3>
+                <p className="text-muted-foreground mb-6">"{searchQuery}" bo'yicha hech qanday natija topilmadi</p>
+                <button
+                  onClick={() => {
+                    setSearchQuery("")
+                    router.push("/")
+                  }}
+                  className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
                 >
-                  <CardContent className="p-4">
-                    <div className="flex items-start space-x-3">
-                      <img
-                        src={worker.avatar_url || "/placeholder-user.jpg"}
-                        alt={`${worker.first_name} ${worker.last_name}`}
-                        className="w-12 h-12 rounded-full object-cover"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-medium truncate">
-                          {worker.first_name} {worker.last_name}
-                        </h3>
-                        <p className="text-sm text-muted-foreground truncate">{worker.specialization}</p>
-                        <div className="flex items-center justify-between mt-2">
-                          <span className="text-sm font-medium text-primary">
-                            {worker.hourly_rate.toLocaleString()} so'm/soat
+                  Barcha mahsulotlarni ko'rish
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {searchResults.map((result, index) => (
+                  <div
+                    key={`${result.type}-${result.id}`}
+                    className="animate-slideInUp"
+                    style={{ animationDelay: `${index * 50}ms` }}
+                  >
+                    {result.type === "product" ? (
+                      <div
+                        onClick={() => handleProductView(result.id)}
+                        className="bg-card rounded-lg border border-border p-4 hover:shadow-md transition-all cursor-pointer"
+                      >
+                        <div className="aspect-square bg-muted rounded-lg mb-3 overflow-hidden">
+                          {result.image_url && (
+                            <img
+                              src={result.image_url || "/placeholder.svg"}
+                              alt={result.title}
+                              className="w-full h-full object-cover"
+                            />
+                          )}
+                        </div>
+                        <h3 className="font-medium text-sm line-clamp-2 mb-1">{result.title}</h3>
+                        <p className="text-xs text-muted-foreground mb-2">{result.category}</p>
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-sm">
+                            {new Intl.NumberFormat("uz-UZ").format(result.price)} so'm
                           </span>
                           <div className="flex items-center space-x-1">
                             <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-                            <span className="text-xs text-muted-foreground">
-                              {worker.rating.toFixed(1)} ({worker.reviews_count})
-                            </span>
+                            <span className="text-xs">{(result.rating || 0).toFixed(1)}</span>
                           </div>
                         </div>
-                        {worker.is_available && (
-                          <Badge variant="secondary" className="mt-2 text-xs">
-                            Mavjud
-                          </Badge>
+                        {result.has_delivery && (
+                          <div className="mt-2">
+                            <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
+                              Yetkazib berish
+                            </span>
+                          </div>
                         )}
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </section>
+                    ) : (
+                      <div
+                        onClick={() => handleWorkerView(result.id)}
+                        className="bg-card rounded-lg border border-border p-4 hover:shadow-md transition-all cursor-pointer"
+                      >
+                        <div className="aspect-square bg-muted rounded-lg mb-3 overflow-hidden">
+                          {result.image_url ? (
+                            <img
+                              src={result.image_url || "/placeholder.svg"}
+                              alt={result.title}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center">
+                              <User className="w-8 h-8 text-primary/50" />
+                            </div>
+                          )}
+                        </div>
+                        <h3 className="font-medium text-sm line-clamp-2 mb-1">{result.title}</h3>
+                        <p className="text-xs text-muted-foreground mb-2">{result.subtitle}</p>
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-sm">
+                            {new Intl.NumberFormat("uz-UZ").format(result.price)} so'm/soat
+                          </span>
+                          <div className="flex items-center space-x-1">
+                            <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
+                            <span className="text-xs">{(result.rating || 0).toFixed(1)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
-        {/* Recent Products */}
-        <section>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold flex items-center">
-              <Clock className="w-5 h-5 mr-2 text-green-500" />
-              Yangi mahsulotlar
-            </h2>
-            <button
-              onClick={() => router.push("/catalog?sort=newest")}
-              className="text-sm text-primary hover:underline"
-            >
-              Barchasini ko'rish
-            </button>
-          </div>
-
-          {isLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {Array.from({ length: 8 }).map((_, index) => (
-                <div key={index} className="bg-card rounded-lg p-4 animate-pulse">
-                  <div className="w-full h-48 bg-muted rounded-lg mb-4"></div>
-                  <div className="h-4 bg-muted rounded mb-2"></div>
-                  <div className="h-3 bg-muted rounded mb-4"></div>
-                  <div className="h-4 bg-muted rounded w-1/2"></div>
+        {/* Products Grid - Only show when not searching */}
+        {!searchQuery && (
+          <>
+            {loading ? (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {Array.from({ length: 10 }).map((_, index) => (
+                  <div key={index} className="bg-card rounded-lg border border-border p-4 animate-pulse">
+                    <div className="aspect-square bg-muted rounded-lg mb-3"></div>
+                    <div className="h-4 bg-muted rounded mb-2"></div>
+                    <div className="h-3 bg-muted rounded w-2/3"></div>
+                  </div>
+                ))}
+              </div>
+            ) : products.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center mx-auto mb-6">
+                  <Search className="w-10 h-10 text-muted-foreground" />
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {products.slice(0, 12).map((product) => (
-                <ProductCard key={product.id} product={product} onClick={() => handleProductClick(product.id)} />
-              ))}
-            </div>
-          )}
-        </section>
+                <h3 className="text-xl font-bold mb-2">Hech narsa topilmadi</h3>
+                <p className="text-muted-foreground mb-6">Bu kategoriyada mahsulotlar yo'q</p>
+                <button
+                  onClick={() => {
+                    setSelectedCategory(null)
+                    setDeliveryFilter("all")
+                    router.push("/")
+                  }}
+                  className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+                >
+                  Barcha mahsulotlarni ko'rish
+                </button>
+              </div>
+            ) : (
+              <div className="product-grid">
+                {products.map((product, index) => (
+                  <div key={product.id} className="product-card" style={{ animationDelay: `${index * 50}ms` }}>
+                    <ProductCard product={product} onQuickView={handleProductView} onAddToCart={handleAddToCart} />
+                  </div>
+                ))}
+              </div>
+            )}
 
-        {/* Categories Grid */}
-        <section>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold flex items-center">
-              <TrendingUp className="w-5 h-5 mr-2 text-purple-500" />
-              Kategoriyalar
-            </h2>
-          </div>
+            {/* Featured Products Section */}
+            {!selectedCategory && (
+              <div className="mt-12">
+                <div className="flex items-center space-x-3 mb-6">
+                  <Star className="w-6 h-6 text-yellow-500" />
+                  <div>
+                    <h2 className="text-xl font-bold">Tavsiya etilgan mahsulotlar</h2>
+                    <p className="text-sm text-muted-foreground">Eng yaxshi takliflar</p>
+                  </div>
+                </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-            {[
-              { name: "Qurilish materiallari", icon: "🏗️", color: "bg-blue-100 text-blue-800" },
-              { name: "Elektr jihozlari", icon: "⚡", color: "bg-yellow-100 text-yellow-800" },
-              { name: "Santexnika", icon: "🚿", color: "bg-cyan-100 text-cyan-800" },
-              { name: "Asboblar", icon: "🔧", color: "bg-green-100 text-green-800" },
-              { name: "Bo'yoqlar", icon: "🎨", color: "bg-purple-100 text-purple-800" },
-              { name: "Boshqalar", icon: "📦", color: "bg-gray-100 text-gray-800" },
-            ].map((category) => (
-              <Card
-                key={category.name}
-                className="cursor-pointer hover:shadow-md transition-shadow"
-                onClick={() => handleCategoryClick(category.name)}
-              >
-                <CardContent className="p-4 text-center">
-                  <div className="text-2xl mb-2">{category.icon}</div>
-                  <h3 className="text-sm font-medium">{category.name}</h3>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </section>
+                <div className="product-grid">
+                  {products
+                    .filter((product) => product.is_featured)
+                    .slice(0, 10)
+                    .map((product, index) => (
+                      <div
+                        key={`featured-${product.id}`}
+                        className="product-card"
+                        style={{ animationDelay: `${index * 50}ms` }}
+                      >
+                        <ProductCard product={product} onQuickView={handleProductView} onAddToCart={handleAddToCart} />
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* Popular Products Section */}
+            {!selectedCategory && (
+              <div className="mt-12">
+                <div className="flex items-center space-x-3 mb-6">
+                  <TrendingUp className="w-6 h-6 text-green-500" />
+                  <div>
+                    <h2 className="text-xl font-bold">Mashhur mahsulotlar</h2>
+                    <p className="text-sm text-muted-foreground">Ko'p sotilayotgan mahsulotlar</p>
+                  </div>
+                </div>
+
+                <div className="product-grid">
+                  {products
+                    .filter((product) => product.is_popular)
+                    .slice(0, 10)
+                    .map((product, index) => (
+                      <div
+                        key={`popular-${product.id}`}
+                        className="product-card"
+                        style={{ animationDelay: `${index * 50}ms` }}
+                      >
+                        <ProductCard product={product} onQuickView={handleProductView} onAddToCart={handleAddToCart} />
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
-      <DraggableFAB />
       <BottomNavigation />
+      <DraggableFab onCartClick={() => setShowCartSidebar(true)} />
+
+      {/* Cart Sidebar */}
+      <CartSidebar isOpen={showCartSidebar} onClose={() => setShowCartSidebar(false)} />
+
+      {/* Quantity Modal */}
+      <QuantityModal isOpen={showQuantityModal} onClose={() => setShowQuantityModal(false)} product={selectedProduct} />
+
+      <style jsx>{`
+        @keyframes slideInUp {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .product-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 1rem;
+        }
+
+        @media (min-width: 768px) {
+          .product-grid {
+            grid-template-columns: repeat(3, 1fr);
+          }
+        }
+
+        @media (min-width: 1024px) {
+          .product-grid {
+            grid-template-columns: repeat(4, 1fr);
+          }
+        }
+
+        @media (min-width: 1280px) {
+          .product-grid {
+            grid-template-columns: repeat(5, 1fr);
+          }
+        }
+
+        .product-card {
+          animation: slideInUp 0.6s ease-out;
+        }
+
+        .animate-slideInUp {
+          animation: slideInUp 0.6s ease-out;
+        }
+      `}</style>
     </div>
   )
 }

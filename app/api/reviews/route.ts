@@ -1,62 +1,80 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { getAuthenticatedSupabase } from "@/lib/auth-supabase"
+import { supabase } from "@/lib/supabase"
 
 export async function GET(request: NextRequest) {
   try {
-    const userId = request.headers.get("x-user-id")
-
-    if (!userId) {
-      return NextResponse.json({ error: "User ID is required" }, { status: 401 })
+    const authHeader = request.headers.get("authorization")
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Create authenticated client
-    const authClient = getAuthenticatedSupabase({ id: userId } as any)
+    const token = authHeader.substring(7)
 
-    // Get user reviews using the fixed function
-    const { data: reviews, error } = await authClient.rpc("get_user_reviews", { user_id_param: userId })
+    // Get user from session
+    const { data: sessionData, error: sessionError } = await supabase
+      .from("website_login_sessions")
+      .select("user_id")
+      .eq("session_token", token)
+      .eq("is_active", true)
+      .gt("expires_at", new Date().toISOString())
+      .single()
+
+    if (sessionError || !sessionData) {
+      return NextResponse.json({ error: "Invalid session" }, { status: 401 })
+    }
+
+    // Get user reviews using the secure function
+    const { data, error } = await supabase.rpc("get_user_reviews", {
+      user_id_param: sessionData.user_id,
+    })
 
     if (error) {
       console.error("Reviews fetch error:", error)
       return NextResponse.json({ error: "Failed to fetch reviews" }, { status: 500 })
     }
 
-    return NextResponse.json({ reviews: reviews || [] })
+    return NextResponse.json({
+      success: true,
+      reviews: data || [],
+    })
   } catch (error) {
-    console.error("Reviews API error:", error)
+    console.error("Reviews fetch error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const userId = request.headers.get("x-user-id")
-
-    if (!userId) {
-      return NextResponse.json({ error: "User ID is required" }, { status: 401 })
+    const authHeader = request.headers.get("authorization")
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    const token = authHeader.substring(7)
     const body = await request.json()
-    const { product_id, rating, comment } = body
 
-    if (!product_id || !rating) {
-      return NextResponse.json({ error: "Product ID and rating are required" }, { status: 400 })
+    // Get user from session
+    const { data: sessionData, error: sessionError } = await supabase
+      .from("website_login_sessions")
+      .select("user_id")
+      .eq("session_token", token)
+      .eq("is_active", true)
+      .gt("expires_at", new Date().toISOString())
+      .single()
+
+    if (sessionError || !sessionData) {
+      return NextResponse.json({ error: "Invalid session" }, { status: 401 })
     }
-
-    // Create authenticated client
-    const authClient = getAuthenticatedSupabase({ id: userId } as any)
 
     // Create new review
-    const { data: newReview, error } = await authClient
-      .from("product_reviews")
-      .insert([
-        {
-          user_id: userId,
-          product_id,
-          rating,
-          comment: comment || "",
-          created_at: new Date().toISOString(),
-        },
-      ])
+    const { data, error } = await supabase
+      .from("reviews")
+      .insert({
+        user_id: sessionData.user_id,
+        product_id: body.product_id,
+        rating: body.rating,
+        comment: body.comment,
+      })
       .select()
       .single()
 
@@ -65,9 +83,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Failed to create review" }, { status: 500 })
     }
 
-    return NextResponse.json({ review: newReview })
+    return NextResponse.json({
+      success: true,
+      review: data,
+    })
   } catch (error) {
-    console.error("Review creation API error:", error)
+    console.error("Review creation error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

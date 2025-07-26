@@ -4,37 +4,29 @@ import { supabase } from "@/lib/supabase"
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const query = searchParams.get("q")
+    const query = searchParams.get("q") || ""
+    const limit = Number.parseInt(searchParams.get("limit") || "8")
 
-    if (!query || query.trim().length < 2) {
-      return NextResponse.json({ results: [], suggestions: [] })
+    if (query.trim().length < 1) {
+      return NextResponse.json({ results: [] })
     }
 
-    // Search all content
-    const { data: results, error: searchError } = await supabase.rpc("search_all_content", {
-      search_query: query.trim(),
+    const { data, error } = await supabase.rpc("get_instant_search_results", {
+      search_term: query.trim(),
+      limit_count: limit,
     })
 
-    if (searchError) {
-      console.error("Search error:", searchError)
-      return NextResponse.json({ results: [], suggestions: [] })
-    }
-
-    // Get search suggestions
-    const { data: suggestions, error: suggestionsError } = await supabase.rpc("get_search_suggestions", {
-      search_query: query.trim(),
-    })
-
-    if (suggestionsError) {
-      console.error("Suggestions error:", suggestionsError)
+    if (error) {
+      console.error("Instant search error:", error)
+      return NextResponse.json({ error: "Search failed" }, { status: 500 })
     }
 
     return NextResponse.json({
-      results: results || [],
-      suggestions: suggestions || [],
+      success: true,
+      results: data || [],
     })
   } catch (error) {
-    console.error("Instant search API error:", error)
+    console.error("Instant search error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
