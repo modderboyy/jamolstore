@@ -1,12 +1,8 @@
 "use client"
 
 import type React from "react"
-import { Star, ShoppingCart, Clock, Calendar } from "lucide-react"
+import { Star, ShoppingCart, Clock, Calendar, Truck, X } from "lucide-react"
 import Image from "next/image"
-import { useCart } from "@/contexts/CartContext"
-import { useAuth } from "@/contexts/AuthContext"
-import { useRouter } from "next/navigation"
-import { useState } from "react"
 
 interface Product {
   id: string
@@ -24,6 +20,8 @@ interface Product {
   is_available: boolean
   is_featured?: boolean
   is_popular?: boolean
+  has_delivery: boolean
+  delivery_price: number
   category?: {
     name_uz: string
   }
@@ -35,15 +33,11 @@ interface Product {
 interface ProductCardProps {
   product: Product
   onQuickView?: (id: string) => void
+  onAddToCart?: (product: Product) => void
   className?: string
 }
 
-export function ProductCard({ product, onQuickView, className = "" }: ProductCardProps) {
-  const router = useRouter()
-  const { user } = useAuth()
-  const { addToCart } = useCart()
-  const [isAddingToCart, setIsAddingToCart] = useState(false)
-
+export function ProductCard({ product, onQuickView, onAddToCart, className = "" }: ProductCardProps) {
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat("uz-UZ").format(price)
   }
@@ -76,41 +70,16 @@ export function ProductCard({ product, onQuickView, className = "" }: ProductCar
     }
   }
 
-  const handleAddToCart = async (e: React.MouseEvent) => {
+  const handleAddToCart = (e: React.MouseEvent) => {
     e.stopPropagation()
-
-    if (!user) {
-      router.push("/login")
-      return
-    }
-
-    if (product.product_type === "rental") {
-      // For rental products, redirect to product page for duration selection
-      router.push(`/product/${product.id}`)
-      return
-    }
-
-    setIsAddingToCart(true)
-    try {
-      await addToCart(product.id, 1)
-      if (window.Telegram?.WebApp) {
-        window.Telegram.WebApp.showAlert("Mahsulot savatga qo'shildi!")
-      }
-    } catch (error) {
-      console.error("Error adding to cart:", error)
-      if (window.Telegram?.WebApp) {
-        window.Telegram.WebApp.showAlert("Xatolik yuz berdi")
-      }
-    } finally {
-      setIsAddingToCart(false)
+    if (onAddToCart) {
+      onAddToCart(product)
     }
   }
 
   const handleCardClick = () => {
     if (onQuickView) {
       onQuickView(product.id)
-    } else {
-      router.push(`/product/${product.id}`)
     }
   }
 
@@ -191,6 +160,21 @@ export function ProductCard({ product, onQuickView, className = "" }: ProductCar
             {product.available_quantity > 0 ? `${product.available_quantity} ${product.unit}` : "Tugagan"}
           </span>
         </div>
+
+        {/* Delivery Status */}
+        <div className="absolute bottom-2 right-2">
+          {product.has_delivery ? (
+            <div className="flex items-center space-x-1 px-2 py-1 bg-green-500 text-white text-xs rounded shadow-sm">
+              <Truck className="w-3 h-3" />
+              <span>{product.delivery_price === 0 ? "Tekin" : formatPrice(product.delivery_price)}</span>
+            </div>
+          ) : (
+            <div className="flex items-center space-x-1 px-2 py-1 bg-gray-500 text-white text-xs rounded shadow-sm">
+              <X className="w-3 h-3" />
+              <span>Yetkazib berish yo'q</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Product Info */}
@@ -221,11 +205,6 @@ export function ProductCard({ product, onQuickView, className = "" }: ProductCar
               <p className="text-xs text-muted-foreground">
                 /{getRentalTimeText(product.rental_time_unit)} • {product.unit}
               </p>
-              {product.rental_deposit && (
-                <p className="text-xs text-orange-600 font-medium">
-                  Omonat: {formatPrice(product.rental_deposit)} so'm
-                </p>
-              )}
             </div>
           ) : (
             <div>
@@ -240,23 +219,17 @@ export function ProductCard({ product, onQuickView, className = "" }: ProductCar
         {/* Add to Cart Button */}
         <button
           onClick={handleAddToCart}
-          disabled={isAddingToCart || product.available_quantity <= 0}
+          disabled={product.available_quantity <= 0}
           className="w-full flex items-center justify-center space-x-2 bg-gradient-to-r from-primary to-primary/90 text-primary-foreground py-2 px-3 rounded-lg text-sm font-medium hover:from-primary/90 hover:to-primary hover:shadow-md hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
         >
-          {isAddingToCart ? (
-            <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-          ) : (
-            <>
-              <ShoppingCart className="w-4 h-4" />
-              <span>
-                {product.product_type === "rental"
-                  ? "Ijaraga olish"
-                  : product.available_quantity <= 0
-                    ? "Tugagan"
-                    : "Savatga"}
-              </span>
-            </>
-          )}
+          <ShoppingCart className="w-4 h-4" />
+          <span>
+            {product.product_type === "rental"
+              ? "Ijaraga olish"
+              : product.available_quantity <= 0
+                ? "Tugagan"
+                : "Savatga"}
+          </span>
         </button>
       </div>
     </div>

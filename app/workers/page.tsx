@@ -1,12 +1,14 @@
 "use client"
 
+import type React from "react"
+
 import { useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { BottomNavigation } from "@/components/layout/bottom-navigation"
 import { TopBar } from "@/components/layout/top-bar"
 import { BottomSheet } from "@/components/ui/bottom-sheet"
-import { Star, MapPin, Phone, Filter } from "lucide-react"
+import { Star, MapPin, Phone, Filter, Search } from "lucide-react"
 import Image from "next/image"
 
 interface Worker {
@@ -30,12 +32,13 @@ interface Worker {
 
 export default function WorkersPage() {
   const searchParams = useSearchParams()
-  const searchQuery = searchParams.get("search") || ""
+  const initialSearch = searchParams.get("search") || ""
 
   const [workers, setWorkers] = useState<Worker[]>([])
   const [selectedWorker, setSelectedWorker] = useState<Worker | null>(null)
   const [showWorkerSheet, setShowWorkerSheet] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState(initialSearch)
 
   useEffect(() => {
     fetchWorkers()
@@ -70,6 +73,11 @@ export default function WorkersPage() {
     }
   }
 
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault()
+    fetchWorkers()
+  }
+
   const handleWorkerSelect = (worker: Worker) => {
     setSelectedWorker(worker)
     setShowWorkerSheet(true)
@@ -83,9 +91,9 @@ export default function WorkersPage() {
     <div className="min-h-screen bg-background pb-20 md:pb-4">
       <TopBar />
 
-      {/* Header */}
+      {/* Header with Search */}
       <div className="container mx-auto px-4 py-4 border-b border-border">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mb-4">
           <div className="flex-1">
             <h1 className="text-xl font-bold">Ishchilar</h1>
             <p className="text-sm text-muted-foreground">{workers.length} ta mutaxassis</p>
@@ -94,6 +102,20 @@ export default function WorkersPage() {
             <Filter className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Search Bar */}
+        <form onSubmit={handleSearch} className="relative">
+          <div className="relative group">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors duration-200" />
+            <input
+              type="text"
+              placeholder="Ishchi qidirish..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-2.5 bg-gray-900 dark:bg-gray-800 text-white rounded-lg border border-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all duration-200 text-sm"
+            />
+          </div>
+        </form>
       </div>
 
       {/* Workers List */}

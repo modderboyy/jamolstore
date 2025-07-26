@@ -3,7 +3,7 @@
 import type React from "react"
 import { useState, useEffect } from "react"
 import { useRouter, useSearchParams, usePathname } from "next/navigation"
-import { Search, ShoppingCart, Home, Grid3X3, Users, Package, User } from "lucide-react"
+import { Search, ShoppingCart, MapPin, Phone, Clock, Home, Grid3X3, Users, Package, User } from "lucide-react"
 import { useCart } from "@/contexts/CartContext"
 import { useAuth } from "@/contexts/AuthContext"
 import { CartSidebar } from "./cart-sidebar"
@@ -45,10 +45,12 @@ export function TopBar() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const { user } = useAuth()
-  const { totalItems } = useCart()
+  const { totalItems, uniqueItemsCount } = useCart()
   const [searchQuery, setSearchQuery] = useState(searchParams.get("search") || "")
   const [showCartSidebar, setShowCartSidebar] = useState(false)
   const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(null)
+  const [searchSuggestions, setSearchSuggestions] = useState<any[]>([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
 
   useEffect(() => {
     fetchCompanyInfo()
@@ -83,6 +85,15 @@ export function TopBar() {
     return () => clearInterval(interval)
   }, [])
 
+  useEffect(() => {
+    if (searchQuery.length > 1) {
+      fetchSearchSuggestions(searchQuery)
+    } else {
+      setSearchSuggestions([])
+      setShowSuggestions(false)
+    }
+  }, [searchQuery])
+
   const fetchCompanyInfo = async () => {
     try {
       const { data, error } = await supabase
@@ -99,13 +110,37 @@ export function TopBar() {
     }
   }
 
+  const fetchSearchSuggestions = async (query: string) => {
+    try {
+      const { data, error } = await supabase.rpc("get_search_suggestions", {
+        search_term: query,
+        limit_count: 5,
+      })
+
+      if (error) throw error
+      setSearchSuggestions(data || [])
+      setShowSuggestions(true)
+    } catch (error) {
+      console.error("Search suggestions error:", error)
+    }
+  }
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
     if (searchQuery.trim()) {
+      // Track search query
+      supabase.rpc("track_search_query", { search_query: searchQuery.trim() })
       router.push(`/?search=${encodeURIComponent(searchQuery.trim())}`)
     } else {
       router.push("/")
     }
+    setShowSuggestions(false)
+  }
+
+  const handleSuggestionClick = (suggestion: string) => {
+    setSearchQuery(suggestion)
+    setShowSuggestions(false)
+    router.push(`/?search=${encodeURIComponent(suggestion)}`)
   }
 
   const handleCartClick = () => {
@@ -115,13 +150,62 @@ export function TopBar() {
   return (
     <>
       <div className="bg-background border-b border-border sticky top-0 z-30">
+        {/* Company Info Bar - Desktop Only */}
+        {companyInfo && (
+          <div className="hidden lg:block bg-gradient-to-r from-muted/50 via-muted/30 to-muted/50 border-b border-border/50">
+            <div className="container mx-auto px-4 py-2">
+              <div className="flex items-center justify-between text-sm text-muted-foreground">
+                <div className="flex items-center space-x-6">
+                  <div className="flex items-center space-x-2 hover:text-primary transition-colors">
+                    <Phone className="w-4 h-4" />
+                    <span>{companyInfo.phone_number}</span>
+                  </div>
+                  <div className="flex items-center space-x-2 hover:text-primary transition-colors">
+                    <MapPin className="w-4 h-4" />
+                    <span>{companyInfo.location}</span>
+                  </div>
+                  <div className="flex items-center space-x-2 hover:text-primary transition-colors">
+                    <Clock className="w-4 h-4" />
+                    <span>{companyInfo.time}</span>
+                  </div>
+                </div>
+                <div className="flex items-center space-x-4">
+                  <span>Ijtimoiy tarmoqlar:</span>
+                  <div className="flex items-center space-x-3">
+                    {companyInfo.social_telegram && (
+                      <a
+                        href={`https://t.me/${companyInfo.social_telegram.replace("@", "")}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:text-blue-500 transition-colors duration-200"
+                      >
+                        Telegram
+                      </a>
+                    )}
+                    {companyInfo.social_instagram && (
+                      <a
+                        href={`https://instagram.com/${companyInfo.social_instagram.replace("@", "")}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:text-pink-500 transition-colors duration-200"
+                      >
+                        Instagram
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Main Header - Responsive */}
         <div className="container mx-auto px-3 md:px-4 py-2 md:py-3">
           <div className="flex items-center justify-between">
-            {/* Logo - Responsive */}
+            {/* Logo - Desktop Only */}
             <button
               onClick={() => router.push("/")}
-              className="flex items-center space-x-2 hover:opacity-80 transition-opacity group flex-shrink-0"
+              className="hidden md:flex items-center space-x-2 hover:opacity-80 transition-opacity group flex-shrink-0"
             >
               {companyInfo?.logo_url && (
                 <div className="relative">
@@ -135,7 +219,7 @@ export function TopBar() {
                   <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-transparent rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
                 </div>
               )}
-              <div className="text-left hidden sm:block">
+              <div className="text-left">
                 <h1 className="text-base md:text-lg font-bold text-gray-900 dark:text-white">
                   {companyInfo?.name || "JamolStroy"}
                 </h1>
@@ -143,52 +227,58 @@ export function TopBar() {
               </div>
             </button>
 
-            {/* Search Bar - Desktop */}
-            <div className="hidden md:flex flex-1 max-w-xl mx-6">
-              <form onSubmit={handleSearch} className="w-full">
+            {/* Search Bar - Mobile First, Desktop Second */}
+            <div className="flex-1 md:max-w-xl md:mx-6">
+              <form onSubmit={handleSearch} className="relative">
                 <div className="relative group">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors duration-200" />
+                  <Search className="absolute left-2.5 md:left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors duration-200" />
                   <input
                     type="text"
-                    placeholder="Mahsulotlarni qidiring..."
+                    placeholder="Qidirish..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2.5 bg-gradient-to-r from-muted/50 to-muted/30 rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 focus:bg-background transition-all duration-200 backdrop-blur-sm text-sm"
+                    onFocus={() => searchSuggestions.length > 0 && setShowSuggestions(true)}
+                    onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                    className="w-full pl-8 md:pl-9 pr-3 md:pr-4 py-2 md:py-2.5 text-sm bg-gray-900 dark:bg-gray-800 text-white rounded-lg border border-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all duration-200"
                   />
                   <div className="absolute inset-0 bg-gradient-to-r from-primary/5 to-transparent rounded-lg opacity-0 group-focus-within:opacity-100 transition-opacity duration-200 pointer-events-none" />
                 </div>
+
+                {/* Search Suggestions */}
+                {showSuggestions && searchSuggestions.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-gray-900 dark:bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
+                    {searchSuggestions.map((suggestion, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => handleSuggestionClick(suggestion.suggestion)}
+                        className="w-full text-left px-3 py-2 text-sm text-white hover:bg-gray-700 transition-colors flex items-center space-x-2"
+                      >
+                        <Search className="w-3 h-3 text-gray-400" />
+                        <span>{suggestion.suggestion}</span>
+                        <span className="text-xs text-gray-400 ml-auto">
+                          {suggestion.type === "product" ? "Mahsulot" : "Kategoriya"}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </form>
             </div>
 
-            {/* Cart Button - Responsive */}
+            {/* Cart Button - Desktop Only */}
             <button
               onClick={handleCartClick}
-              className="relative p-2 md:p-2.5 bg-gradient-to-r from-primary to-primary/90 text-primary-foreground rounded-lg hover:from-primary/90 hover:to-primary hover:shadow-lg hover:scale-105 transition-all duration-200 shadow-md group flex-shrink-0"
+              className="hidden md:block relative p-2 md:p-2.5 bg-gradient-to-r from-primary to-primary/90 text-primary-foreground rounded-lg hover:from-primary/90 hover:to-primary hover:shadow-lg hover:scale-105 transition-all duration-200 shadow-md group flex-shrink-0"
             >
               <ShoppingCart className="w-4 h-4 md:w-5 md:h-5 group-hover:scale-110 transition-transform duration-200" />
-              {totalItems > 0 && (
+              {uniqueItemsCount > 0 && (
                 <span className="absolute -top-1 -right-1 md:-top-1.5 md:-right-1.5 bg-gradient-to-r from-red-500 to-red-600 text-white text-xs font-bold rounded-full w-4 h-4 md:w-5 md:h-5 flex items-center justify-center animate-pulse shadow-lg">
-                  {totalItems > 99 ? "99+" : totalItems}
+                  {uniqueItemsCount > 99 ? "99+" : uniqueItemsCount}
                 </span>
               )}
               <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
             </button>
-          </div>
-
-          {/* Search Bar - Mobile - Responsive */}
-          <div className="md:hidden mt-2">
-            <form onSubmit={handleSearch}>
-              <div className="relative group">
-                <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors duration-200" />
-                <input
-                  type="text"
-                  placeholder="Qidirish..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-3 py-2 text-sm bg-gradient-to-r from-muted/50 to-muted/30 rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 focus:bg-background transition-all duration-200"
-                />
-              </div>
-            </form>
           </div>
         </div>
 

@@ -8,6 +8,8 @@ import { BottomNavigation } from "@/components/layout/bottom-navigation"
 import { CategoryBar } from "@/components/layout/category-bar"
 import { AdBanner } from "@/components/layout/ad-banner"
 import { ProductCard } from "@/components/ui/product-card"
+import { DraggableFAB } from "@/components/ui/draggable-fab"
+import { QuantityModal } from "@/components/ui/quantity-modal"
 import { Search, Package, TrendingUp, Star, Filter } from "lucide-react"
 
 interface Product {
@@ -20,6 +22,11 @@ interface Product {
   is_popular: boolean
   stock_quantity: number
   available_quantity: number
+  has_delivery: boolean
+  delivery_price: number
+  delivery_limit: number
+  product_type: "sale" | "rental"
+  rental_price_per_unit?: number
   category: {
     name_uz: string
   }
@@ -38,15 +45,20 @@ export default function HomePage() {
   const router = useRouter()
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
+  const [popularSearches, setPopularSearches] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState(searchParams.get("search") || "")
   const [selectedCategory, setSelectedCategory] = useState<string | null>(searchParams.get("category"))
   const [sortBy, setSortBy] = useState<string>("featured")
+  const [deliveryFilter, setDeliveryFilter] = useState<string>("all")
+  const [showQuantityModal, setShowQuantityModal] = useState(false)
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
 
   useEffect(() => {
     fetchCategories()
     fetchProducts()
-  }, [searchQuery, selectedCategory, sortBy])
+    fetchPopularSearches()
+  }, [searchQuery, selectedCategory, sortBy, deliveryFilter])
 
   const fetchCategories = async () => {
     try {
@@ -63,9 +75,19 @@ export default function HomePage() {
     }
   }
 
+  const fetchPopularSearches = async () => {
+    try {
+      const { data, error } = await supabase.rpc("get_popular_searches", { limit_count: 8 })
+
+      if (error) throw error
+      setPopularSearches(data || [])
+    } catch (error) {
+      console.error("Popular searches error:", error)
+    }
+  }
+
   const calculateAvailableQuantity = async (productId: string, stockQuantity: number) => {
     try {
-      // Calculate sold quantity from confirmed orders
       const { data: soldData, error: soldError } = await supabase
         .from("order_items")
         .select(`
@@ -94,9 +116,9 @@ export default function HomePage() {
           category:categories(name_uz)
         `)
         .eq("is_available", true)
-        .gt("stock_quantity", 0) // Only show products with stock
+        .gt("stock_quantity", 0)
 
-      // Apply search filter - fix the OR query formatting
+      // Apply search filter
       if (searchQuery) {
         const transliteratedQuery = transliterate(searchQuery)
         query = query.or(
@@ -107,6 +129,15 @@ export default function HomePage() {
       // Apply category filter
       if (selectedCategory) {
         query = query.eq("category_id", selectedCategory)
+      }
+
+      // Apply delivery filter
+      if (deliveryFilter === "available") {
+        query = query.eq("has_delivery", true)
+      } else if (deliveryFilter === "free") {
+        query = query.eq("has_delivery", true).eq("delivery_price", 0)
+      } else if (deliveryFilter === "none") {
+        query = query.eq("has_delivery", false)
       }
 
       // Apply sorting
@@ -136,7 +167,6 @@ export default function HomePage() {
 
       if (error) throw error
 
-      // Calculate available quantities and filter out products with 0 availability
       const productsWithAvailability = await Promise.all(
         (data || []).map(async (product) => {
           const availableQuantity = await calculateAvailableQuantity(product.id, product.stock_quantity)
@@ -149,7 +179,6 @@ export default function HomePage() {
         }),
       )
 
-      // Filter out products with 0 available quantity
       const availableProducts = productsWithAvailability.filter((product) => product.available_quantity > 0)
 
       setProducts(availableProducts)
@@ -160,7 +189,6 @@ export default function HomePage() {
     }
   }
 
-  // Simple transliteration function for Cyrillic to Latin
   const transliterate = (text: string) => {
     const cyrillicToLatin: { [key: string]: string } = {
       а: "a",
@@ -249,7 +277,19 @@ export default function HomePage() {
   }
 
   const handleProductView = (productId: string) => {
+    // Increment view count
+    supabase.rpc("increment_product_view", { product_id_param: productId })
     router.push(`/product/${productId}`)
+  }
+
+  const handleAddToCart = (product: Product) => {
+    setSelectedProduct(product)
+    setShowQuantityModal(true)
+  }
+
+  const handleSearchExample = (query: string) => {
+    setSearchQuery(query)
+    router.push(`/?search=${encodeURIComponent(query)}`)
   }
 
   const getSectionTitle = () => {
@@ -280,6 +320,42 @@ export default function HomePage() {
       <AdBanner />
 
       <div className="container mx-auto px-4 py-6">
+        {/* Search Examples - Show when no search query */}
+        {!searchQuery && !selectedCategory && popularSearches.length > 0 && (
+          <div className="mb-6">
+            <h3 className="text-lg font-semibold mb-3">Mashhur qidiruvlar</h3>
+            <div className="flex flex-wrap gap-2">
+              {popularSearches.map((search, index) => (
+                <button
+                  key={index}
+                  onClick={() => handleSearchExample(search.query)}
+                  className="px-3 py-1.5 bg-muted hover:bg-muted/80 rounded-full text-sm transition-colors"
+                >
+                  {search.query}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Category Quick Access */}
+        {!searchQuery && !selectedCategory && (
+          <div className="mb-6">
+            <h3 className="text-lg font-semibold mb-3">Kategoriyalar</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {categories.slice(0, 8).map((category) => (
+                <button
+                  key={category.id}
+                  onClick={() => handleCategorySelect(category.id)}
+                  className="p-3 bg-card rounded-lg border border-border hover:border-primary/20 transition-colors text-left"
+                >
+                  <span className="font-medium text-sm">{category.name_uz}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Section Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center space-x-3">
@@ -295,18 +371,33 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Sort Dropdown */}
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-            className="px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 text-sm"
-          >
-            <option value="featured">Tavsiya etilgan</option>
-            <option value="popular">Mashhur</option>
-            <option value="newest">Yangi</option>
-            <option value="price_low">Arzon narx</option>
-            <option value="price_high">Qimmat narx</option>
-          </select>
+          {/* Filters */}
+          <div className="flex items-center space-x-2">
+            {/* Delivery Filter */}
+            <select
+              value={deliveryFilter}
+              onChange={(e) => setDeliveryFilter(e.target.value)}
+              className="px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 text-sm"
+            >
+              <option value="all">Barchasi</option>
+              <option value="available">Yetkazib berish mavjud</option>
+              <option value="free">Tekin yetkazib berish</option>
+              <option value="none">Yetkazib berish yo'q</option>
+            </select>
+
+            {/* Sort Dropdown */}
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 text-sm"
+            >
+              <option value="featured">Tavsiya etilgan</option>
+              <option value="popular">Mashhur</option>
+              <option value="newest">Yangi</option>
+              <option value="price_low">Arzon narx</option>
+              <option value="price_high">Qimmat narx</option>
+            </select>
+          </div>
         </div>
 
         {/* Products Grid */}
@@ -335,6 +426,7 @@ export default function HomePage() {
               onClick={() => {
                 setSearchQuery("")
                 setSelectedCategory(null)
+                setDeliveryFilter("all")
                 router.push("/")
               }}
               className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
@@ -346,7 +438,7 @@ export default function HomePage() {
           <div className="product-grid">
             {products.map((product, index) => (
               <div key={product.id} className="product-card" style={{ animationDelay: `${index * 50}ms` }}>
-                <ProductCard product={product} onQuickView={handleProductView} />
+                <ProductCard product={product} onQuickView={handleProductView} onAddToCart={handleAddToCart} />
               </div>
             ))}
           </div>
@@ -373,7 +465,7 @@ export default function HomePage() {
                     className="product-card"
                     style={{ animationDelay: `${index * 50}ms` }}
                   >
-                    <ProductCard product={product} onQuickView={handleProductView} />
+                    <ProductCard product={product} onQuickView={handleProductView} onAddToCart={handleAddToCart} />
                   </div>
                 ))}
             </div>
@@ -401,7 +493,7 @@ export default function HomePage() {
                     className="product-card"
                     style={{ animationDelay: `${index * 50}ms` }}
                   >
-                    <ProductCard product={product} onQuickView={handleProductView} />
+                    <ProductCard product={product} onQuickView={handleProductView} onAddToCart={handleAddToCart} />
                   </div>
                 ))}
             </div>
@@ -410,6 +502,60 @@ export default function HomePage() {
       </div>
 
       <BottomNavigation />
+      <DraggableFAB />
+
+      {/* Quantity Modal */}
+      <QuantityModal isOpen={showQuantityModal} onClose={() => setShowQuantityModal(false)} product={selectedProduct} />
+
+      <style jsx>{`
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
+        }
+
+        @keyframes slideInUp {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .product-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 1rem;
+        }
+
+        @media (min-width: 768px) {
+          .product-grid {
+            grid-template-columns: repeat(3, 1fr);
+          }
+        }
+
+        @media (min-width: 1024px) {
+          .product-grid {
+            grid-template-columns: repeat(4, 1fr);
+          }
+        }
+
+        @media (min-width: 1280px) {
+          .product-grid {
+            grid-template-columns: repeat(5, 1fr);
+          }
+        }
+
+        .product-card {
+          animation: slideInUp 0.6s ease-out;
+        }
+      `}</style>
     </div>
   )
 }
