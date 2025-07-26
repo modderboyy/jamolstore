@@ -7,17 +7,14 @@ import { Toaster } from "@/components/ui/toaster"
 import { AuthProvider } from "@/contexts/AuthContext"
 import { CartProvider } from "@/contexts/CartContext"
 import { TelegramProvider } from "@/contexts/TelegramContext"
-
-// Yangi yaratgan AppShell komponentimizni import qilamiz
-import { AppShell } from "@/components/AppShell" 
+import { DraggableFab } from "@/components/ui/draggable-fab"
 
 const inter = Inter({ subsets: ["latin"] })
 
-// Endi METADATA ni eksport qilishda xatolik bo'lmaydi!
 export const metadata: Metadata = {
   title: "JamolStroy - Qurilish materiallari",
   description: "Qurilish materiallari va jihozlari onlayn do'koni",
-  generator: 'v0.dev'
+    generator: 'v0.dev'
 }
 
 export default function RootLayout({
@@ -32,12 +29,7 @@ export default function RootLayout({
           <TelegramProvider>
             <AuthProvider>
               <CartProvider>
-                {/* Bizning yangi komponentimiz sahifa kontentini o'rab oladi
-                    va o'z ichida sidebar va tugmani boshqaradi */}
-                <AppShell>
-                  {children}
-                </AppShell>
-                
+                {children}
                 <Toaster />
               </CartProvider>
             </AuthProvider>
