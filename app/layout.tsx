@@ -31,12 +31,6 @@ export default function RootLayout({
               <CartProvider>
                 {children}
                 <DraggableFab onCartClick={() => setShowCartSidebar(true)} />
-
-      {/* Cart Sidebar */}
-                <CartSidebar isOpen={showCartSidebar} onClose={() => setShowCartSidebar(false)} />
-
-      {/* Quantity Modal */}
-                <QuantityModal isOpen={showQuantityModal} onClose={() => setShowQuantityModal(false)} product={selectedProduct} />
                 <Toaster />
               </CartProvider>
             </AuthProvider>
