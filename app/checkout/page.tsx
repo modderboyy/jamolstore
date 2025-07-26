@@ -1,80 +1,96 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import type React from "react"
+
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/AuthContext"
 import { useCart } from "@/contexts/CartContext"
 import { supabase } from "@/lib/supabase"
-import { TopBar } from "@/components/layout/top-bar"
-import { BottomNavigation } from "@/components/layout/bottom-navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
-import { MapPin, CreditCard, Truck, Clock, ArrowLeft, Plus, Check, AlertCircle } from "lucide-react"
+import { MapPin, CreditCard, Truck, Phone, Plus } from "lucide-react"
+import { toast } from "@/hooks/use-toast"
+import { TopBar } from "@/components/layout/top-bar"
 import Image from "next/image"
+import Link from "next/link"
 
 interface Address {
   id: string
   title: string
   full_address: string
+  region: string
   district: string
-  landmark?: string
-  phone_number?: string
+  street: string
+  house_number: string
+  apartment_number?: string
   is_default: boolean
 }
 
 export default function CheckoutPage() {
-  const { user } = useAuth()
   const router = useRouter()
-  const { items, grandTotal, clearCart } = useCart()
+  const { user } = useAuth()
+  const { items, subtotal, deliveryFee, grandTotal, clearCart } = useCart()
+
   const [addresses, setAddresses] = useState<Address[]>([])
-  const [selectedAddress, setSelectedAddress] = useState<Address | null>(null)
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "card">("cash")
-  const [notes, setNotes] = useState("")
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [selectedAddressId, setSelectedAddressId] = useState<string>("")
+  const [paymentMethod, setPaymentMethod] = useState<string>("cash")
+  const [deliveryTime, setDeliveryTime] = useState<string>("standard")
+  const [notes, setNotes] = useState<string>("")
+  const [phoneNumber, setPhoneNumber] = useState<string>("")
+  const [loading, setLoading] = useState(false)
+  const [addressesLoading, setAddressesLoading] = useState(true)
+
+  const freeDeliveryThreshold = 200000
 
   useEffect(() => {
     if (!user) {
       router.push("/login")
       return
     }
+
     if (items.length === 0) {
       router.push("/cart")
       return
     }
+
     fetchAddresses()
-  }, [user, router, items])
+    setPhoneNumber(user.phone || "")
+  }, [user, items, router])
 
   const fetchAddresses = async () => {
-    if (!user) return
-
     try {
+      setAddressesLoading(true)
       const { data, error } = await supabase
         .from("user_addresses")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("user_id", user?.id)
         .order("is_default", { ascending: false })
-        .order("created_at", { ascending: false })
 
       if (error) throw error
 
-      const addressList = data || []
-      setAddresses(addressList)
+      setAddresses(data || [])
 
       // Auto-select default address
-      const defaultAddress = addressList.find((addr) => addr.is_default)
+      const defaultAddress = data?.find((addr) => addr.is_default)
       if (defaultAddress) {
-        setSelectedAddress(defaultAddress)
-      } else if (addressList.length > 0) {
-        setSelectedAddress(addressList[0])
+        setSelectedAddressId(defaultAddress.id)
       }
     } catch (error) {
       console.error("Error fetching addresses:", error)
+      toast({
+        title: "Xatolik",
+        description: "Manzillarni yuklashda xatolik yuz berdi",
+        variant: "destructive",
+      })
     } finally {
-      setLoading(false)
+      setAddressesLoading(false)
     }
   }
 
@@ -82,47 +98,67 @@ export default function CheckoutPage() {
     return new Intl.NumberFormat("uz-UZ").format(price)
   }
 
-  const deliveryFee = grandTotal >= 200000 ? 0 : 15000
-  const finalTotal = grandTotal + deliveryFee
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
 
-  const handleSubmitOrder = async () => {
-    if (!user || !selectedAddress) {
-      alert("Iltimos, yetkazib berish manzilini tanlang")
+    if (!user || !selectedAddressId) {
+      toast({
+        title: "Xatolik",
+        description: "Manzil tanlanmagan",
+        variant: "destructive",
+      })
       return
     }
 
-    if (items.length === 0) {
-      alert("Savat bo'sh")
+    if (!phoneNumber.trim()) {
+      toast({
+        title: "Xatolik",
+        description: "Telefon raqamini kiriting",
+        variant: "destructive",
+      })
       return
     }
 
-    setIsSubmitting(true)
+    setLoading(true)
+
     try {
-      // Create order
-      const orderData = {
-        customer_id: user.id,
-        total_amount: finalTotal,
-        delivery_fee: deliveryFee,
-        payment_method: paymentMethod,
-        delivery_address: selectedAddress.full_address,
-        delivery_district: selectedAddress.district,
-        delivery_landmark: selectedAddress.landmark || null,
-        delivery_phone: selectedAddress.phone_number || user.phone_number,
-        notes: notes.trim() || null,
-        status: "pending",
-      }
+      const selectedAddress = addresses.find((addr) => addr.id === selectedAddressId)
 
-      const { data: order, error: orderError } = await supabase.from("orders").insert(orderData).select().single()
+      // Create order
+      const { data: order, error: orderError } = await supabase
+        .from("orders")
+        .insert({
+          user_id: user.id,
+          total_amount: grandTotal,
+          subtotal: subtotal,
+          delivery_fee: deliveryFee,
+          status: "pending",
+          payment_method: paymentMethod,
+          delivery_time: deliveryTime,
+          notes: notes.trim() || null,
+          phone_number: phoneNumber.trim(),
+          delivery_address: selectedAddress?.full_address,
+          address_details: {
+            region: selectedAddress?.region,
+            district: selectedAddress?.district,
+            street: selectedAddress?.street,
+            house_number: selectedAddress?.house_number,
+            apartment_number: selectedAddress?.apartment_number,
+          },
+        })
+        .select()
+        .single()
 
       if (orderError) throw orderError
 
       // Create order items
       const orderItems = items.map((item) => ({
         order_id: order.id,
-        product_id: item.productId,
+        product_id: item.id,
+        variation_id: item.variation_id,
         quantity: item.quantity,
         price: item.price,
-        variation: item.variation || null,
+        total: item.price * item.quantity,
       }))
 
       const { error: itemsError } = await supabase.from("order_items").insert(orderItems)
@@ -132,26 +168,22 @@ export default function CheckoutPage() {
       // Clear cart
       clearCart()
 
-      // Redirect to success page
+      toast({
+        title: "Muvaffaqiyat!",
+        description: "Buyurtmangiz qabul qilindi",
+      })
+
       router.push(`/order-success?order_id=${order.id}`)
     } catch (error) {
       console.error("Error creating order:", error)
-      alert("Buyurtma berishda xatolik yuz berdi. Qaytadan urinib ko'ring.")
+      toast({
+        title: "Xatolik",
+        description: "Buyurtma berishda xatolik yuz berdi",
+        variant: "destructive",
+      })
     } finally {
-      setIsSubmitting(false)
+      setLoading(false)
     }
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-background pb-20 md:pb-4">
-        <TopBar />
-        <div className="flex items-center justify-center py-20">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-        </div>
-        <BottomNavigation />
-      </div>
-    )
   }
 
   if (!user || items.length === 0) {
@@ -159,77 +191,119 @@ export default function CheckoutPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background pb-20 md:pb-4">
+    <div className="min-h-screen bg-background">
       <TopBar />
 
-      <div className="container mx-auto px-4 py-6">
-        {/* Header */}
-        <div className="flex items-center space-x-3 mb-6">
-          <Button variant="ghost" size="sm" onClick={() => router.back()} className="p-2">
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
-          <h1 className="text-2xl font-bold">Buyurtmani rasmiylashtirish</h1>
-        </div>
+      <div className="container mx-auto px-4 py-6 pb-20">
+        <h1 className="text-2xl font-bold mb-6">Buyurtma berish</h1>
 
-        <div className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-6">
           {/* Delivery Address */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
+              <CardTitle className="flex items-center gap-2">
                 <MapPin className="w-5 h-5" />
-                <span>Yetkazib berish manzili</span>
+                Yetkazib berish manzili
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {addresses.length === 0 ? (
+              {addressesLoading ? (
+                <div className="animate-pulse space-y-3">
+                  <div className="h-4 bg-muted rounded w-3/4"></div>
+                  <div className="h-4 bg-muted rounded w-1/2"></div>
+                </div>
+              ) : addresses.length === 0 ? (
                 <div className="text-center py-6">
-                  <AlertCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground mb-4">Manzil qo'shilmagan</p>
-                  <Button onClick={() => router.push("/profile/addresses")} className="flex items-center space-x-2">
-                    <Plus className="w-4 h-4" />
-                    <span>Manzil qo'shish</span>
-                  </Button>
+                  <p className="text-muted-foreground mb-4">Yetkazib berish uchun manzil qo'shing</p>
+                  <Link href="/profile/addresses">
+                    <Button variant="outline">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Manzil qo'shish
+                    </Button>
+                  </Link>
                 </div>
               ) : (
-                <div className="space-y-3">
+                <RadioGroup value={selectedAddressId} onValueChange={setSelectedAddressId}>
                   {addresses.map((address) => (
-                    <div
-                      key={address.id}
-                      className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                        selectedAddress?.id === address.id
-                          ? "border-primary bg-primary/5"
-                          : "border-border hover:border-primary/50"
-                      }`}
-                      onClick={() => setSelectedAddress(address)}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-2 mb-1">
-                            <h4 className="font-medium">{address.title}</h4>
-                            {address.is_default && (
-                              <Badge variant="secondary" className="text-xs">
-                                Asosiy
-                              </Badge>
-                            )}
-                            {selectedAddress?.id === address.id && <Check className="w-4 h-4 text-primary" />}
-                          </div>
-                          <p className="text-sm text-muted-foreground mb-1">{address.full_address}</p>
-                          <p className="text-sm text-muted-foreground">{address.district}</p>
-                          {address.phone_number && (
-                            <p className="text-sm text-muted-foreground">Tel: {address.phone_number}</p>
+                    <div key={address.id} className="flex items-start space-x-3 p-3 border rounded-lg">
+                      <RadioGroupItem value={address.id} id={address.id} className="mt-1" />
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Label htmlFor={address.id} className="font-medium">
+                            {address.title}
+                          </Label>
+                          {address.is_default && (
+                            <Badge variant="secondary" className="text-xs">
+                              Asosiy
+                            </Badge>
                           )}
                         </div>
+                        <p className="text-sm text-muted-foreground">{address.full_address}</p>
                       </div>
                     </div>
                   ))}
-                  <Button
-                    variant="outline"
-                    onClick={() => router.push("/profile/addresses")}
-                    className="w-full flex items-center space-x-2"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>Yangi manzil qo'shish</span>
-                  </Button>
+                </RadioGroup>
+              )}
+
+              {addresses.length > 0 && (
+                <div className="mt-4">
+                  <Link href="/profile/addresses">
+                    <Button variant="outline" size="sm">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Yangi manzil qo'shish
+                    </Button>
+                  </Link>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Contact Information */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Phone className="w-5 h-5" />
+                Aloqa ma'lumotlari
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div>
+                <Label htmlFor="phone">Telefon raqami *</Label>
+                <Input
+                  id="phone"
+                  type="tel"
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                  placeholder="+998 90 123 45 67"
+                  required
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Delivery Options */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Truck className="w-5 h-5" />
+                Yetkazib berish
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <RadioGroup value={deliveryTime} onValueChange={setDeliveryTime}>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="standard" id="standard" />
+                  <Label htmlFor="standard">Standart (1-2 kun)</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="express" id="express" />
+                  <Label htmlFor="express">Tezkor (bugun)</Label>
+                </div>
+              </RadioGroup>
+
+              {subtotal >= freeDeliveryThreshold && (
+                <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-sm text-green-800 font-medium">✓ 200,000 so'mdan yuqorida tekin yetkazib berish</p>
                 </div>
               )}
             </CardContent>
@@ -238,117 +312,37 @@ export default function CheckoutPage() {
           {/* Payment Method */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
+              <CardTitle className="flex items-center gap-2">
                 <CreditCard className="w-5 h-5" />
-                <span>To'lov usuli</span>
+                To'lov usuli
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                <div
-                  className={`p-3 border rounded-lg cursor-pointer transition-colors ${
-                    paymentMethod === "cash" ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
-                  }`}
-                  onClick={() => setPaymentMethod("cash")}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-green-100 dark:bg-green-900/20 rounded-full flex items-center justify-center">
-                        <span className="text-green-600 text-lg">💵</span>
-                      </div>
-                      <div>
-                        <h4 className="font-medium">Naqd pul</h4>
-                        <p className="text-sm text-muted-foreground">Yetkazib berish vaqtida to'lov</p>
-                      </div>
-                    </div>
-                    {paymentMethod === "cash" && <Check className="w-5 h-5 text-primary" />}
-                  </div>
+              <RadioGroup value={paymentMethod} onValueChange={setPaymentMethod}>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="cash" id="cash" />
+                  <Label htmlFor="cash">Naqd pul (yetkazib berganda)</Label>
                 </div>
-
-                <div
-                  className={`p-3 border rounded-lg cursor-pointer transition-colors opacity-50 ${
-                    paymentMethod === "card" ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
-                  }`}
-                  onClick={() => setPaymentMethod("card")}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/20 rounded-full flex items-center justify-center">
-                        <CreditCard className="w-5 h-5 text-blue-600" />
-                      </div>
-                      <div>
-                        <h4 className="font-medium">Plastik karta</h4>
-                        <p className="text-sm text-muted-foreground">Tez orada mavjud bo'ladi</p>
-                      </div>
-                    </div>
-                    {paymentMethod === "card" && <Check className="w-5 h-5 text-primary" />}
-                  </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="card" id="card" />
+                  <Label htmlFor="card">Plastik karta</Label>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Delivery Info */}
-          <Card className="bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-950/20 dark:to-blue-950/20 border-green-200 dark:border-green-800">
-            <CardContent className="p-4">
-              <div className="flex items-center space-x-3 mb-3">
-                <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center">
-                  <Truck className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-green-700 dark:text-green-300">Yetkazib berish ma'lumoti</h3>
-                  <p className="text-sm text-green-600 dark:text-green-400">
-                    {deliveryFee === 0 ? "🎉 Tekin yetkazib berish!" : "200,000 so'mdan yuqorida tekin yetkazib berish"}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center space-x-3 text-sm text-muted-foreground">
-                <Clock className="w-4 h-4" />
-                <span>Yetkazib berish vaqti: 1-2 ish kuni</span>
-              </div>
+              </RadioGroup>
             </CardContent>
           </Card>
 
           {/* Order Notes */}
           <Card>
             <CardHeader>
-              <CardTitle>Qo'shimcha izoh</CardTitle>
+              <CardTitle>Qo'shimcha ma'lumot</CardTitle>
             </CardHeader>
             <CardContent>
               <Textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Buyurtma haqida qo'shimcha ma'lumot (ixtiyoriy)"
+                placeholder="Buyurtma haqida qo'shimcha ma'lumot..."
                 rows={3}
               />
-            </CardContent>
-          </Card>
-
-          {/* Order Items */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Buyurtma tarkibi</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {items.map((item) => (
-                  <div key={item.id} className="flex items-center space-x-3">
-                    <div className="relative w-12 h-12 bg-muted rounded-lg overflow-hidden flex-shrink-0">
-                      <Image src={item.image || "/placeholder.svg"} alt={item.name} fill className="object-cover" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-medium text-sm line-clamp-1">{item.name}</h4>
-                      {item.variation && <p className="text-xs text-muted-foreground">Variant: {item.variation}</p>}
-                      <p className="text-xs text-muted-foreground">
-                        {item.quantity} x {formatPrice(item.price)} so'm
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-medium text-sm">{formatPrice(item.price * item.quantity)} so'm</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
             </CardContent>
           </Card>
 
@@ -358,48 +352,56 @@ export default function CheckoutPage() {
               <CardTitle>Buyurtma xulosasi</CardTitle>
             </CardHeader>
             <CardContent>
+              <div className="space-y-3 mb-4">
+                {items.map((item) => (
+                  <div key={`${item.id}-${item.variation_id || "default"}`} className="flex gap-3">
+                    <div className="relative w-12 h-12 flex-shrink-0">
+                      <Image
+                        src={item.image || "/placeholder.svg"}
+                        alt={item.name}
+                        fill
+                        className="object-cover rounded"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium line-clamp-1">{item.name}</p>
+                      {item.variation_name && <p className="text-xs text-muted-foreground">{item.variation_name}</p>}
+                      <p className="text-xs text-muted-foreground">
+                        {item.quantity} x {formatPrice(item.price)} so'm
+                      </p>
+                    </div>
+                    <div className="text-sm font-medium">{formatPrice(item.price * item.quantity)} so'm</div>
+                  </div>
+                ))}
+              </div>
+
+              <Separator className="my-4" />
+
               <div className="space-y-2">
-                <div className="flex justify-between text-sm">
+                <div className="flex justify-between">
                   <span>Mahsulotlar</span>
-                  <span>{formatPrice(grandTotal)} so'm</span>
+                  <span>{formatPrice(subtotal)} so'm</span>
                 </div>
-                <div className="flex justify-between text-sm">
+                <div className="flex justify-between">
                   <span>Yetkazib berish</span>
-                  <span className={deliveryFee === 0 ? "text-green-600" : ""}>
+                  <span className={deliveryFee === 0 ? "text-green-600 font-medium" : ""}>
                     {deliveryFee === 0 ? "Tekin" : `${formatPrice(deliveryFee)} so'm`}
                   </span>
                 </div>
                 <Separator />
-                <div className="flex justify-between font-semibold text-lg">
-                  <span>Jami to'lov</span>
-                  <span>{formatPrice(finalTotal)} so'm</span>
+                <div className="flex justify-between text-lg font-bold">
+                  <span>Jami</span>
+                  <span>{formatPrice(grandTotal)} so'm</span>
                 </div>
               </div>
+
+              <Button type="submit" className="w-full mt-6" size="lg" disabled={loading || !selectedAddressId}>
+                {loading ? "Buyurtma berilmoqda..." : "Buyurtma berish"}
+              </Button>
             </CardContent>
           </Card>
-
-          {/* Submit Button */}
-          <div className="sticky bottom-20 md:bottom-4 bg-background/80 backdrop-blur-sm p-4 -mx-4 border-t">
-            <Button
-              onClick={handleSubmitOrder}
-              disabled={isSubmitting || !selectedAddress}
-              className="w-full h-12 text-lg font-semibold"
-              size="lg"
-            >
-              {isSubmitting ? (
-                <div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-              ) : (
-                <>
-                  <span>Buyurtmani tasdiqlash</span>
-                  <span className="ml-2">({formatPrice(finalTotal)} so'm)</span>
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
+        </form>
       </div>
-
-      <BottomNavigation />
     </div>
   )
 }
