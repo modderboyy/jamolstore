@@ -1,80 +1,59 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { supabase } from "@/lib/supabase"
 
-export async function GET(request: NextRequest) {
-  try {
-    const authHeader = request.headers.get("authorization")
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
-    const token = authHeader.substring(7)
-
-    // Get user from session
-    const { data: sessionData, error: sessionError } = await supabase
-      .from("website_login_sessions")
-      .select("user_id")
-      .eq("session_token", token)
-      .eq("is_active", true)
-      .gt("expires_at", new Date().toISOString())
-      .single()
-
-    if (sessionError || !sessionData) {
-      return NextResponse.json({ error: "Invalid session" }, { status: 401 })
-    }
-
-    // Get user reviews using the secure function
-    const { data, error } = await supabase.rpc("get_user_reviews", {
-      user_id_param: sessionData.user_id,
-    })
-
-    if (error) {
-      console.error("Reviews fetch error:", error)
-      return NextResponse.json({ error: "Failed to fetch reviews" }, { status: 500 })
-    }
-
-    return NextResponse.json({
-      success: true,
-      reviews: data || [],
-    })
-  } catch (error) {
-    console.error("Reviews fetch error:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
-  }
-}
-
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization")
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    const userId = request.headers.get("x-user-id")
+
+    if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const token = authHeader.substring(7)
     const body = await request.json()
+    const { productId, orderId, rating, comment } = body
 
-    // Get user from session
-    const { data: sessionData, error: sessionError } = await supabase
-      .from("website_login_sessions")
-      .select("user_id")
-      .eq("session_token", token)
-      .eq("is_active", true)
-      .gt("expires_at", new Date().toISOString())
-      .single()
-
-    if (sessionError || !sessionData) {
-      return NextResponse.json({ error: "Invalid session" }, { status: 401 })
+    if (!productId || !orderId || !rating || rating < 1 || rating > 5) {
+      return NextResponse.json({ error: "Invalid data" }, { status: 400 })
     }
 
-    // Create new review
-    const { data, error } = await supabase
+    // Check if user has already reviewed this product for this order
+    const { data: existingReview } = await supabase
       .from("reviews")
-      .insert({
-        user_id: sessionData.user_id,
-        product_id: body.product_id,
-        rating: body.rating,
-        comment: body.comment,
-      })
+      .select("id")
+      .eq("user_id", userId)
+      .eq("product_id", productId)
+      .eq("order_id", orderId)
+      .single()
+
+    if (existingReview) {
+      return NextResponse.json({ error: "You have already reviewed this product" }, { status: 400 })
+    }
+
+    // Verify that the user actually ordered this product
+    const { data: orderItem } = await supabase
+      .from("order_items")
+      .select("id, orders!inner(customer_id)")
+      .eq("order_id", orderId)
+      .eq("product_id", productId)
+      .single()
+
+    if (!orderItem || orderItem.orders.customer_id !== userId) {
+      return NextResponse.json({ error: "You can only review products you have ordered" }, { status: 403 })
+    }
+
+    // Create the review
+    const { data: review, error } = await supabase
+      .from("reviews")
+      .insert([
+        {
+          user_id: userId,
+          product_id: productId,
+          order_id: orderId,
+          rating,
+          comment: comment?.trim() || null,
+          is_verified: true, // Since we verified the order
+        },
+      ])
       .select()
       .single()
 
@@ -83,12 +62,63 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Failed to create review" }, { status: 500 })
     }
 
+    return NextResponse.json({ success: true, review })
+  } catch (error) {
+    console.error("Review API error:", error)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const productId = searchParams.get("productId")
+    const userId = request.headers.get("x-user-id")
+
+    if (!productId) {
+      return NextResponse.json({ error: "Product ID required" }, { status: 400 })
+    }
+
+    // Get reviews for the product
+    const { data: reviews, error } = await supabase
+      .from("reviews")
+      .select(`
+        id,
+        rating,
+        comment,
+        is_verified,
+        created_at,
+        users!inner(first_name, last_name, avatar_url)
+      `)
+      .eq("product_id", productId)
+      .order("created_at", { ascending: false })
+
+    if (error) {
+      console.error("Reviews fetch error:", error)
+      return NextResponse.json({ error: "Failed to fetch reviews" }, { status: 500 })
+    }
+
+    // Check if current user has reviewed this product
+    let userReview = null
+    if (userId) {
+      const { data } = await supabase
+        .from("reviews")
+        .select("id, rating, comment")
+        .eq("product_id", productId)
+        .eq("user_id", userId)
+        .single()
+
+      userReview = data
+    }
+
     return NextResponse.json({
-      success: true,
-      review: data,
+      reviews: reviews || [],
+      userReview,
+      totalReviews: reviews?.length || 0,
+      averageRating: reviews?.length ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length : 0,
     })
   } catch (error) {
-    console.error("Review creation error:", error)
+    console.error("Reviews GET API error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
