@@ -33,21 +33,20 @@ export function DraggableFab({ onCartClick }: DraggableFabProps) {
     return () => window.removeEventListener("resize", updatePosition)
   }, [])
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault()
+  const handleStart = (clientX: number, clientY: number) => {
     setIsDragging(true)
     setHasMoved(false)
     setDragStart({
-      x: e.clientX - position.x,
-      y: e.clientY - position.y,
+      x: clientX - position.x,
+      y: clientY - position.y,
     })
   }
 
-  const handleMouseMove = (e: MouseEvent) => {
+  const handleMove = (clientX: number, clientY: number) => {
     if (!isDragging) return
 
-    const newX = e.clientX - dragStart.x
-    const newY = e.clientY - dragStart.y
+    const newX = clientX - dragStart.x
+    const newY = clientY - dragStart.y
 
     // Check if moved significantly
     if (Math.abs(newX - position.x) > 5 || Math.abs(newY - position.y) > 5) {
@@ -64,60 +63,45 @@ export function DraggableFab({ onCartClick }: DraggableFabProps) {
     })
   }
 
-  const handleMouseUp = () => {
+  const handleEnd = () => {
     setIsDragging(false)
+  }
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    handleStart(e.clientX, e.clientY)
   }
 
   const handleTouchStart = (e: React.TouchEvent) => {
     e.preventDefault()
+    e.stopPropagation()
     const touch = e.touches[0]
-    setIsDragging(true)
-    setHasMoved(false)
-    setDragStart({
-      x: touch.clientX - position.x,
-      y: touch.clientY - position.y,
-    })
-  }
-
-  const handleTouchMove = (e: TouchEvent) => {
-    if (!isDragging) return
-    e.preventDefault()
-
-    const touch = e.touches[0]
-    const newX = touch.clientX - dragStart.x
-    const newY = touch.clientY - dragStart.y
-
-    // Check if moved significantly
-    if (Math.abs(newX - position.x) > 5 || Math.abs(newY - position.y) > 5) {
-      setHasMoved(true)
-    }
-
-    // Constrain to window bounds
-    const maxX = window.innerWidth - 56 // FAB width
-    const maxY = window.innerHeight - 56 // FAB height
-
-    setPosition({
-      x: Math.max(0, Math.min(newX, maxX)),
-      y: Math.max(0, Math.min(newY, maxY)),
-    })
-  }
-
-  const handleTouchEnd = () => {
-    setIsDragging(false)
+    handleStart(touch.clientX, touch.clientY)
   }
 
   useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      handleMove(e.clientX, e.clientY)
+    }
+
+    const handleTouchMove = (e: TouchEvent) => {
+      e.preventDefault()
+      const touch = e.touches[0]
+      handleMove(touch.clientX, touch.clientY)
+    }
+
     if (isDragging) {
       document.addEventListener("mousemove", handleMouseMove)
-      document.addEventListener("mouseup", handleMouseUp)
+      document.addEventListener("mouseup", handleEnd)
       document.addEventListener("touchmove", handleTouchMove, { passive: false })
-      document.addEventListener("touchend", handleTouchEnd)
+      document.addEventListener("touchend", handleEnd)
 
       return () => {
         document.removeEventListener("mousemove", handleMouseMove)
-        document.removeEventListener("mouseup", handleMouseUp)
+        document.removeEventListener("mouseup", handleEnd)
         document.removeEventListener("touchmove", handleTouchMove)
-        document.removeEventListener("touchend", handleTouchEnd)
+        document.removeEventListener("touchend", handleEnd)
       }
     }
   }, [isDragging, dragStart])
@@ -140,13 +124,14 @@ export function DraggableFab({ onCartClick }: DraggableFabProps) {
       onMouseDown={handleMouseDown}
       onTouchStart={handleTouchStart}
       className={`fixed w-14 h-14 bg-primary text-primary-foreground rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-all z-40 md:hidden ${
-        isDragging ? "scale-110 cursor-grabbing" : "cursor-grab hover:scale-110"
+        isDragging ? "scale-110 cursor-grabbing" : "cursor-pointer hover:scale-110"
       }`}
       style={{
         left: `${position.x}px`,
         top: `${position.y}px`,
         transform: isDragging ? "scale(1.1)" : "scale(1)",
         transition: isDragging ? "none" : "transform 0.2s ease",
+        touchAction: "none",
       }}
     >
       <div className="relative">

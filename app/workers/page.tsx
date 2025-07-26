@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
@@ -13,21 +12,19 @@ import Image from "next/image"
 
 interface Worker {
   id: string
-  user: {
-    first_name: string
-    last_name: string
-    phone_number: string
-    avatar_url?: string
-  }
+  first_name: string
+  last_name: string
   profession_uz: string
   experience_years: number
   hourly_rate: number
   daily_rate: number
   rating: number
-  total_reviews: number
-  location_uz: string
+  review_count: number
+  location: string
   is_available: boolean
   skills: string[]
+  avatar_url?: string
+  phone_number: string
 }
 
 export default function WorkersPage() {
@@ -39,36 +36,85 @@ export default function WorkersPage() {
   const [showWorkerSheet, setShowWorkerSheet] = useState(false)
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState(initialSearch)
+  const [showFilters, setShowFilters] = useState(false)
+  const [filters, setFilters] = useState({
+    profession: "",
+    location: "",
+    minRating: 0,
+    maxRate: 999999,
+  })
+  const [professions, setProfessions] = useState<string[]>([])
+  const [locations, setLocations] = useState<string[]>([])
 
   useEffect(() => {
     fetchWorkers()
-  }, [searchQuery])
+    fetchFilterOptions()
+  }, [searchQuery, filters])
+
+  const fetchFilterOptions = async () => {
+    try {
+      const { data, error } = await supabase.from("workers").select("profession_uz, location").eq("is_available", true)
+
+      if (error) throw error
+
+      const uniqueProfessions = [...new Set(data?.map((w) => w.profession_uz).filter(Boolean))]
+      const uniqueLocations = [...new Set(data?.map((w) => w.location).filter(Boolean))]
+
+      setProfessions(uniqueProfessions)
+      setLocations(uniqueLocations)
+    } catch (error) {
+      console.error("Filter options error:", error)
+    }
+  }
 
   const fetchWorkers = async () => {
     setLoading(true)
     try {
-      let query = supabase
-        .from("worker_profiles")
-        .select(`
-          *,
-          user:users!inner(first_name, last_name, phone_number, avatar_url, role)
-        `)
-        .eq("is_available", true)
-        .eq("user.role", "worker")
-
-      if (searchQuery) {
-        // Fix the search query syntax
-        query = query.or(
-          `profession_uz.ilike.%${searchQuery}%,user.first_name.ilike.%${searchQuery}%,user.last_name.ilike.%${searchQuery}%`,
-        )
-      }
-
-      const { data, error } = await query.order("rating", { ascending: false })
+      const { data, error } = await supabase.rpc("search_workers", {
+        search_term: searchQuery,
+        profession_filter: filters.profession,
+        location_filter: filters.location,
+        min_rating: filters.minRating,
+        max_hourly_rate: filters.maxRate,
+        limit_count: 50,
+      })
 
       if (error) throw error
       setWorkers(data || [])
     } catch (error) {
       console.error("Ishchilarni yuklashda xatolik:", error)
+      // Fallback to direct query if RPC fails
+      try {
+        let query = supabase.from("workers").select("*").eq("is_available", true)
+
+        if (searchQuery) {
+          query = query.or(
+            `first_name.ilike.%${searchQuery}%,last_name.ilike.%${searchQuery}%,profession_uz.ilike.%${searchQuery}%`,
+          )
+        }
+
+        if (filters.profession) {
+          query = query.eq("profession_uz", filters.profession)
+        }
+
+        if (filters.location) {
+          query = query.ilike("location", `%${filters.location}%`)
+        }
+
+        query = query
+          .gte("rating", filters.minRating)
+          .lte("hourly_rate", filters.maxRate)
+          .order("rating", { ascending: false })
+          .limit(50)
+
+        const { data: fallbackData, error: fallbackError } = await query
+
+        if (fallbackError) throw fallbackError
+        setWorkers(fallbackData || [])
+      } catch (fallbackError) {
+        console.error("Fallback query error:", fallbackError)
+        setWorkers([])
+      }
     } finally {
       setLoading(false)
     }
@@ -88,6 +134,21 @@ export default function WorkersPage() {
     window.open(`tel:${phoneNumber}`)
   }
 
+  const clearFilters = () => {
+    setFilters({
+      profession: "",
+      location: "",
+      minRating: 0,
+      maxRate: 999999,
+    })
+    setShowFilters(false)
+  }
+
+  const applyFilters = () => {
+    setShowFilters(false)
+    fetchWorkers()
+  }
+
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-4">
       <TopBar />
@@ -99,7 +160,10 @@ export default function WorkersPage() {
             <h1 className="text-xl font-bold">Ishchilar</h1>
             <p className="text-sm text-muted-foreground">{workers.length} ta mutaxassis</p>
           </div>
-          <button className="p-3 rounded-xl hover:bg-muted transition-colors shadow-sm border border-border">
+          <button
+            onClick={() => setShowFilters(true)}
+            className="p-3 rounded-xl hover:bg-muted transition-colors shadow-sm border border-border"
+          >
             <Filter className="w-5 h-5" />
           </button>
         </div>
@@ -110,13 +174,35 @@ export default function WorkersPage() {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors duration-200" />
             <input
               type="text"
-              placeholder="Ishchi qidirish..."
+              placeholder="Ishchi, kasb yoki ko'nikma qidirish..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2.5 bg-gray-900 dark:bg-gray-800 text-white rounded-lg border border-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all duration-200 text-sm"
+              className="w-full pl-9 pr-4 py-2.5 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all duration-200 text-sm"
             />
           </div>
         </form>
+
+        {/* Active Filters */}
+        {(filters.profession || filters.location || filters.minRating > 0 || filters.maxRate < 999999) && (
+          <div className="flex flex-wrap gap-2 mt-3">
+            {filters.profession && (
+              <span className="px-2 py-1 bg-primary/10 text-primary text-xs rounded-full">{filters.profession}</span>
+            )}
+            {filters.location && (
+              <span className="px-2 py-1 bg-primary/10 text-primary text-xs rounded-full">{filters.location}</span>
+            )}
+            {filters.minRating > 0 && (
+              <span className="px-2 py-1 bg-primary/10 text-primary text-xs rounded-full">
+                {filters.minRating}+ yulduz
+              </span>
+            )}
+            {filters.maxRate < 999999 && (
+              <span className="px-2 py-1 bg-primary/10 text-primary text-xs rounded-full">
+                {new Intl.NumberFormat("uz-UZ").format(filters.maxRate)} so'm gacha
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Workers List */}
@@ -147,10 +233,10 @@ export default function WorkersPage() {
                 <div className="flex space-x-4">
                   {/* Avatar */}
                   <div className="w-16 h-16 bg-muted rounded-full overflow-hidden flex-shrink-0">
-                    {worker.user.avatar_url ? (
+                    {worker.avatar_url ? (
                       <Image
-                        src={worker.user.avatar_url || "/placeholder.svg"}
-                        alt={`${worker.user.first_name} ${worker.user.last_name}`}
+                        src={worker.avatar_url || "/placeholder.svg"}
+                        alt={`${worker.first_name} ${worker.last_name}`}
                         width={64}
                         height={64}
                         className="w-full h-full object-cover"
@@ -158,8 +244,8 @@ export default function WorkersPage() {
                     ) : (
                       <div className="w-full h-full bg-muted flex items-center justify-center">
                         <span className="text-foreground font-semibold text-lg">
-                          {worker.user.first_name[0]}
-                          {worker.user.last_name[0]}
+                          {worker.first_name[0]}
+                          {worker.last_name[0]}
                         </span>
                       </div>
                     )}
@@ -170,21 +256,21 @@ export default function WorkersPage() {
                     <div className="flex items-start justify-between mb-2">
                       <div>
                         <h3 className="font-semibold">
-                          {worker.user.first_name} {worker.user.last_name}
+                          {worker.first_name} {worker.last_name}
                         </h3>
                         <p className="text-sm text-muted-foreground">{worker.profession_uz}</p>
                       </div>
                       <div className="flex items-center space-x-1">
                         <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
                         <span className="text-sm font-medium">{worker.rating.toFixed(1)}</span>
-                        <span className="text-sm text-muted-foreground">({worker.total_reviews})</span>
+                        <span className="text-sm text-muted-foreground">({worker.review_count})</span>
                       </div>
                     </div>
 
                     <div className="flex items-center space-x-4 mb-3">
                       <div className="flex items-center space-x-1">
                         <MapPin className="w-4 h-4 text-muted-foreground" />
-                        <span className="text-sm text-muted-foreground">{worker.location_uz}</span>
+                        <span className="text-sm text-muted-foreground">{worker.location}</span>
                       </div>
                       <div className="text-sm text-muted-foreground">{worker.experience_years} yil tajriba</div>
                     </div>
@@ -199,7 +285,7 @@ export default function WorkersPage() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
-                          handleContactWorker(worker.user.phone_number)
+                          handleContactWorker(worker.phone_number)
                         }}
                         className="flex items-center space-x-1 px-3 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm shadow-sm"
                       >
@@ -236,10 +322,98 @@ export default function WorkersPage() {
               <Filter className="w-8 h-8 text-muted-foreground" />
             </div>
             <h3 className="text-lg font-semibold mb-2">Ishchi topilmadi</h3>
-            <p className="text-muted-foreground mb-4">Qidiruv so'zini o'zgartiring yoki boshqa kasb nomini kiriting</p>
+            <p className="text-muted-foreground mb-4">Qidiruv so'zini o'zgartiring yoki filtrlarni o'zgartiring</p>
+            <button
+              onClick={clearFilters}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+            >
+              Filtrlarni tozalash
+            </button>
           </div>
         )}
       </div>
+
+      {/* Filter Bottom Sheet */}
+      <BottomSheet isOpen={showFilters} onClose={() => setShowFilters(false)} title="Filtrlar">
+        <div className="p-6 space-y-6">
+          {/* Profession Filter */}
+          <div>
+            <label className="block text-sm font-medium mb-2">Mutaxassislik</label>
+            <select
+              value={filters.profession}
+              onChange={(e) => setFilters({ ...filters, profession: e.target.value })}
+              className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20"
+            >
+              <option value="">Barchasi</option>
+              {professions.map((profession) => (
+                <option key={profession} value={profession}>
+                  {profession}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Location Filter */}
+          <div>
+            <label className="block text-sm font-medium mb-2">Joylashuv</label>
+            <select
+              value={filters.location}
+              onChange={(e) => setFilters({ ...filters, location: e.target.value })}
+              className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20"
+            >
+              <option value="">Barchasi</option>
+              {locations.map((location) => (
+                <option key={location} value={location}>
+                  {location}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Rating Filter */}
+          <div>
+            <label className="block text-sm font-medium mb-2">Minimal reyting</label>
+            <select
+              value={filters.minRating}
+              onChange={(e) => setFilters({ ...filters, minRating: Number(e.target.value) })}
+              className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20"
+            >
+              <option value={0}>Barchasi</option>
+              <option value={3}>3+ yulduz</option>
+              <option value={4}>4+ yulduz</option>
+              <option value={4.5}>4.5+ yulduz</option>
+            </select>
+          </div>
+
+          {/* Rate Filter */}
+          <div>
+            <label className="block text-sm font-medium mb-2">Maksimal soatlik narx</label>
+            <input
+              type="number"
+              value={filters.maxRate === 999999 ? "" : filters.maxRate}
+              onChange={(e) => setFilters({ ...filters, maxRate: e.target.value ? Number(e.target.value) : 999999 })}
+              placeholder="Cheklovsiz"
+              className="w-full px-3 py-2 bg-muted rounded-lg border-0 focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex space-x-3 pt-4">
+            <button
+              onClick={clearFilters}
+              className="flex-1 py-3 bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition-colors"
+            >
+              Tozalash
+            </button>
+            <button
+              onClick={applyFilters}
+              className="flex-1 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+            >
+              Qo'llash
+            </button>
+          </div>
+        </div>
+      </BottomSheet>
 
       <BottomNavigation />
 
@@ -255,10 +429,10 @@ export default function WorkersPage() {
             {/* Worker Header */}
             <div className="flex space-x-4 mb-6">
               <div className="w-20 h-20 bg-muted rounded-full overflow-hidden flex-shrink-0">
-                {selectedWorker.user.avatar_url ? (
+                {selectedWorker.avatar_url ? (
                   <Image
-                    src={selectedWorker.user.avatar_url || "/placeholder.svg"}
-                    alt={`${selectedWorker.user.first_name} ${selectedWorker.user.last_name}`}
+                    src={selectedWorker.avatar_url || "/placeholder.svg"}
+                    alt={`${selectedWorker.first_name} ${selectedWorker.last_name}`}
                     width={80}
                     height={80}
                     className="w-full h-full object-cover"
@@ -266,22 +440,22 @@ export default function WorkersPage() {
                 ) : (
                   <div className="w-full h-full bg-muted flex items-center justify-center">
                     <span className="text-foreground font-semibold text-2xl">
-                      {selectedWorker.user.first_name[0]}
-                      {selectedWorker.user.last_name[0]}
+                      {selectedWorker.first_name[0]}
+                      {selectedWorker.last_name[0]}
                     </span>
                   </div>
                 )}
               </div>
               <div className="flex-1">
                 <h3 className="text-xl font-bold mb-1">
-                  {selectedWorker.user.first_name} {selectedWorker.user.last_name}
+                  {selectedWorker.first_name} {selectedWorker.last_name}
                 </h3>
                 <p className="text-muted-foreground mb-2">{selectedWorker.profession_uz}</p>
                 <div className="flex items-center space-x-4">
                   <div className="flex items-center space-x-1">
                     <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
                     <span className="font-medium">{selectedWorker.rating.toFixed(1)}</span>
-                    <span className="text-sm text-muted-foreground">({selectedWorker.total_reviews} sharh)</span>
+                    <span className="text-sm text-muted-foreground">({selectedWorker.review_count} sharh)</span>
                   </div>
                 </div>
               </div>
@@ -297,7 +471,7 @@ export default function WorkersPage() {
                 </div>
                 <div className="bg-muted/50 rounded-xl p-4">
                   <h4 className="text-sm text-muted-foreground mb-1">Joylashuv</h4>
-                  <p className="font-semibold">{selectedWorker.location_uz}</p>
+                  <p className="font-semibold">{selectedWorker.location}</p>
                 </div>
               </div>
 
@@ -338,7 +512,7 @@ export default function WorkersPage() {
             {/* Action Buttons */}
             <div className="space-y-3 pt-6 border-t border-border">
               <button
-                onClick={() => handleContactWorker(selectedWorker.user.phone_number)}
+                onClick={() => handleContactWorker(selectedWorker.phone_number)}
                 className="w-full bg-primary text-primary-foreground rounded-xl py-3 font-medium hover:bg-primary/90 transition-colors flex items-center justify-center space-x-2 shadow-sm"
               >
                 <Phone className="w-5 h-5" />
