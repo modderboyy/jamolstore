@@ -1,7 +1,5 @@
 "use client"
 
-import type React from "react"
-
 import { useEffect, useState, useCallback } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
@@ -13,7 +11,7 @@ import { ProductCard } from "@/components/ui/product-card"
 import { DraggableFab } from "@/components/ui/draggable-fab"
 import { QuantityModal } from "@/components/ui/quantity-modal"
 import { CartSidebar } from "@/components/layout/cart-sidebar"
-import { Search, Package, TrendingUp, Star, Filter, User } from "lucide-react"
+import { Search, Package, TrendingUp, Star, Filter, User, RefreshCw } from "lucide-react"
 import { useDebounce } from "@/hooks/use-debounce"
 
 interface Product {
@@ -65,16 +63,42 @@ export default function HomePage() {
   const [popularSearches, setPopularSearches] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [searchLoading, setSearchLoading] = useState(false)
-  const [searchQuery, setSearchQuery] = useState(searchParams.get("search") || "")
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(searchParams.get("category"))
+  const [searchQuery, setSearchQuery] = useState("")
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [sortBy, setSortBy] = useState<string>("featured")
   const [deliveryFilter, setDeliveryFilter] = useState<string>("all")
   const [showQuantityModal, setShowQuantityModal] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [showCartSidebar, setShowCartSidebar] = useState(false)
+  const [autoRefresh, setAutoRefresh] = useState(true)
+  const [lastRefresh, setLastRefresh] = useState(new Date())
 
   // Debounce search query for real-time search
   const debouncedSearchQuery = useDebounce(searchQuery, 300)
+
+  // Initialize from URL params
+  useEffect(() => {
+    if (searchParams) {
+      const search = searchParams.get("search") || ""
+      const category = searchParams.get("category")
+      setSearchQuery(search)
+      setSelectedCategory(category)
+    }
+  }, [searchParams])
+
+  // Auto-refresh every 30 seconds
+  useEffect(() => {
+    if (!autoRefresh) return
+
+    const interval = setInterval(() => {
+      if (!searchQuery) {
+        fetchProducts()
+        setLastRefresh(new Date())
+      }
+    }, 30000)
+
+    return () => clearInterval(interval)
+  }, [autoRefresh, searchQuery])
 
   useEffect(() => {
     fetchCategories()
@@ -247,7 +271,7 @@ export default function HomePage() {
 
   const handleProductView = (productId: string) => {
     // Increment view count
-    supabase.rpc("increment_product_view", { product_id_param: productId })
+    fetch(`/api/products/${productId}/view`, { method: "POST" }).catch(console.error)
     router.push(`/product/${productId}`)
   }
 
@@ -265,17 +289,9 @@ export default function HomePage() {
     router.push(`/?search=${encodeURIComponent(query)}`)
   }
 
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value
-    setSearchQuery(value)
-
-    // Update URL without triggering navigation
-    const params = new URLSearchParams()
-    if (value) params.set("search", value)
-    if (selectedCategory) params.set("category", selectedCategory)
-
-    const queryString = params.toString()
-    window.history.replaceState({}, "", queryString ? `/?${queryString}` : "/")
+  const handleManualRefresh = () => {
+    fetchProducts()
+    setLastRefresh(new Date())
   }
 
   const getSectionTitle = () => {
@@ -297,7 +313,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-background pb-20 md:pb-4">
-      <TopBar searchQuery={searchQuery} onSearchChange={handleSearchChange} />
+      <TopBar />
       <CategoryBar
         categories={categories}
         selectedCategory={selectedCategory}
@@ -306,6 +322,33 @@ export default function HomePage() {
       <AdBanner />
 
       <div className="container mx-auto px-4 py-6">
+        {/* Auto-refresh controls */}
+        <div className="flex justify-between items-center mb-4">
+          <div className="flex items-center space-x-4">
+            <label className="flex items-center space-x-2 text-sm text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={autoRefresh}
+                onChange={(e) => setAutoRefresh(e.target.checked)}
+                className="rounded"
+              />
+              <span>Avtomatik yangilash</span>
+            </label>
+            {autoRefresh && (
+              <span className="text-xs text-muted-foreground">
+                So'nggi yangilash: {lastRefresh.toLocaleTimeString("uz-UZ")}
+              </span>
+            )}
+          </div>
+          <button
+            onClick={handleManualRefresh}
+            className="flex items-center space-x-2 px-3 py-1.5 text-sm bg-muted hover:bg-muted/80 rounded-lg transition-colors"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span>Yangilash</span>
+          </button>
+        </div>
+
         {/* Search Examples - Show when no search query */}
         {!searchQuery && !selectedCategory && popularSearches.length > 0 && (
           <div className="mb-6">
