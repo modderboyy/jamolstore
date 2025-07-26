@@ -7,7 +7,7 @@ import { ShoppingCart } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useCart } from "@/contexts/CartContext"
 
-export function DraggableFAB() {
+export function DraggableFab() {
   const router = useRouter()
   const { uniqueItemsCount } = useCart()
   const [position, setPosition] = useState({ x: 0, y: 0 })

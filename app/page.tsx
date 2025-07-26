@@ -8,7 +8,7 @@ import { BottomNavigation } from "@/components/layout/bottom-navigation"
 import { CategoryBar } from "@/components/layout/category-bar"
 import { AdBanner } from "@/components/layout/ad-banner"
 import { ProductCard } from "@/components/ui/product-card"
-import { DraggableFAB } from "@/components/ui/draggable-fab"
+import { DraggableFab } from "@/components/ui/draggable-fab"
 import { QuantityModal } from "@/components/ui/quantity-modal"
 import { Search, Package, TrendingUp, Star, Filter } from "lucide-react"
 
@@ -502,7 +502,7 @@ export default function HomePage() {
       </div>
 
       <BottomNavigation />
-      <DraggableFAB />
+      <DraggableFab />
 
       {/* Quantity Modal */}
       <QuantityModal isOpen={showQuantityModal} onClose={() => setShowQuantityModal(false)} product={selectedProduct} />
